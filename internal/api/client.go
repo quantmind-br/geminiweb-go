@@ -145,7 +145,7 @@ func NewClient(cookies *config.Cookies, opts ...ClientOption) (*GeminiClient, er
 	client := &GeminiClient{
 		httpClient:            httpClient,
 		cookies:               cookies,
-		model:                 models.Model25Flash,
+		model:                 models.Model30Pro, // Default model: gemini-3.0-pro
 		autoRefresh:           true,
 		refreshInterval:       9 * time.Minute,  // Default: 9 minutes
 		browserRefreshMinWait: 30 * time.Second, // Minimum wait between browser refreshes
@@ -162,7 +162,7 @@ func NewClient(cookies *config.Cookies, opts ...ClientOption) (*GeminiClient, er
 
 // Init initializes the client by:
 // 1. Attempting to authenticate (load cookies from disk or browser)
-// 2. Fetching the access token
+// 2. Fetching the access token (with browser fallback on auth failure)
 // 3. Starting cookie rotation if enabled
 func (c *GeminiClient) Init() error {
 	c.mu.Lock()
@@ -180,7 +180,23 @@ func (c *GeminiClient) Init() error {
 	// Step 2: Get access token
 	token, err := GetAccessToken(c.httpClient, c.cookies)
 	if err != nil {
-		return err
+		// If access token fails (likely expired cookies), try browser refresh as fallback
+		// This handles the case where cookies exist on disk but are expired
+		browserType := c.browserRefreshType
+		if browserType == "" {
+			browserType = browser.BrowserAuto
+		}
+
+		if refreshErr := c.initialBrowserRefresh(browserType); refreshErr != nil {
+			// Return original error if browser refresh also fails
+			return fmt.Errorf("authentication failed: %w (browser refresh also failed: %v)", err, refreshErr)
+		}
+
+		// Retry getting access token with fresh cookies
+		token, err = GetAccessToken(c.httpClient, c.cookies)
+		if err != nil {
+			return fmt.Errorf("authentication failed after browser refresh: %w", err)
+		}
 	}
 	c.accessToken = token
 

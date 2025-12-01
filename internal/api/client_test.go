@@ -3,12 +3,15 @@ package api
 import (
 	"context"
 	"errors"
+	"io"
+	"net/url"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	fhttp "github.com/bogdanfinn/fhttp"
+	"github.com/bogdanfinn/tls-client/bandwidth"
 
 	"github.com/diogo/geminiweb/internal/browser"
 	"github.com/diogo/geminiweb/internal/config"
@@ -46,16 +49,16 @@ func TestNewClient(t *testing.T) {
 			name:        "valid cookies with defaults",
 			cookies:     validCookies,
 			wantErr:     false,
-			wantModel:   models.Model25Flash,
+			wantModel:   models.Model30Pro, // Default model is now gemini-3.0-pro
 			autoRefresh: true,
 			interval:    9 * time.Minute,
 		},
 		{
 			name:        "with custom model",
 			cookies:     validCookies,
-			opts:        []ClientOption{WithModel(models.Model30Pro)},
+			opts:        []ClientOption{WithModel(models.Model25Flash)},
 			wantErr:     false,
-			wantModel:   models.Model30Pro,
+			wantModel:   models.Model25Flash,
 			autoRefresh: true,
 			interval:    9 * time.Minute,
 		},
@@ -64,7 +67,7 @@ func TestNewClient(t *testing.T) {
 			cookies:     validCookies,
 			opts:        []ClientOption{WithAutoRefresh(false)},
 			wantErr:     false,
-			wantModel:   models.Model25Flash,
+			wantModel:   models.Model30Pro,
 			autoRefresh: false,
 			interval:    9 * time.Minute,
 		},
@@ -73,7 +76,7 @@ func TestNewClient(t *testing.T) {
 			cookies:     validCookies,
 			opts:        []ClientOption{WithRefreshInterval(5 * time.Minute)},
 			wantErr:     false,
-			wantModel:   models.Model25Flash,
+			wantModel:   models.Model30Pro,
 			autoRefresh: true,
 			interval:    5 * time.Minute,
 		},
@@ -81,7 +84,7 @@ func TestNewClient(t *testing.T) {
 			name:        "nil cookies (now allowed for silent auth)",
 			cookies:     nil,
 			wantErr:     false,
-			wantModel:   models.Model25Flash,
+			wantModel:   models.Model30Pro,
 			autoRefresh: true,
 			interval:    9 * time.Minute,
 		},
@@ -94,7 +97,7 @@ func TestNewClient(t *testing.T) {
 			name:        "cookies with only PSID (no PSIDTS)",
 			cookies:     &config.Cookies{Secure1PSID: "test_psid"},
 			wantErr:     false,
-			wantModel:   models.Model25Flash,
+			wantModel:   models.Model30Pro,
 			autoRefresh: true,
 			interval:    9 * time.Minute,
 		},
@@ -103,7 +106,7 @@ func TestNewClient(t *testing.T) {
 			cookies:     validCookies,
 			opts:        []ClientOption{WithBrowserCookieExtractor(&MockBrowserCookieExtractor{})},
 			wantErr:     false,
-			wantModel:   models.Model25Flash,
+			wantModel:   models.Model30Pro,
 			autoRefresh: true,
 			interval:    9 * time.Minute,
 		},
@@ -334,8 +337,8 @@ func TestGeminiClient_GetSetMethods(t *testing.T) {
 
 	// Test GetModel
 	model := client.GetModel()
-	if model.Name != models.Model25Flash.Name {
-		t.Errorf("GetModel() default = %v, want %v", model.Name, models.Model25Flash.Name)
+	if model.Name != models.Model30Pro.Name {
+		t.Errorf("GetModel() default = %v, want %v", model.Name, models.Model30Pro.Name)
 	}
 
 	// Test SetModel
@@ -389,9 +392,9 @@ func TestGeminiClient_StartChat(t *testing.T) {
 		},
 		{
 			name:          "custom model via argument",
-			opts:          []ClientOption{WithModel(models.Model25Flash)},
-			customModel:   &[]models.Model{models.Model30Pro}[0],
-			expectedModel: models.Model30Pro,
+			opts:          []ClientOption{WithModel(models.Model30Pro)},
+			customModel:   &[]models.Model{models.Model25Flash}[0],
+			expectedModel: models.Model25Flash,
 		},
 	}
 
@@ -768,26 +771,26 @@ func TestGeminiClient_StartChatWithMultipleModels(t *testing.T) {
 		Secure1PSID: "test_psid",
 	}
 
-	client, err := NewClient(cookies, WithModel(models.Model25Flash))
+	client, err := NewClient(cookies, WithModel(models.Model30Pro))
 	if err != nil {
 		t.Fatalf("NewClient() failed: %v", err)
 	}
 
 	// Start chat with default model
 	session1 := client.StartChat()
-	if session1.GetModel().Name != models.Model25Flash.Name {
-		t.Errorf("Session model = %v, want %v", session1.GetModel().Name, models.Model25Flash.Name)
+	if session1.GetModel().Name != models.Model30Pro.Name {
+		t.Errorf("Session model = %v, want %v", session1.GetModel().Name, models.Model30Pro.Name)
 	}
 
 	// Start chat with custom model
-	customModel := models.Model30Pro
+	customModel := models.Model25Flash
 	session2 := client.StartChat(customModel)
 	if session2.GetModel().Name != customModel.Name {
 		t.Errorf("Session model = %v, want %v", session2.GetModel().Name, customModel.Name)
 	}
 
 	// Original session should remain unchanged
-	if session1.GetModel().Name != models.Model25Flash.Name {
+	if session1.GetModel().Name != models.Model30Pro.Name {
 		t.Error("Original session model should not change")
 	}
 }
@@ -1333,4 +1336,287 @@ type capturingExtractor struct {
 func (c *capturingExtractor) ExtractGeminiCookies(ctx context.Context, b browser.SupportedBrowser) (*browser.ExtractResult, error) {
 	*c.capturedType = b
 	return c.result, c.err
+}
+
+// TestGeminiClient_InitWithExpiredCookies tests Init behavior when cookies exist but are expired
+// This is Test Case 2 from the plan: cookies exist on disk but GetAccessToken fails
+func TestGeminiClient_InitWithExpiredCookies(t *testing.T) {
+	t.Run("browser_fallback_when_token_fetch_fails_with_disk_cookies", func(t *testing.T) {
+		// Simulate cookies loaded from disk that are "expired"
+		expiredCookies := &config.Cookies{
+			Secure1PSID:   "expired_psid",
+			Secure1PSIDTS: "expired_psidts",
+		}
+
+		// Create a mock cookie loader that returns "expired" cookies
+		loaderCalled := false
+		mockLoader := func() (*config.Cookies, error) {
+			loaderCalled = true
+			return expiredCookies, nil
+		}
+
+		// Create a mock browser extractor that returns fresh cookies
+		extractorCalled := false
+		mockExtractor := &MockBrowserCookieExtractor{
+			ExtractResult: &browser.ExtractResult{
+				Cookies: &config.Cookies{
+					Secure1PSID:   "fresh_browser_psid",
+					Secure1PSIDTS: "fresh_browser_psidts",
+				},
+				BrowserName: "Mock Browser",
+			},
+		}
+
+		// Wrap extractor to track if it was called
+		wrappedExtractor := &trackingExtractor{
+			inner:  mockExtractor,
+			called: &extractorCalled,
+		}
+
+		client, err := NewClient(nil,
+			WithCookieLoader(mockLoader),
+			WithBrowserCookieExtractor(wrappedExtractor))
+		if err != nil {
+			t.Fatalf("NewClient() failed: %v", err)
+		}
+
+		// Create a mock HTTP client that:
+		// 1. First call (with expired cookies): returns 401 error
+		// 2. Second call (with fresh cookies): returns valid token
+		callCount := 0
+		sequentialMockClient := &SequentialMockHttpClient{
+			responses: []mockResponse{
+				{statusCode: 401, body: []byte("unauthorized")}, // First call fails
+				{statusCode: 200, body: []byte(`{"SNlM0e":"fresh_token"}`)}, // Second call succeeds
+			},
+			callCount: &callCount,
+		}
+
+		client.httpClient = sequentialMockClient
+		client.autoRefresh = false
+
+		// Init should:
+		// 1. Load cookies from disk (expired)
+		// 2. Try GetAccessToken -> fail with 401
+		// 3. Try browser refresh -> succeed
+		// 4. Retry GetAccessToken -> succeed
+		err = client.Init()
+		if err != nil {
+			t.Fatalf("Init() should succeed after browser fallback, got error: %v", err)
+		}
+
+		// Verify cookie loader was called
+		if !loaderCalled {
+			t.Error("Cookie loader should have been called")
+		}
+
+		// Verify browser extractor was called as fallback
+		if !extractorCalled {
+			t.Error("Browser extractor should have been called as fallback when GetAccessToken failed")
+		}
+
+		// Verify we ended up with fresh cookies from browser
+		if client.GetCookies().Secure1PSID != "fresh_browser_psid" {
+			t.Errorf("Cookie PSID = %s, want fresh_browser_psid", client.GetCookies().Secure1PSID)
+		}
+
+		// Verify we got the token
+		if client.GetAccessToken() != "fresh_token" {
+			t.Errorf("Access token = %s, want fresh_token", client.GetAccessToken())
+		}
+
+		// Verify GetAccessToken was called twice (first failed, second succeeded)
+		if callCount != 2 {
+			t.Errorf("GetAccessToken should have been called 2 times, got %d", callCount)
+		}
+	})
+
+	t.Run("fails_when_both_disk_cookies_and_browser_fail", func(t *testing.T) {
+		// Simulate cookies loaded from disk that are "expired"
+		expiredCookies := &config.Cookies{
+			Secure1PSID:   "expired_psid",
+			Secure1PSIDTS: "expired_psidts",
+		}
+
+		mockLoader := func() (*config.Cookies, error) {
+			return expiredCookies, nil
+		}
+
+		// Browser extractor also fails
+		mockExtractor := &MockBrowserCookieExtractor{
+			ExtractError: errors.New("browser not available"),
+		}
+
+		client, err := NewClient(nil,
+			WithCookieLoader(mockLoader),
+			WithBrowserCookieExtractor(mockExtractor))
+		if err != nil {
+			t.Fatalf("NewClient() failed: %v", err)
+		}
+
+		// HTTP client returns 401 (expired cookies)
+		mockHttpClient := NewMockHttpClient([]byte("unauthorized"), 401)
+		client.httpClient = mockHttpClient
+		client.autoRefresh = false
+
+		err = client.Init()
+		if err == nil {
+			t.Error("Init() should fail when both disk cookies and browser fail")
+		}
+
+		// Error should mention both failures
+		if !strings.Contains(err.Error(), "authentication failed") {
+			t.Errorf("Error should mention authentication failure, got: %v", err)
+		}
+		if !strings.Contains(err.Error(), "browser refresh also failed") {
+			t.Errorf("Error should mention browser refresh failure, got: %v", err)
+		}
+	})
+
+	t.Run("skips_browser_fallback_when_token_fetch_succeeds", func(t *testing.T) {
+		// Valid cookies that work
+		validCookies := &config.Cookies{
+			Secure1PSID:   "valid_psid",
+			Secure1PSIDTS: "valid_psidts",
+		}
+
+		mockLoader := func() (*config.Cookies, error) {
+			return validCookies, nil
+		}
+
+		// Browser extractor should NOT be called
+		extractorCalled := false
+		mockExtractor := &MockBrowserCookieExtractor{
+			ExtractResult: &browser.ExtractResult{
+				Cookies:     &config.Cookies{Secure1PSID: "browser_psid"},
+				BrowserName: "Mock",
+			},
+		}
+		wrappedExtractor := &trackingExtractor{
+			inner:  mockExtractor,
+			called: &extractorCalled,
+		}
+
+		client, err := NewClient(nil,
+			WithCookieLoader(mockLoader),
+			WithBrowserCookieExtractor(wrappedExtractor))
+		if err != nil {
+			t.Fatalf("NewClient() failed: %v", err)
+		}
+
+		// HTTP client returns valid token on first try
+		tokenResponse := `{"SNlM0e":"valid_token"}`
+		mockHttpClient := NewMockHttpClient([]byte(tokenResponse), 200)
+		client.httpClient = mockHttpClient
+		client.autoRefresh = false
+
+		err = client.Init()
+		if err != nil {
+			t.Fatalf("Init() should succeed, got error: %v", err)
+		}
+
+		// Browser extractor should NOT have been called
+		if extractorCalled {
+			t.Error("Browser extractor should NOT be called when token fetch succeeds")
+		}
+
+		// Should use original cookies
+		if client.GetCookies().Secure1PSID != "valid_psid" {
+			t.Errorf("Cookie PSID = %s, want valid_psid", client.GetCookies().Secure1PSID)
+		}
+	})
+}
+
+// trackingExtractor wraps a BrowserCookieExtractor and tracks if it was called
+type trackingExtractor struct {
+	inner  BrowserCookieExtractor
+	called *bool
+}
+
+func (t *trackingExtractor) ExtractGeminiCookies(ctx context.Context, b browser.SupportedBrowser) (*browser.ExtractResult, error) {
+	*t.called = true
+	return t.inner.ExtractGeminiCookies(ctx, b)
+}
+
+// mockResponse represents a single HTTP response for sequential mock
+type mockResponse struct {
+	statusCode int
+	body       []byte
+	err        error
+}
+
+// SequentialMockHttpClient returns different responses for sequential calls
+type SequentialMockHttpClient struct {
+	responses []mockResponse
+	callCount *int
+}
+
+func (m *SequentialMockHttpClient) GetCookies(u *url.URL) []*fhttp.Cookie {
+	return nil
+}
+
+func (m *SequentialMockHttpClient) SetCookies(u *url.URL, cookies []*fhttp.Cookie) {}
+
+func (m *SequentialMockHttpClient) SetCookieJar(jar fhttp.CookieJar) {}
+
+func (m *SequentialMockHttpClient) GetCookieJar() fhttp.CookieJar {
+	return nil
+}
+
+func (m *SequentialMockHttpClient) SetProxy(proxy string) error {
+	return nil
+}
+
+func (m *SequentialMockHttpClient) GetProxy() string {
+	return ""
+}
+
+func (m *SequentialMockHttpClient) SetFollowRedirect(followRedirect bool) {}
+
+func (m *SequentialMockHttpClient) GetFollowRedirect() bool {
+	return true
+}
+
+func (m *SequentialMockHttpClient) CloseIdleConnections() {}
+
+func (m *SequentialMockHttpClient) Get(u string) (*fhttp.Response, error) {
+	return m.doRequest()
+}
+
+func (m *SequentialMockHttpClient) Head(u string) (*fhttp.Response, error) {
+	return m.doRequest()
+}
+
+func (m *SequentialMockHttpClient) Post(u, contentType string, body io.Reader) (*fhttp.Response, error) {
+	return m.doRequest()
+}
+
+func (m *SequentialMockHttpClient) GetBandwidthTracker() bandwidth.BandwidthTracker {
+	return nil
+}
+
+func (m *SequentialMockHttpClient) Do(req *fhttp.Request) (*fhttp.Response, error) {
+	return m.doRequest()
+}
+
+func (m *SequentialMockHttpClient) doRequest() (*fhttp.Response, error) {
+	idx := *m.callCount
+	*m.callCount++
+
+	if idx >= len(m.responses) {
+		// Return last response if we've exhausted the list
+		idx = len(m.responses) - 1
+	}
+
+	resp := m.responses[idx]
+	if resp.err != nil {
+		return nil, resp.err
+	}
+
+	body := NewMockResponseBody(resp.body)
+	return &fhttp.Response{
+		StatusCode: resp.statusCode,
+		Body:       body,
+		Header:     make(fhttp.Header),
+	}, nil
 }
