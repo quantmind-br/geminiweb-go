@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"sync"
@@ -13,6 +14,17 @@ import (
 	"github.com/diogo/geminiweb/internal/config"
 	"github.com/diogo/geminiweb/internal/models"
 )
+
+// MockBrowserCookieExtractor is a mock implementation of BrowserCookieExtractor
+type MockBrowserCookieExtractor struct {
+	ExtractResult *browser.ExtractResult
+	ExtractError  error
+}
+
+// ExtractGeminiCookies implements the BrowserCookieExtractor interface
+func (m *MockBrowserCookieExtractor) ExtractGeminiCookies(ctx context.Context, browser browser.SupportedBrowser) (*browser.ExtractResult, error) {
+	return m.ExtractResult, m.ExtractError
+}
 
 // TestNewClient tests the NewClient function
 func TestNewClient(t *testing.T) {
@@ -78,6 +90,15 @@ func TestNewClient(t *testing.T) {
 		{
 			name:        "cookies with only PSID (no PSIDTS)",
 			cookies:     &config.Cookies{Secure1PSID: "test_psid"},
+			wantErr:     false,
+			wantModel:   models.Model25Flash,
+			autoRefresh: true,
+			interval:    9 * time.Minute,
+		},
+		{
+			name:        "with custom browser cookie extractor",
+			cookies:     validCookies,
+			opts:        []ClientOption{WithBrowserCookieExtractor(&MockBrowserCookieExtractor{})},
 			wantErr:     false,
 			wantModel:   models.Model25Flash,
 			autoRefresh: true,
@@ -918,6 +939,112 @@ func TestGeminiClient_RefreshFromBrowser(t *testing.T) {
 		}
 		if !strings.Contains(err.Error(), "failed to extract cookies") {
 			t.Errorf("Expected error about cookie extraction, got: %v", err)
+		}
+	})
+
+	t.Run("custom_extractor_with_extraction_error", func(t *testing.T) {
+		// Create client with custom extractor that returns an error
+		mockExtractor := &MockBrowserCookieExtractor{
+			ExtractError: errors.New("extraction failed"),
+		}
+		client, err := NewClient(cookies,
+			WithBrowserRefresh(browser.BrowserChrome),
+			WithBrowserCookieExtractor(mockExtractor))
+		if err != nil {
+			t.Fatalf("NewClient() failed: %v", err)
+		}
+
+		// Try to refresh - should fail with custom error
+		success, err := client.RefreshFromBrowser()
+		if success {
+			t.Error("RefreshFromBrowser() should return false when custom extractor fails")
+		}
+		if err == nil {
+			t.Error("RefreshFromBrowser() should return error when custom extractor fails")
+		}
+		if !strings.Contains(err.Error(), "extraction failed") {
+			t.Errorf("Expected custom error message, got: %v", err)
+		}
+	})
+
+	t.Run("custom_extractor_with_token_fetch_error", func(t *testing.T) {
+		// Create client with custom extractor that succeeds but HTTP client fails
+		mockExtractor := &MockBrowserCookieExtractor{
+			ExtractResult: &browser.ExtractResult{
+				Cookies: &config.Cookies{
+					Secure1PSID:   "new_psid",
+					Secure1PSIDTS: "new_psidts",
+				},
+				BrowserName: "Mock Browser",
+			},
+		}
+
+		// Create client with mock HTTP client that returns 401
+		mockHttpClient := NewMockHttpClientWithError(errors.New("unauthorized"))
+		client, err := NewClient(cookies,
+			WithBrowserRefresh(browser.BrowserChrome),
+			WithBrowserCookieExtractor(mockExtractor))
+		if err != nil {
+			t.Fatalf("NewClient() failed: %v", err)
+		}
+
+		// Replace HTTP client with our mock
+		client.httpClient = mockHttpClient
+
+		// Try to refresh - should fail when fetching token
+		success, err := client.RefreshFromBrowser()
+		if success {
+			t.Error("RefreshFromBrowser() should return false when token fetch fails")
+		}
+		if err == nil {
+			t.Error("RefreshFromBrowser() should return error when token fetch fails")
+		}
+		if !strings.Contains(err.Error(), "failed to get access token") {
+			t.Errorf("Expected error about token fetch, got: %v", err)
+		}
+	})
+
+	t.Run("custom_extractor_success", func(t *testing.T) {
+		// Create client with custom extractor that succeeds
+		mockExtractor := &MockBrowserCookieExtractor{
+			ExtractResult: &browser.ExtractResult{
+				Cookies: &config.Cookies{
+					Secure1PSID:   "new_psid",
+					Secure1PSIDTS: "new_psidts",
+				},
+				BrowserName: "Mock Browser",
+			},
+		}
+
+		// Create mock HTTP client that returns a valid token
+		htmlWithToken := []byte(`{"SNlM0e":"new_token_123"}`)
+		mockHttpClient := NewMockHttpClient(htmlWithToken, 200)
+
+		client, err := NewClient(cookies,
+			WithBrowserRefresh(browser.BrowserChrome),
+			WithBrowserCookieExtractor(mockExtractor))
+		if err != nil {
+			t.Fatalf("NewClient() failed: %v", err)
+		}
+
+		// Replace HTTP client with our mock
+		client.httpClient = mockHttpClient
+
+		// Try to refresh - should succeed
+		success, err := client.RefreshFromBrowser()
+		if !success {
+			t.Error("RefreshFromBrowser() should return true when custom extractor succeeds")
+		}
+		if err != nil {
+			t.Errorf("RefreshFromBrowser() should not return error when custom extractor succeeds, got: %v", err)
+		}
+
+		// Verify cookies were updated
+		if client.GetCookies().Secure1PSID != "new_psid" {
+			t.Errorf("Cookie PSID was not updated, got: %s", client.GetCookies().Secure1PSID)
+		}
+		if client.GetAccessToken() != "new_token_123" {
+			t.Errorf("Access token was not updated, got: %s", client.GetAccessToken())
 		}
 	})
 }

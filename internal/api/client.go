@@ -14,6 +14,11 @@ import (
 	"github.com/diogo/geminiweb/internal/models"
 )
 
+// BrowserCookieExtractor is an interface for extracting cookies from browsers
+type BrowserCookieExtractor interface {
+	ExtractGeminiCookies(ctx context.Context, browser browser.SupportedBrowser) (*browser.ExtractResult, error)
+}
+
 // GeminiClient is the main client for interacting with Gemini Web API
 type GeminiClient struct {
 	httpClient      tls_client.HttpClient
@@ -26,6 +31,7 @@ type GeminiClient struct {
 	// Browser-based cookie refresh
 	browserRefresh        bool
 	browserRefreshType    browser.SupportedBrowser
+	browserExtractor      BrowserCookieExtractor
 	lastBrowserRefresh    time.Time
 	browserRefreshMinWait time.Duration
 	mu                    sync.RWMutex
@@ -62,6 +68,13 @@ func WithBrowserRefresh(browserType browser.SupportedBrowser) ClientOption {
 	return func(c *GeminiClient) {
 		c.browserRefresh = true
 		c.browserRefreshType = browserType
+	}
+}
+
+// WithBrowserCookieExtractor sets a custom browser cookie extractor
+func WithBrowserCookieExtractor(extractor BrowserCookieExtractor) ClientOption {
+	return func(c *GeminiClient) {
+		c.browserExtractor = extractor
 	}
 }
 
@@ -220,7 +233,16 @@ func (c *GeminiClient) RefreshFromBrowser() (bool, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	result, err := browser.ExtractGeminiCookies(ctx, c.browserRefreshType)
+	// Use injected extractor if available, otherwise use default implementation
+	var result *browser.ExtractResult
+	var err error
+
+	if c.browserExtractor != nil {
+		result, err = c.browserExtractor.ExtractGeminiCookies(ctx, c.browserRefreshType)
+	} else {
+		result, err = browser.ExtractGeminiCookies(ctx, c.browserRefreshType)
+	}
+
 	if err != nil {
 		c.lastBrowserRefresh = time.Now()
 		return false, fmt.Errorf("failed to extract cookies from browser: %w", err)

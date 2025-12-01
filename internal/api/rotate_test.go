@@ -12,6 +12,63 @@ import (
 	apierrors "github.com/diogo/geminiweb/internal/errors"
 )
 
+// MockHTTPClientForRotator is a mock HTTP client for testing CookieRotator
+type MockHTTPClientForRotator struct {
+	Response *http.Response
+	Err      error
+}
+
+func (m *MockHTTPClientForRotator) Do(req *http.Request) (*http.Response, error) {
+	return m.Response, m.Err
+}
+
+func (m *MockHTTPClientForRotator) Get(url string) (*http.Response, error) {
+	return m.Response, m.Err
+}
+
+func (m *MockHTTPClientForRotator) Head(url string) (*http.Response, error) {
+	return m.Response, m.Err
+}
+
+func (m *MockHTTPClientForRotator) Post(url, contentType string, body interface{}) (*http.Response, error) {
+	return m.Response, m.Err
+}
+
+func (m *MockHTTPClientForRotator) GetCookies(url string) ([]*http.Cookie, error) {
+	return nil, nil
+}
+
+func (m *MockHTTPClientForRotator) SetCookie(cookie *http.Cookie) {}
+
+func (m *MockHTTPClientForRotator) SetCookies(cookies []*http.Cookie) {}
+
+// Required by tls_client.HttpClient interface
+func (m *MockHTTPClientForRotator) GetCookieJar() interface{} {
+	return nil
+}
+
+func (m *MockHTTPClientForRotator) SetCookieJar(jar interface{}) {}
+
+func (m *MockHTTPClientForRotator) SetProxy(proxyUrl string) error {
+	return nil
+}
+
+func (m *MockHTTPClientForRotator) GetProxy() string {
+	return ""
+}
+
+func (m *MockHTTPClientForRotator) SetFollowRedirect(followRedirect bool) {}
+
+func (m *MockHTTPClientForRotator) GetFollowRedirect() bool {
+	return false
+}
+
+func (m *MockHTTPClientForRotator) CloseIdleConnections() {}
+
+func (m *MockHTTPClientForRotator) GetBandwidthTracker() interface{} {
+	return nil
+}
+
 func TestRotateCookies_RateLimit(t *testing.T) {
 	cookies := &config.Cookies{
 		Secure1PSID:   "test-psid",
@@ -51,12 +108,128 @@ func TestCookieRotator_NewCookieRotator(t *testing.T) {
 	_ = cookies
 }
 
-func TestCookieRotator_StartStop(t *testing.T) {
-	t.Skip("Skipping full rotator test - requires real HTTP client and complex setup")
+// TestCookieRotator_StartTwice tests that calling Start twice doesn't create multiple goroutines
+func TestCookieRotator_StartTwice(t *testing.T) {
+	cookies := &config.Cookies{
+		Secure1PSID:   "test-psid",
+		Secure1PSIDTS: "test-token",
+	}
+
+	rotator := NewCookieRotator(nil, cookies, 1*time.Minute)
+
+	// Start the rotator
+	rotator.Start()
+
+	// Give it a moment to start
+	time.Sleep(10 * time.Millisecond)
+
+	// Check that it's marked as running
+	rotator.mu.Lock()
+	isRunning := rotator.running
+	rotator.mu.Unlock()
+
+	if !isRunning {
+		t.Error("Expected rotator to be running after Start()")
+	}
+
+	// Try to start again - should be a no-op
+	rotator.Start()
+
+	// Give it a moment
+	time.Sleep(10 * time.Millisecond)
+
+	// Should still be running (not double-running)
+	rotator.mu.Lock()
+	isStillRunning := rotator.running
+	rotator.mu.Unlock()
+
+	if !isStillRunning {
+		t.Error("Expected rotator to still be running after second Start()")
+	}
+
+	// Clean up
+	rotator.Stop()
+	time.Sleep(10 * time.Millisecond)
 }
 
+// TestCookieRotator_StartAndStop tests basic start/stop functionality
+func TestCookieRotator_StartAndStop(t *testing.T) {
+	cookies := &config.Cookies{
+		Secure1PSID:   "test-psid",
+		Secure1PSIDTS: "test-token",
+	}
+
+	rotator := NewCookieRotator(nil, cookies, 1*time.Minute)
+
+	// Start the rotator
+	rotator.Start()
+
+	// Give it a moment to start
+	time.Sleep(10 * time.Millisecond)
+
+	// Check that it's running
+	rotator.mu.Lock()
+	isRunning := rotator.running
+	rotator.mu.Unlock()
+
+	if !isRunning {
+		t.Error("Expected rotator to be running after Start()")
+	}
+
+	// Stop the rotator
+	rotator.Stop()
+
+	// Give it a moment to stop
+	time.Sleep(10 * time.Millisecond)
+
+	// Check that it's not running anymore
+	rotator.mu.Lock()
+	isNotRunning := !rotator.running
+	rotator.mu.Unlock()
+
+	if !isNotRunning {
+		t.Error("Expected rotator to not be running after Stop()")
+	}
+}
+
+// TestCookieRotator_StartStop tests start/stop functionality (legacy test name)
+func TestCookieRotator_StartStop(t *testing.T) {
+	cookies := &config.Cookies{
+		Secure1PSID:   "test-psid",
+		Secure1PSIDTS: "test-token",
+	}
+
+	rotator := NewCookieRotator(nil, cookies, 1*time.Second)
+
+	// Test that we can start and stop without panicking
+	rotator.Start()
+	time.Sleep(20 * time.Millisecond)
+	rotator.Stop()
+	time.Sleep(20 * time.Millisecond)
+
+	// Test stopping when already stopped (should not panic)
+	rotator.Stop()
+}
+
+// TestCookieRotator_DoubleStart tests calling Start multiple times
 func TestCookieRotator_DoubleStart(t *testing.T) {
-	t.Skip("Skipping full rotator test - requires real HTTP client and complex setup")
+	cookies := &config.Cookies{
+		Secure1PSID:   "test-psid",
+		Secure1PSIDTS: "test-token",
+	}
+
+	rotator := NewCookieRotator(nil, cookies, 1*time.Second)
+
+	// Start multiple times - should not cause issues
+	rotator.Start()
+	time.Sleep(20 * time.Millisecond)
+	rotator.Start() // Should be no-op
+	time.Sleep(20 * time.Millisecond)
+	rotator.Start() // Should be no-op
+	time.Sleep(20 * time.Millisecond)
+
+	// Clean up
+	rotator.Stop()
 }
 
 func TestLastRotateTimeUpdate(t *testing.T) {

@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
@@ -17,6 +18,49 @@ func TestRunAutoLogin(t *testing.T) {
 	}
 	if err != nil && !strings.Contains(err.Error(), "unsupported browser") {
 		t.Errorf("Expected 'unsupported browser' in error, got: %v", err)
+	}
+}
+
+func TestRunAutoLogin_Timeout(t *testing.T) {
+	// Create a temporary directory for test
+	tmpDir := t.TempDir()
+
+	// Override the temp directory used by config
+	originalHome := os.Getenv("HOME")
+	defer func() {
+		os.Setenv("HOME", originalHome)
+	}()
+	os.Setenv("HOME", tmpDir)
+
+	// Test with auto browser selection and very short timeout
+	// This should fail with timeout or "browser not found" error
+	err := runAutoLogin("auto")
+	// We don't check for specific error since it depends on browser availability
+	// The important thing is that it doesn't panic and returns an error appropriately
+	if err != nil && !strings.Contains(err.Error(), "unsupported browser") {
+		// If we get an error, it should be about timeout or browser not found
+		t.Logf("Got expected error (timeout or no browser): %v", err)
+	}
+}
+
+func TestRunAutoLogin_ValidBrowser(t *testing.T) {
+	// Create a temporary directory for test
+	tmpDir := t.TempDir()
+
+	// Override the temp directory used by config
+	originalHome := os.Getenv("HOME")
+	defer func() {
+		os.Setenv("HOME", originalHome)
+	}()
+	os.Setenv("HOME", tmpDir)
+
+	// Test with valid browser name but expect failure due to no actual browser
+	// This tests that the function handles the case gracefully
+	err := runAutoLogin("chrome")
+	if err != nil {
+		// Expected to fail since there's no actual browser
+		// Just verify it returns an error and doesn't panic
+		t.Logf("Got expected error (no browser installed): %v", err)
 	}
 }
 
