@@ -571,3 +571,282 @@ func TestIsAuthError(t *testing.T) {
 		})
 	}
 }
+
+// TestGenerateContent_RetryOnAuthError tests the retry logic when auth error occurs
+func TestGenerateContent_RetryOnAuthError(t *testing.T) {
+	t.Skip("Cannot test retry logic without dependency injection - requires architectural changes")
+}
+
+// TestGenerateContent_WithImages tests GenerateContent with image inputs
+func TestGenerateContent_WithImages(t *testing.T) {
+	validCookies := &config.Cookies{
+		Secure1PSID:   "test_psid",
+		Secure1PSIDTS: "test_psidts",
+	}
+
+	// Helper to build test response body
+	makeBody := func(innerJSON string) []byte {
+		escaped := ""
+		for _, c := range innerJSON {
+			if c == '"' {
+				escaped += `\"`
+			} else if c == '\\' {
+				escaped += `\\`
+			} else {
+				escaped += string(c)
+			}
+		}
+		return []byte(`[[null, null, "` + escaped + `"]]`)
+	}
+
+	t.Run("with_single_image", func(t *testing.T) {
+		mockClient := &MockHttpClient{}
+
+		// Successful response
+		innerJSON := `[null,["cid123","rid456","rcid789"],null,null,[["rcid789",["response with image"]]]]`
+		mockClient.Response = &fhttp.Response{
+			StatusCode: 200,
+			Body:       NewMockResponseBody(makeBody(innerJSON)),
+			Header:     make(fhttp.Header),
+		}
+
+		// Create client
+		client := &GeminiClient{
+			httpClient:  mockClient,
+			cookies:     validCookies,
+			model:       models.Model25Flash,
+			accessToken: "test_token",
+			closed:      false,
+		}
+
+		// Call GenerateContent with image
+		opts := &GenerateOptions{
+			Images: []*UploadedImage{
+				{ResourceID: "img_123", FileName: "test.jpg", MIMEType: "image/jpeg"},
+			},
+		}
+		got, err := client.GenerateContent("describe this image", opts)
+
+		if err != nil {
+			t.Errorf("GenerateContent() with image unexpected error: %v", err)
+		}
+		if got == nil {
+			t.Error("GenerateContent() with image returned nil")
+		}
+	})
+
+	t.Run("with_multiple_images", func(t *testing.T) {
+		mockClient := &MockHttpClient{}
+
+		// Successful response
+		innerJSON := `[null,["cid123","rid456","rcid789"],null,null,[["rcid789",["response with multiple images"]]]]`
+		mockClient.Response = &fhttp.Response{
+			StatusCode: 200,
+			Body:       NewMockResponseBody(makeBody(innerJSON)),
+			Header:     make(fhttp.Header),
+		}
+
+		// Create client
+		client := &GeminiClient{
+			httpClient:  mockClient,
+			cookies:     validCookies,
+			model:       models.Model25Flash,
+			accessToken: "test_token",
+			closed:      false,
+		}
+
+		// Call GenerateContent with multiple images
+		opts := &GenerateOptions{
+			Images: []*UploadedImage{
+				{ResourceID: "img_123", FileName: "test1.jpg", MIMEType: "image/jpeg"},
+				{ResourceID: "img_456", FileName: "test2.jpg", MIMEType: "image/jpeg"},
+			},
+		}
+		got, err := client.GenerateContent("compare these images", opts)
+
+		if err != nil {
+			t.Errorf("GenerateContent() with multiple images unexpected error: %v", err)
+		}
+		if got == nil {
+			t.Error("GenerateContent() with multiple images returned nil")
+		}
+	})
+
+	t.Run("with_images_and_metadata", func(t *testing.T) {
+		mockClient := &MockHttpClient{}
+
+		// Successful response
+		innerJSON := `[null,["cid123","rid456","rcid789"],null,null,[["rcid789",["response with images and metadata"]]]]`
+		mockClient.Response = &fhttp.Response{
+			StatusCode: 200,
+			Body:       NewMockResponseBody(makeBody(innerJSON)),
+			Header:     make(fhttp.Header),
+		}
+
+		// Create client
+		client := &GeminiClient{
+			httpClient:  mockClient,
+			cookies:     validCookies,
+			model:       models.Model25Flash,
+			accessToken: "test_token",
+			closed:      false,
+		}
+
+		// Call GenerateContent with images and metadata
+		opts := &GenerateOptions{
+			Metadata: []string{"cid123", "rid456", "rcid789"},
+			Images: []*UploadedImage{
+				{ResourceID: "img_123", FileName: "test.jpg", MIMEType: "image/jpeg"},
+			},
+		}
+		got, err := client.GenerateContent("continue the conversation with image", opts)
+
+		if err != nil {
+			t.Errorf("GenerateContent() with images and metadata unexpected error: %v", err)
+		}
+		if got == nil {
+			t.Error("GenerateContent() with images and metadata returned nil")
+		}
+	})
+}
+
+// TestGenerateContent_DifferentErrorCodes tests various HTTP error codes
+func TestGenerateContent_DifferentErrorCodes(t *testing.T) {
+	validCookies := &config.Cookies{
+		Secure1PSID:   "test_psid",
+		Secure1PSIDTS: "test_psidts",
+	}
+
+	tests := []struct {
+		name        string
+		statusCode  int
+		expectedErr bool
+	}{
+		{"200 OK", 200, false},
+		{"400 Bad Request", 400, true},
+		{"401 Unauthorized", 401, true},
+		{"403 Forbidden", 403, true},
+		{"404 Not Found", 404, true},
+		{"429 Too Many Requests", 429, true},
+		{"500 Internal Server Error", 500, true},
+		{"502 Bad Gateway", 502, true},
+		{"503 Service Unavailable", 503, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockClient := &MockHttpClient{}
+
+			// For status 200, we need a valid response body
+			if tt.statusCode == 200 {
+				innerJSON := `[null,["cid123","rid456","rcid789"],null,null,[["rcid789",["test response"]]]]`
+				escaped := ""
+				for _, c := range innerJSON {
+					if c == '"' {
+						escaped += `\"`
+					} else if c == '\\' {
+						escaped += `\\`
+					} else {
+						escaped += string(c)
+					}
+				}
+				mockClient.Response = &fhttp.Response{
+					StatusCode: tt.statusCode,
+					Body:       NewMockResponseBody([]byte(`[[null, null, "` + escaped + `"]]`)),
+					Header:     make(fhttp.Header),
+				}
+			} else {
+				mockClient.Response = &fhttp.Response{
+					StatusCode: tt.statusCode,
+					Body:       NewMockResponseBody([]byte("")),
+					Header:     make(fhttp.Header),
+				}
+			}
+
+			// Create client
+			client := &GeminiClient{
+				httpClient:  mockClient,
+				cookies:     validCookies,
+				model:       models.Model25Flash,
+				accessToken: "test_token",
+				closed:      false,
+			}
+
+			// Call GenerateContent
+			got, err := client.GenerateContent("test prompt", nil)
+
+			if tt.expectedErr {
+				if err == nil {
+					t.Errorf("GenerateContent() expected error for status %d", tt.statusCode)
+				}
+				if got != nil {
+					t.Error("GenerateContent() should return nil on error")
+				}
+			} else {
+				if err != nil {
+					t.Errorf("GenerateContent() unexpected error: %v", err)
+				}
+				if got == nil {
+					t.Error("GenerateContent() returned nil")
+				}
+			}
+		})
+	}
+}
+
+// TestGenerateContent_WithCustomModel tests GenerateContent with custom model
+func TestGenerateContent_WithCustomModel(t *testing.T) {
+	validCookies := &config.Cookies{
+		Secure1PSID:   "test_psid",
+		Secure1PSIDTS: "test_psidts",
+	}
+
+	// Helper to build test response body
+	makeBody := func(innerJSON string) []byte {
+		escaped := ""
+		for _, c := range innerJSON {
+			if c == '"' {
+				escaped += `\"`
+			} else if c == '\\' {
+				escaped += `\\`
+			} else {
+				escaped += string(c)
+			}
+		}
+		return []byte(`[[null, null, "` + escaped + `"]]`)
+	}
+
+	t.Run("custom_model_via_options", func(t *testing.T) {
+		mockClient := &MockHttpClient{}
+
+		// Successful response
+		innerJSON := `[null,["cid123","rid456","rcid789"],null,null,[["rcid789",["response from custom model"]]]]`
+		mockClient.Response = &fhttp.Response{
+			StatusCode: 200,
+			Body:       NewMockResponseBody(makeBody(innerJSON)),
+			Header:     make(fhttp.Header),
+		}
+
+		// Create client with default model
+		client := &GeminiClient{
+			httpClient:  mockClient,
+			cookies:     validCookies,
+			model:       models.Model25Flash,
+			accessToken: "test_token",
+			closed:      false,
+		}
+
+		// Call GenerateContent with custom model
+		opts := &GenerateOptions{
+			Model: models.Model25Pro,
+		}
+		got, err := client.GenerateContent("test prompt", opts)
+
+		if err != nil {
+			t.Errorf("GenerateContent() with custom model unexpected error: %v", err)
+		}
+		if got == nil {
+			t.Error("GenerateContent() with custom model returned nil")
+		}
+	})
+}

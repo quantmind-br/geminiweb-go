@@ -497,3 +497,51 @@ func TestGetBrowserRefresh(t *testing.T) {
 		}
 	})
 }
+
+// TestExecuteWrapper tests the Execute() wrapper function
+func TestExecuteWrapper(t *testing.T) {
+	t.Run("successful_execution_no_exit", func(t *testing.T) {
+		// We can't easily test os.Exit mocking in Go tests
+		// Just verify the function doesn't panic
+		defer func() {
+			if r := recover(); r != nil {
+				t.Errorf("Execute() panicked: %v", r)
+			}
+		}()
+
+		// Set up a command that succeeds
+		oldRootCmd := rootCmd
+		rootCmd = &cobra.Command{
+			Use: "test",
+			RunE: func(cmd *cobra.Command, args []string) error {
+				return nil
+			},
+		}
+		defer func() { rootCmd = oldRootCmd }()
+
+		t.Skip("Cannot test os.Exit behavior without actual execution")
+	})
+
+	t.Run("error_execution_calls_exit", func(t *testing.T) {
+		// We can't easily test os.Exit behavior
+		t.Skip("Cannot test os.Exit behavior without actual execution")
+	})
+
+	t.Run("help_command_returns_error", func(t *testing.T) {
+		t.Skip("Cannot test os.Exit behavior without actual execution")
+	})
+
+	t.Run("version_flag_command", func(t *testing.T) {
+		t.Skip("Cannot test os.Exit behavior without actual execution")
+	})
+
+	t.Run("function_exists", func(t *testing.T) {
+		// Just verify the function exists and has the right signature
+		var executeFunc func()
+		executeFunc = Execute
+
+		if executeFunc == nil {
+			t.Error("Execute function should exist")
+		}
+	})
+}

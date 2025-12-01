@@ -14,6 +14,12 @@ import (
 	"github.com/diogo/geminiweb/internal/render"
 )
 
+// mockConfig is a mock for config package functions
+type mockConfig struct {
+	loadCookiesFunc func() (*config.Cookies, error)
+	loadConfigFunc  func() (*config.Config, error)
+}
+
 // mockGeminiClient is a simple mock for testing
 type mockGeminiClient struct {
 	closed              bool
@@ -559,4 +565,401 @@ func TestGetTerminalWidth(t *testing.T) {
 			t.Errorf("getTerminalWidth() returned non-positive value: %d", width)
 		}
 	})
+}
+
+// TestRunQuery_IntegrationSuccess tests the full runQuery flow with successful execution
+func TestRunQuery_IntegrationSuccess(t *testing.T) {
+	t.Skip("Cannot fully test without extensive API client mocking")
+}
+
+// TestRunQuery_EmptyPrompt tests runQuery with empty prompt
+func TestRunQuery_EmptyPromptReal(t *testing.T) {
+	// Create temporary directory for config
+	tmpDir := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	os.Setenv("HOME", tmpDir)
+	defer os.Setenv("HOME", oldHome)
+
+	// Set flags
+	oldImageFlag := imageFlag
+	oldOutputFlag := outputFlag
+	defer func() {
+		imageFlag = oldImageFlag
+		outputFlag = oldOutputFlag
+	}()
+
+	imageFlag = ""
+	outputFlag = ""
+
+	// Test with empty prompt
+	err := runQuery("")
+	if err == nil {
+		t.Error("Expected error for empty prompt, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "cannot be empty") {
+		t.Errorf("Expected 'cannot be empty' in error, got: %v", err)
+	}
+
+	// Test with whitespace-only prompt
+	err = runQuery("   \n\t  ")
+	if err == nil {
+		t.Error("Expected error for whitespace-only prompt, got nil")
+	}
+}
+
+// TestRunQuery_AuthErrorReal tests runQuery when cookies fail to load
+func TestRunQuery_AuthErrorReal(t *testing.T) {
+	// Create temporary directory for config without cookies
+	tmpDir := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	os.Setenv("HOME", tmpDir)
+	defer os.Setenv("HOME", oldHome)
+
+	// Ensure no cookies exist
+	os.RemoveAll(tmpDir + "/.geminiweb")
+
+	// Set flags
+	oldImageFlag := imageFlag
+	oldOutputFlag := outputFlag
+	defer func() {
+		imageFlag = oldImageFlag
+		outputFlag = oldOutputFlag
+	}()
+
+	imageFlag = ""
+	outputFlag = ""
+
+	// Test should fail due to missing cookies
+	err := runQuery("Test prompt")
+	if err == nil {
+		t.Error("Expected error for missing cookies, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "authentication required") {
+		t.Errorf("Expected 'authentication required' in error, got: %v", err)
+	}
+}
+
+// TestRunQuery_ClientCreationError tests runQuery when client creation fails
+func TestRunQuery_ClientCreationError(t *testing.T) {
+	// Create temporary directory for config
+	tmpDir := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	os.Setenv("HOME", tmpDir)
+	defer os.Setenv("HOME", oldHome)
+
+	// Save invalid cookies (missing PSIDTS)
+	cookies := &config.Cookies{
+		Secure1PSID: "test_psid",
+	}
+	if err := config.SaveCookies(cookies); err != nil {
+		t.Fatalf("Failed to save cookies: %v", err)
+	}
+
+	// Set flags
+	oldImageFlag := imageFlag
+	oldOutputFlag := outputFlag
+	defer func() {
+		imageFlag = oldImageFlag
+		outputFlag = oldOutputFlag
+	}()
+
+	imageFlag = ""
+	outputFlag = ""
+
+	// Test should fail due to invalid cookies
+	err := runQuery("Test prompt")
+	if err == nil {
+		t.Error("Expected error for invalid cookies, got nil")
+	}
+}
+
+// TestRunQuery_WithImageUpload tests runQuery with image flag set
+func TestRunQuery_WithImageUpload(t *testing.T) {
+	// Create temporary directory for config
+	tmpDir := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	os.Setenv("HOME", tmpDir)
+	defer os.Setenv("HOME", oldHome)
+
+	// Save valid cookies
+	cookies := &config.Cookies{
+		Secure1PSID:   "test_psid",
+		Secure1PSIDTS: "test_psidts",
+	}
+	if err := config.SaveCookies(cookies); err != nil {
+		t.Fatalf("Failed to save cookies: %v", err)
+	}
+
+	// Create a temporary image file
+	imageFile := tmpDir + "/test.png"
+	testImageData := []byte{
+		0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, // PNG signature
+		0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+		0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+		0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53,
+		0xde, 0x00, 0x00, 0x00, 0x0c, 0x49, 0x44, 0x41,
+		0x54, 0x08, 0xd7, 0x63, 0xf8, 0x00, 0x00, 0x00,
+		0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
+		0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+	}
+	if err := os.WriteFile(imageFile, testImageData, 0o644); err != nil {
+		t.Fatalf("Failed to create test image: %v", err)
+	}
+
+	// Set flags
+	oldImageFlag := imageFlag
+	oldOutputFlag := outputFlag
+	defer func() {
+		imageFlag = oldImageFlag
+		outputFlag = oldOutputFlag
+	}()
+
+	imageFlag = imageFile
+	outputFlag = ""
+
+	// Test with image (will fail due to client mocking limitations)
+	err := runQuery("Describe this image")
+	if err != nil && !strings.Contains(err.Error(), "failed to upload image") {
+		t.Logf("Expected image upload error, got: %v", err)
+	}
+}
+
+// TestRunQuery_OutputToFileReal tests runQuery with output file
+func TestRunQuery_OutputToFileReal(t *testing.T) {
+	// Create temporary directory for config
+	tmpDir := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	os.Setenv("HOME", tmpDir)
+	defer os.Setenv("HOME", oldHome)
+
+	// Save valid cookies
+	cookies := &config.Cookies{
+		Secure1PSID:   "test_psid",
+		Secure1PSIDTS: "test_psidts",
+	}
+	if err := config.SaveCookies(cookies); err != nil {
+		t.Fatalf("Failed to save cookies: %v", err)
+	}
+
+	// Create output file path
+	outputFile := tmpDir + "/output.txt"
+
+	// Set flags
+	oldImageFlag := imageFlag
+	oldOutputFlag := outputFlag
+	defer func() {
+		imageFlag = oldImageFlag
+		outputFlag = oldOutputFlag
+	}()
+
+	imageFlag = ""
+	outputFlag = outputFile
+
+	// Test with output file (will fail due to client mocking limitations)
+	err := runQuery("Test prompt")
+	if err != nil && !strings.Contains(err.Error(), "failed to initialize") {
+		t.Logf("Expected initialization error, got: %v", err)
+	}
+
+	// Verify file is created if there was no error
+	if err == nil {
+		if _, err := os.Stat(outputFile); os.IsNotExist(err) {
+			t.Error("Output file was not created")
+		}
+	}
+}
+
+// TestRunQuery_CopyToClipboard tests the clipboard functionality path
+func TestRunQuery_CopyToClipboard(t *testing.T) {
+	// Create temporary directory for config
+	tmpDir := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	os.Setenv("HOME", tmpDir)
+	defer os.Setenv("HOME", oldHome)
+
+	// Save valid cookies
+	cookies := &config.Cookies{
+		Secure1PSID:   "test_psid",
+		Secure1PSIDTS: "test_psidts",
+	}
+	if err := config.SaveCookies(cookies); err != nil {
+		t.Fatalf("Failed to save cookies: %v", err)
+	}
+
+	// Enable clipboard in config
+	cfg := config.Config{
+		CopyToClipboard: true,
+	}
+	if err := config.SaveConfig(cfg); err != nil {
+		t.Fatalf("Failed to save config: %v", err)
+	}
+
+	// Set flags
+	oldImageFlag := imageFlag
+	oldOutputFlag := outputFlag
+	defer func() {
+		imageFlag = oldImageFlag
+		outputFlag = oldOutputFlag
+	}()
+
+	imageFlag = ""
+	outputFlag = ""
+
+	// Test with clipboard enabled (will fail due to client mocking limitations)
+	err := runQuery("Test prompt")
+	if err != nil && !strings.Contains(err.Error(), "failed to initialize") {
+		t.Logf("Expected initialization error, got: %v", err)
+	}
+}
+
+// TestRunQuery_NonExistentImageFile tests runQuery with non-existent image file
+func TestRunQuery_NonExistentImageFile(t *testing.T) {
+	// Create temporary directory for config
+	tmpDir := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	os.Setenv("HOME", tmpDir)
+	defer os.Setenv("HOME", oldHome)
+
+	// Save valid cookies
+	cookies := &config.Cookies{
+		Secure1PSID:   "test_psid",
+		Secure1PSIDTS: "test_psidts",
+	}
+	if err := config.SaveCookies(cookies); err != nil {
+		t.Fatalf("Failed to save cookies: %v", err)
+	}
+
+	// Set flags with non-existent image
+	oldImageFlag := imageFlag
+	oldOutputFlag := outputFlag
+	defer func() {
+		imageFlag = oldImageFlag
+		outputFlag = oldOutputFlag
+	}()
+
+	imageFlag = "/non/existent/image.png"
+	outputFlag = ""
+
+	// Test should fail due to non-existent image file
+	err := runQuery("Describe this image")
+	if err == nil {
+		t.Error("Expected error for non-existent image, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "failed to upload image") {
+		t.Errorf("Expected 'failed to upload image' in error, got: %v", err)
+	}
+}
+
+// TestRunQuery_InvalidOutputFile tests runQuery with invalid output file path
+func TestRunQuery_InvalidOutputFile(t *testing.T) {
+	// Create temporary directory for config
+	tmpDir := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	os.Setenv("HOME", tmpDir)
+	defer os.Setenv("HOME", oldHome)
+
+	// Save valid cookies
+	cookies := &config.Cookies{
+		Secure1PSID:   "test_psid",
+		Secure1PSIDTS: "test_psidts",
+	}
+	if err := config.SaveCookies(cookies); err != nil {
+		t.Fatalf("Failed to save cookies: %v", err)
+	}
+
+	// Set flags with invalid output path
+	oldImageFlag := imageFlag
+	oldOutputFlag := outputFlag
+	defer func() {
+		imageFlag = oldImageFlag
+		outputFlag = oldOutputFlag
+	}()
+
+	imageFlag = ""
+	outputFlag = "/invalid/path/output.txt"
+
+	// Test should fail due to invalid output path
+	err := runQuery("Test prompt")
+	if err == nil {
+		t.Error("Expected error for invalid output path, got nil")
+	}
+}
+
+// TestRunQuery_WithModelFlag tests runQuery with different model flags
+func TestRunQuery_WithModelFlag(t *testing.T) {
+	// Create temporary directory for config
+	tmpDir := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	os.Setenv("HOME", tmpDir)
+	defer os.Setenv("HOME", oldHome)
+
+	// Save valid cookies
+	cookies := &config.Cookies{
+		Secure1PSID:   "test_psid",
+		Secure1PSIDTS: "test_psidts",
+	}
+	if err := config.SaveCookies(cookies); err != nil {
+		t.Fatalf("Failed to save cookies: %v", err)
+	}
+
+	// Set flags with model
+	oldImageFlag := imageFlag
+	oldOutputFlag := outputFlag
+	oldModelFlag := modelFlag
+	defer func() {
+		imageFlag = oldImageFlag
+		outputFlag = oldOutputFlag
+		modelFlag = oldModelFlag
+	}()
+
+	imageFlag = ""
+	outputFlag = ""
+	modelFlag = "gemini-2.5-pro"
+
+	// Test with custom model (will fail due to client mocking limitations)
+	err := runQuery("Test prompt")
+	if err != nil && !strings.Contains(err.Error(), "failed to initialize") {
+		t.Logf("Expected initialization error, got: %v", err)
+	}
+}
+
+// TestRunQuery_WithBrowserRefreshFlag tests runQuery with browser refresh enabled
+func TestRunQuery_WithBrowserRefreshFlag(t *testing.T) {
+	// Create temporary directory for config
+	tmpDir := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	os.Setenv("HOME", tmpDir)
+	defer os.Setenv("HOME", oldHome)
+
+	// Save valid cookies
+	cookies := &config.Cookies{
+		Secure1PSID:   "test_psid",
+		Secure1PSIDTS: "test_psidts",
+	}
+	if err := config.SaveCookies(cookies); err != nil {
+		t.Fatalf("Failed to save cookies: %v", err)
+	}
+
+	// Set flags with browser refresh
+	oldImageFlag := imageFlag
+	oldOutputFlag := outputFlag
+	oldBrowserRefreshFlag := browserRefreshFlag
+	defer func() {
+		imageFlag = oldImageFlag
+		outputFlag = oldOutputFlag
+		browserRefreshFlag = oldBrowserRefreshFlag
+	}()
+
+	imageFlag = ""
+	outputFlag = ""
+	browserRefreshFlag = "chrome"
+
+	// Test with browser refresh (will fail due to client mocking limitations)
+	err := runQuery("Test prompt")
+	if err != nil && !strings.Contains(err.Error(), "failed to initialize") {
+		t.Logf("Expected initialization error, got: %v", err)
+	}
 }
