@@ -78,9 +78,12 @@ func TestNewClient(t *testing.T) {
 			interval:    5 * time.Minute,
 		},
 		{
-			name:    "nil cookies",
-			cookies: nil,
-			wantErr: true,
+			name:        "nil cookies (now allowed for silent auth)",
+			cookies:     nil,
+			wantErr:     false,
+			wantModel:   models.Model25Flash,
+			autoRefresh: true,
+			interval:    9 * time.Minute,
 		},
 		{
 			name:    "empty PSID",
@@ -677,9 +680,9 @@ func TestGeminiClient_CookieValidation(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name:    "nil cookies",
+			name:    "nil cookies (now allowed for silent auth)",
 			cookies: nil,
-			wantErr: true,
+			wantErr: false,
 		},
 		{
 			name:    "empty PSID",
@@ -1047,4 +1050,287 @@ func TestGeminiClient_RefreshFromBrowser(t *testing.T) {
 			t.Errorf("Access token was not updated, got: %s", client.GetAccessToken())
 		}
 	})
+}
+
+// TestNewClient_NilCookies tests that NewClient accepts nil cookies
+func TestNewClient_NilCookies(t *testing.T) {
+	client, err := NewClient(nil)
+	if err != nil {
+		t.Errorf("NewClient(nil) should not return error, got: %v", err)
+	}
+	if client == nil {
+		t.Error("NewClient(nil) should return a valid client")
+	}
+}
+
+// TestGeminiClient_InitWithCookieLoader tests Init with a custom cookie loader
+func TestGeminiClient_InitWithCookieLoader(t *testing.T) {
+	t.Run("loads_cookies_from_loader_when_nil", func(t *testing.T) {
+		// Create a mock cookie loader
+		mockCookies := &config.Cookies{
+			Secure1PSID:   "loaded_psid",
+			Secure1PSIDTS: "loaded_psidts",
+		}
+		mockLoader := func() (*config.Cookies, error) {
+			return mockCookies, nil
+		}
+
+		// Create client with nil cookies and custom loader
+		client, err := NewClient(nil, WithCookieLoader(mockLoader))
+		if err != nil {
+			t.Fatalf("NewClient() failed: %v", err)
+		}
+
+		// Setup mock HTTP client for token fetch
+		tokenResponse := `<html><script>window.data = {"SNlM0e":"loaded_token"};</script></html>`
+		mockHttpClient := NewMockHttpClient([]byte(tokenResponse), 200)
+		client.httpClient = mockHttpClient
+		client.autoRefresh = false
+
+		// Init should load cookies from loader
+		err = client.Init()
+		if err != nil {
+			t.Fatalf("Init() failed: %v", err)
+		}
+
+		// Verify cookies were loaded
+		if client.GetCookies().Secure1PSID != "loaded_psid" {
+			t.Errorf("Cookie PSID = %s, want loaded_psid", client.GetCookies().Secure1PSID)
+		}
+		if client.GetAccessToken() != "loaded_token" {
+			t.Errorf("Access token = %s, want loaded_token", client.GetAccessToken())
+		}
+	})
+
+	t.Run("skips_loader_when_cookies_provided", func(t *testing.T) {
+		providedCookies := &config.Cookies{
+			Secure1PSID:   "provided_psid",
+			Secure1PSIDTS: "provided_psidts",
+		}
+
+		// Create a mock cookie loader that should NOT be called
+		loaderCalled := false
+		mockLoader := func() (*config.Cookies, error) {
+			loaderCalled = true
+			return &config.Cookies{Secure1PSID: "loader_psid"}, nil
+		}
+
+		client, err := NewClient(providedCookies, WithCookieLoader(mockLoader))
+		if err != nil {
+			t.Fatalf("NewClient() failed: %v", err)
+		}
+
+		// Setup mock HTTP client
+		tokenResponse := `<html><script>window.data = {"SNlM0e":"token"};</script></html>`
+		mockHttpClient := NewMockHttpClient([]byte(tokenResponse), 200)
+		client.httpClient = mockHttpClient
+		client.autoRefresh = false
+
+		err = client.Init()
+		if err != nil {
+			t.Fatalf("Init() failed: %v", err)
+		}
+
+		// Loader should not have been called
+		if loaderCalled {
+			t.Error("Cookie loader should not be called when cookies are provided")
+		}
+
+		// Should use provided cookies
+		if client.GetCookies().Secure1PSID != "provided_psid" {
+			t.Errorf("Cookie PSID = %s, want provided_psid", client.GetCookies().Secure1PSID)
+		}
+	})
+
+	t.Run("falls_back_to_browser_when_loader_fails", func(t *testing.T) {
+		// Create a mock cookie loader that fails
+		mockLoader := func() (*config.Cookies, error) {
+			return nil, errors.New("no cookies file")
+		}
+
+		// Create a mock browser extractor that succeeds
+		mockExtractor := &MockBrowserCookieExtractor{
+			ExtractResult: &browser.ExtractResult{
+				Cookies: &config.Cookies{
+					Secure1PSID:   "browser_psid",
+					Secure1PSIDTS: "browser_psidts",
+				},
+				BrowserName: "Mock Browser",
+			},
+		}
+
+		client, err := NewClient(nil,
+			WithCookieLoader(mockLoader),
+			WithBrowserRefresh(browser.BrowserChrome),
+			WithBrowserCookieExtractor(mockExtractor))
+		if err != nil {
+			t.Fatalf("NewClient() failed: %v", err)
+		}
+
+		// Setup mock HTTP client
+		tokenResponse := `<html><script>window.data = {"SNlM0e":"browser_token"};</script></html>`
+		mockHttpClient := NewMockHttpClient([]byte(tokenResponse), 200)
+		client.httpClient = mockHttpClient
+		client.autoRefresh = false
+
+		err = client.Init()
+		if err != nil {
+			t.Fatalf("Init() failed: %v", err)
+		}
+
+		// Should use browser cookies
+		if client.GetCookies().Secure1PSID != "browser_psid" {
+			t.Errorf("Cookie PSID = %s, want browser_psid", client.GetCookies().Secure1PSID)
+		}
+		if client.GetAccessToken() != "browser_token" {
+			t.Errorf("Access token = %s, want browser_token", client.GetAccessToken())
+		}
+	})
+
+	t.Run("fails_when_loader_and_browser_both_fail", func(t *testing.T) {
+		// Create a mock cookie loader that fails
+		mockLoader := func() (*config.Cookies, error) {
+			return nil, errors.New("no cookies file")
+		}
+
+		// Create a mock browser extractor that fails
+		mockExtractor := &MockBrowserCookieExtractor{
+			ExtractError: errors.New("browser extraction failed"),
+		}
+
+		client, err := NewClient(nil,
+			WithCookieLoader(mockLoader),
+			WithBrowserCookieExtractor(mockExtractor))
+		if err != nil {
+			t.Fatalf("NewClient() failed: %v", err)
+		}
+
+		client.autoRefresh = false
+
+		err = client.Init()
+		if err == nil {
+			t.Error("Init() should fail when both loader and browser extraction fail")
+		}
+		if !strings.Contains(err.Error(), "authentication failed") {
+			t.Errorf("Error should mention authentication failure, got: %v", err)
+		}
+	})
+}
+
+// TestGeminiClient_InitialBrowserRefresh tests the initialBrowserRefresh method
+func TestGeminiClient_InitialBrowserRefresh(t *testing.T) {
+	t.Run("does_not_enforce_rate_limiting", func(t *testing.T) {
+		cookies := &config.Cookies{Secure1PSID: "test"}
+
+		// Create a mock browser extractor
+		callCount := 0
+		mockExtractor := &MockBrowserCookieExtractor{
+			ExtractResult: &browser.ExtractResult{
+				Cookies: &config.Cookies{
+					Secure1PSID:   "browser_psid",
+					Secure1PSIDTS: "browser_psidts",
+				},
+				BrowserName: "Mock Browser",
+			},
+		}
+
+		// Wrap the extractor to count calls
+		wrappedExtractor := &countingExtractor{
+			inner:     mockExtractor,
+			callCount: &callCount,
+		}
+
+		client, err := NewClient(cookies,
+			WithBrowserRefresh(browser.BrowserChrome),
+			WithBrowserCookieExtractor(wrappedExtractor))
+		if err != nil {
+			t.Fatalf("NewClient() failed: %v", err)
+		}
+
+		// Call initialBrowserRefresh multiple times in quick succession
+		// Unlike RefreshFromBrowser, it should NOT be rate limited
+		client.mu.Lock()
+		err = client.initialBrowserRefresh(browser.BrowserChrome)
+		client.mu.Unlock()
+		if err != nil {
+			t.Fatalf("First initialBrowserRefresh() failed: %v", err)
+		}
+
+		client.mu.Lock()
+		err = client.initialBrowserRefresh(browser.BrowserChrome)
+		client.mu.Unlock()
+		if err != nil {
+			t.Fatalf("Second initialBrowserRefresh() failed: %v", err)
+		}
+
+		// Both calls should have succeeded (no rate limiting)
+		if callCount != 2 {
+			t.Errorf("Expected 2 calls to browser extractor, got %d", callCount)
+		}
+	})
+
+	t.Run("uses_auto_browser_when_type_not_set", func(t *testing.T) {
+		// Create client without setting browserRefreshType
+		client, err := NewClient(nil)
+		if err != nil {
+			t.Fatalf("NewClient() failed: %v", err)
+		}
+
+		// Verify browserRefreshType is empty
+		if client.browserRefreshType != "" {
+			t.Errorf("browserRefreshType should be empty, got: %s", client.browserRefreshType)
+		}
+
+		// Create mock loader that fails to trigger browser refresh
+		client.cookieLoader = func() (*config.Cookies, error) {
+			return nil, errors.New("no cookies")
+		}
+
+		// Create mock extractor that captures the browser type
+		var capturedBrowserType browser.SupportedBrowser
+		mockExtractor := &capturingExtractor{
+			result: &browser.ExtractResult{
+				Cookies:     &config.Cookies{Secure1PSID: "psid"},
+				BrowserName: "Mock",
+			},
+			capturedType: &capturedBrowserType,
+		}
+		client.browserExtractor = mockExtractor
+
+		// Setup mock HTTP client
+		tokenResponse := `<html><script>window.data = {"SNlM0e":"token"};</script></html>`
+		mockHttpClient := NewMockHttpClient([]byte(tokenResponse), 200)
+		client.httpClient = mockHttpClient
+		client.autoRefresh = false
+
+		_ = client.Init()
+
+		// Should have used "auto" as the browser type
+		if capturedBrowserType != browser.BrowserAuto {
+			t.Errorf("Expected browser type 'auto', got: %s", capturedBrowserType)
+		}
+	})
+}
+
+// countingExtractor wraps a BrowserCookieExtractor and counts calls
+type countingExtractor struct {
+	inner     BrowserCookieExtractor
+	callCount *int
+}
+
+func (c *countingExtractor) ExtractGeminiCookies(ctx context.Context, b browser.SupportedBrowser) (*browser.ExtractResult, error) {
+	*c.callCount++
+	return c.inner.ExtractGeminiCookies(ctx, b)
+}
+
+// capturingExtractor captures the browser type passed to ExtractGeminiCookies
+type capturingExtractor struct {
+	result       *browser.ExtractResult
+	err          error
+	capturedType *browser.SupportedBrowser
+}
+
+func (c *capturingExtractor) ExtractGeminiCookies(ctx context.Context, b browser.SupportedBrowser) (*browser.ExtractResult, error) {
+	*c.capturedType = b
+	return c.result, c.err
 }

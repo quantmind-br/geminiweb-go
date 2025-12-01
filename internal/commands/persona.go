@@ -3,6 +3,7 @@ package commands
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"text/tabwriter"
@@ -11,6 +12,28 @@ import (
 
 	"github.com/diogo/geminiweb/internal/config"
 )
+
+// PersonaReaderInterface defines the interface for reading persona input
+type PersonaReaderInterface interface {
+	ReadString(delim byte) (string, error)
+}
+
+// StdInReader is the default implementation of PersonaReaderInterface
+type StdInReader struct {
+	reader *bufio.Reader
+}
+
+// NewStdInReader creates a new StdInReader
+func NewStdInReader(reader io.Reader) PersonaReaderInterface {
+	return &StdInReader{
+		reader: bufio.NewReader(reader),
+	}
+}
+
+// ReadString implements PersonaReaderInterface
+func (r *StdInReader) ReadString(delim byte) (string, error) {
+	return r.reader.ReadString(delim)
+}
 
 var personaCmd = &cobra.Command{
 	Use:   "persona",
@@ -98,6 +121,11 @@ func runPersonaShow(cmd *cobra.Command, args []string) error {
 }
 
 func runPersonaAdd(cmd *cobra.Command, args []string) error {
+	return runPersonaAddWithReader(os.Stdin, args)
+}
+
+// runPersonaAddWithReader is the internal implementation that accepts a reader for testing
+func runPersonaAddWithReader(reader io.Reader, args []string) error {
 	name := args[0]
 
 	// Check if already exists
@@ -105,10 +133,10 @@ func runPersonaAdd(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("persona '%s' already exists", name)
 	}
 
-	reader := bufio.NewReader(os.Stdin)
+	personaReader := NewStdInReader(reader)
 
 	fmt.Print("Enter description: ")
-	desc, err := reader.ReadString('\n')
+	desc, err := personaReader.ReadString('\n')
 	if err != nil {
 		return err
 	}
@@ -117,7 +145,7 @@ func runPersonaAdd(cmd *cobra.Command, args []string) error {
 	fmt.Println("Enter system prompt (end with an empty line):")
 	var promptLines []string
 	for {
-		line, err := reader.ReadString('\n')
+		line, err := personaReader.ReadString('\n')
 		if err != nil {
 			break
 		}

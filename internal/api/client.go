@@ -19,6 +19,25 @@ type BrowserCookieExtractor interface {
 	ExtractGeminiCookies(ctx context.Context, browser browser.SupportedBrowser) (*browser.ExtractResult, error)
 }
 
+// GeminiClientInterface defines the interface for GeminiClient to enable dependency injection and mocking
+type GeminiClientInterface interface {
+	Init() error
+	Close()
+	GetAccessToken() string
+	GetCookies() *config.Cookies
+	GetModel() models.Model
+	SetModel(model models.Model)
+	IsClosed() bool
+	StartChat(model ...models.Model) *ChatSession
+	GenerateContent(prompt string, opts *GenerateOptions) (*models.ModelOutput, error)
+	UploadImage(filePath string) (*UploadedImage, error)
+	RefreshFromBrowser() (bool, error)
+	IsBrowserRefreshEnabled() bool
+}
+
+// RefreshFunc is a function type for dependency injection of refresh behavior
+type RefreshFunc func() (bool, error)
+
 // GeminiClient is the main client for interacting with Gemini Web API
 type GeminiClient struct {
 	httpClient      tls_client.HttpClient
@@ -34,8 +53,11 @@ type GeminiClient struct {
 	browserExtractor      BrowserCookieExtractor
 	lastBrowserRefresh    time.Time
 	browserRefreshMinWait time.Duration
-	mu                    sync.RWMutex
-	closed                bool
+	// Injected dependencies for testing
+	refreshFunc  RefreshFunc
+	cookieLoader CookieLoader
+	mu           sync.RWMutex
+	closed       bool
 }
 
 // ClientOption is a function that configures the client
@@ -78,11 +100,34 @@ func WithBrowserCookieExtractor(extractor BrowserCookieExtractor) ClientOption {
 	}
 }
 
+// WithRefreshFunc sets a custom refresh function (for testing)
+// This allows injecting a mock refresh function to test retry logic
+func WithRefreshFunc(fn RefreshFunc) ClientOption {
+	return func(c *GeminiClient) {
+		c.refreshFunc = fn
+	}
+}
+
+// WithCookieLoader sets a custom cookie loader function (for testing)
+// This allows injecting a mock cookie loader for testing the initial auth flow
+func WithCookieLoader(fn CookieLoader) ClientOption {
+	return func(c *GeminiClient) {
+		c.cookieLoader = fn
+	}
+}
+
+// CookieLoader is a function type for loading cookies (for dependency injection)
+type CookieLoader func() (*config.Cookies, error)
+
 // NewClient creates a new GeminiClient
+// cookies can be nil - in this case, Init() will attempt to load cookies from disk
+// or extract them from the browser if browserRefresh is enabled
 func NewClient(cookies *config.Cookies, opts ...ClientOption) (*GeminiClient, error) {
-	// Validate cookies
-	if err := config.ValidateCookies(cookies); err != nil {
-		return nil, err
+	// Validate cookies only if provided (non-nil)
+	if cookies != nil {
+		if err := config.ValidateCookies(cookies); err != nil {
+			return nil, err
+		}
 	}
 
 	// Create TLS client with Chrome profile for browser emulation
@@ -104,6 +149,7 @@ func NewClient(cookies *config.Cookies, opts ...ClientOption) (*GeminiClient, er
 		autoRefresh:           true,
 		refreshInterval:       9 * time.Minute,  // Default: 9 minutes
 		browserRefreshMinWait: 30 * time.Second, // Minimum wait between browser refreshes
+		cookieLoader:          config.LoadCookies,
 	}
 
 	// Apply options
@@ -114,7 +160,10 @@ func NewClient(cookies *config.Cookies, opts ...ClientOption) (*GeminiClient, er
 	return client, nil
 }
 
-// Init initializes the client by fetching the access token
+// Init initializes the client by:
+// 1. Attempting to authenticate (load cookies from disk or browser)
+// 2. Fetching the access token
+// 3. Starting cookie rotation if enabled
 func (c *GeminiClient) Init() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -123,14 +172,19 @@ func (c *GeminiClient) Init() error {
 		return fmt.Errorf("client is closed")
 	}
 
-	// Get access token
+	// Step 1: Ensure we have valid cookies (from constructor, disk, or browser)
+	if err := c.attemptInitialAuth(); err != nil {
+		return err
+	}
+
+	// Step 2: Get access token
 	token, err := GetAccessToken(c.httpClient, c.cookies)
 	if err != nil {
 		return err
 	}
 	c.accessToken = token
 
-	// Start cookie rotation if enabled
+	// Step 3: Start cookie rotation if enabled
 	if c.autoRefresh {
 		c.rotator = NewCookieRotator(c.httpClient, c.cookies, c.refreshInterval)
 		c.rotator.Start()
@@ -213,6 +267,76 @@ func (c *GeminiClient) IsBrowserRefreshEnabled() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.browserRefresh
+}
+
+// attemptInitialAuth tries to authenticate the client by:
+// 1. First, trying to load cookies from disk (if cookies are nil)
+// 2. If that fails or cookies are invalid, trying browser extraction (if enabled)
+// This method does NOT use rate-limiting for browser refresh as it's part of initialization
+// The caller must hold c.mu.Lock()
+func (c *GeminiClient) attemptInitialAuth() error {
+	// If cookies are already provided and valid, just return
+	if c.cookies != nil && c.cookies.Secure1PSID != "" {
+		return nil
+	}
+
+	// Step 1: Try to load cookies from disk
+	if c.cookieLoader != nil {
+		cookies, err := c.cookieLoader()
+		if err == nil && cookies != nil && cookies.Secure1PSID != "" {
+			c.cookies = cookies
+			return nil
+		}
+		// LoadCookies failed, continue to browser refresh
+	}
+
+	// Step 2: Try browser extraction (without rate limiting - it's initialization)
+	// Use browserRefreshType if set, otherwise use "auto"
+	browserType := c.browserRefreshType
+	if browserType == "" {
+		browserType = browser.BrowserAuto
+	}
+
+	err := c.initialBrowserRefresh(browserType)
+	if err != nil {
+		return fmt.Errorf("authentication failed: cookies not found and browser extraction failed: %w", err)
+	}
+
+	return nil
+}
+
+// initialBrowserRefresh extracts cookies from the browser during initialization
+// This method does NOT enforce rate limiting (unlike RefreshFromBrowser)
+// because it's part of the initial authentication flow
+// The caller must hold c.mu.Lock()
+func (c *GeminiClient) initialBrowserRefresh(browserType browser.SupportedBrowser) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Use injected extractor if available, otherwise use default implementation
+	var result *browser.ExtractResult
+	var err error
+
+	if c.browserExtractor != nil {
+		result, err = c.browserExtractor.ExtractGeminiCookies(ctx, browserType)
+	} else {
+		result, err = browser.ExtractGeminiCookies(ctx, browserType)
+	}
+
+	if err != nil {
+		return fmt.Errorf("failed to extract cookies from browser: %w", err)
+	}
+
+	// Update cookies
+	c.cookies = result.Cookies
+
+	// Save cookies to disk for next time
+	if err := config.SaveCookies(c.cookies); err != nil {
+		// Log but don't fail - cookies are updated in memory
+		fmt.Printf("Warning: failed to save cookies to disk: %v\n", err)
+	}
+
+	return nil
 }
 
 // RefreshFromBrowser attempts to refresh cookies by extracting them from the browser

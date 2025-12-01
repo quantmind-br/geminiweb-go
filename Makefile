@@ -40,6 +40,10 @@ test-coverage:
 	go test -v -coverprofile=coverage.out ./...
 	go tool cover -html=coverage.out -o coverage.html
 
+# Remove temporary/useless files
+clean-repo: clean
+	rm -f plan-tests.md coverage-plan.md test-coverage-improvement-report.md
+
 # Run linter
 lint:
 	golangci-lint run ./...
@@ -83,6 +87,8 @@ help:
 	@echo "  test            Run tests"
 	@echo "  test-coverage   Run tests with coverage report"
 	@echo "  lint            Run linter"
+	@echo "  clean-repo      Remove temporary/useless files           "
+	@echo "(coverage reports, plans, build dir)"
 	@echo "  fmt             Format code"
 	@echo "  clean           Remove build artifacts"
 	@echo "  release-snapshot Build for all platforms"

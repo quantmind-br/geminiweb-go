@@ -574,7 +574,186 @@ func TestIsAuthError(t *testing.T) {
 
 // TestGenerateContent_RetryOnAuthError tests the retry logic when auth error occurs
 func TestGenerateContent_RetryOnAuthError(t *testing.T) {
-	t.Skip("Cannot test retry logic without dependency injection - requires architectural changes")
+	validCookies := &config.Cookies{
+		Secure1PSID:   "test_psid",
+		Secure1PSIDTS: "test_psidts",
+	}
+
+	// Helper to build test response body
+	makeBody := func(innerJSON string) []byte {
+		escaped := ""
+		for _, c := range innerJSON {
+			if c == '"' {
+				escaped += `\"`
+			} else if c == '\\' {
+				escaped += `\\`
+			} else {
+				escaped += string(c)
+			}
+		}
+		return []byte(`[[null, null, "` + escaped + `"]]`)
+	}
+
+	t.Run("retry_success_after_auth_error", func(t *testing.T) {
+		// Track request count
+		requestCount := 0
+
+		// Create a dynamic mock client
+		dynamicMockClient := &DynamicMockHttpClient{}
+
+		// First request: auth error (401)
+		// Second request: success (200)
+		dynamicMockClient.DoFunc = func(req *fhttp.Request) (*fhttp.Response, error) {
+			requestCount++
+			if requestCount == 1 {
+				// First request returns 401
+				return &fhttp.Response{
+					StatusCode: 401,
+					Body:       NewMockResponseBody([]byte("")),
+					Header:     make(fhttp.Header),
+				}, nil
+			}
+			// Second request returns success
+			innerJSON := `[null,["cid123","rid456","rcid789"],null,null,[["rcid789",["retry success"]]]]`
+			return &fhttp.Response{
+				StatusCode: 200,
+				Body:       NewMockResponseBody(makeBody(innerJSON)),
+				Header:     make(fhttp.Header),
+			}, nil
+		}
+
+		// Create client with browser refresh enabled and mock refresh function
+		refreshCalled := false
+		testClient := &GeminiClient{
+			httpClient:     dynamicMockClient,
+			cookies:        validCookies,
+			model:          models.Model25Flash,
+			accessToken:    "old_token",
+			closed:         false,
+			browserRefresh: true,
+			refreshFunc: func() (bool, error) {
+				refreshCalled = true
+				// Simulate successful refresh
+				return true, nil
+			},
+		}
+
+		// Call GenerateContent
+		got, err := testClient.GenerateContent("test prompt", nil)
+
+		// Verify results
+		if err != nil {
+			t.Errorf("GenerateContent() after retry unexpected error: %v", err)
+		}
+		if got == nil {
+			t.Error("GenerateContent() after retry returned nil")
+		}
+		if !refreshCalled {
+			t.Error("Refresh function was not called")
+		}
+		if requestCount != 2 {
+			t.Errorf("Expected 2 requests (original + retry), got %d", requestCount)
+		}
+	})
+
+	t.Run("no_retry_without_browser_refresh", func(t *testing.T) {
+		mockClient := &MockHttpClient{}
+
+		// First request: auth error (401)
+		mockClient.Response = &fhttp.Response{
+			StatusCode: 401,
+			Body:       NewMockResponseBody([]byte("")),
+			Header:     make(fhttp.Header),
+		}
+
+		// Create client without browser refresh
+		client := &GeminiClient{
+			httpClient:     mockClient,
+			cookies:        validCookies,
+			model:          models.Model25Flash,
+			accessToken:    "test_token",
+			closed:         false,
+			browserRefresh: false,
+		}
+
+		// Call GenerateContent
+		got, err := client.GenerateContent("test prompt", nil)
+
+		// Should fail without retry
+		if err == nil {
+			t.Error("GenerateContent() expected error without browser refresh")
+		}
+		if got != nil {
+			t.Error("GenerateContent() should return nil on error without retry")
+		}
+	})
+
+	t.Run("no_retry_on_non_auth_error", func(t *testing.T) {
+		mockClient := &MockHttpClient{}
+
+		// First request: server error (500)
+		mockClient.Response = &fhttp.Response{
+			StatusCode: 500,
+			Body:       NewMockResponseBody([]byte("")),
+			Header:     make(fhttp.Header),
+		}
+
+		// Create client with browser refresh enabled
+		client := &GeminiClient{
+			httpClient:     mockClient,
+			cookies:        validCookies,
+			model:          models.Model25Flash,
+			accessToken:    "test_token",
+			closed:         false,
+			browserRefresh: true,
+		}
+
+		// Call GenerateContent
+		got, err := client.GenerateContent("test prompt", nil)
+
+		// Should fail without retry (not an auth error)
+		if err == nil {
+			t.Error("GenerateContent() expected error for non-auth error")
+		}
+		if got != nil {
+			t.Error("GenerateContent() should return nil on error without retry")
+		}
+	})
+
+	t.Run("retry_fails_returns_auth_error", func(t *testing.T) {
+		mockClient := &MockHttpClient{}
+
+		// First request: auth error (401)
+		mockClient.Response = &fhttp.Response{
+			StatusCode: 401,
+			Body:       NewMockResponseBody([]byte("")),
+			Header:     make(fhttp.Header),
+		}
+
+		// Create client with browser refresh enabled and failing refresh
+		client := &GeminiClient{
+			httpClient:     mockClient,
+			cookies:        validCookies,
+			model:          models.Model25Flash,
+			accessToken:    "test_token",
+			closed:         false,
+			browserRefresh: true,
+			refreshFunc: func() (bool, error) {
+				return false, errors.New("refresh failed")
+			},
+		}
+
+		// Call GenerateContent
+		got, err := client.GenerateContent("test prompt", nil)
+
+		// Should return original auth error
+		if err == nil {
+			t.Error("GenerateContent() expected error when refresh fails")
+		}
+		if got != nil {
+			t.Error("GenerateContent() should return nil when refresh fails")
+		}
+	})
 }
 
 // TestGenerateContent_WithImages tests GenerateContent with image inputs

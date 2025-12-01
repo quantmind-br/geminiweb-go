@@ -793,3 +793,132 @@ func TestRunPersonaAdd_UpdateAfterAdd(t *testing.T) {
 		t.Errorf("System prompt was not updated")
 	}
 }
+
+// TestRunPersonaAddWithReader_Success tests successful persona creation
+func TestRunPersonaAddWithReader_Success(t *testing.T) {
+	// Setup temp home
+	tmpDir := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	os.Setenv("HOME", tmpDir)
+	defer os.Setenv("HOME", oldHome)
+
+	// Create reader with test input
+	input := "Test Persona\nYou are a helpful assistant.\n\n"
+	reader := strings.NewReader(input)
+
+	err := runPersonaAddWithReader(reader, []string{"test-persona"})
+	if err != nil {
+		t.Fatalf("runPersonaAddWithReader failed: %v", err)
+	}
+
+	// Verify persona was saved
+	persona, err := config.GetPersona("test-persona")
+	if err != nil {
+		t.Fatalf("Failed to get persona: %v", err)
+	}
+
+	if persona.Name != "test-persona" {
+		t.Errorf("Name = %s, want test-persona", persona.Name)
+	}
+
+	if persona.Description != "Test Persona" {
+		t.Errorf("Description = %s, want Test Persona", persona.Description)
+	}
+
+	if persona.SystemPrompt != "You are a helpful assistant." {
+		t.Errorf("SystemPrompt = %s, want You are a helpful assistant.", persona.SystemPrompt)
+	}
+}
+
+// TestRunPersonaAddWithReader_Duplicate tests duplicate persona error
+func TestRunPersonaAddWithReader_Duplicate(t *testing.T) {
+	// Setup temp home
+	tmpDir := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	os.Setenv("HOME", tmpDir)
+	defer os.Setenv("HOME", oldHome)
+
+	// Add first persona
+	err := config.AddPersona(config.Persona{
+		Name:        "duplicate",
+		Description: "First",
+		SystemPrompt: "First prompt",
+	})
+	if err != nil {
+		t.Fatalf("Failed to add first persona: %v", err)
+	}
+
+	// Try to add duplicate
+	input := "Second Persona\nSecond prompt\n"
+	reader := strings.NewReader(input)
+
+	err = runPersonaAddWithReader(reader, []string{"duplicate"})
+	if err == nil {
+		t.Error("Expected error for duplicate persona, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "already exists") {
+		t.Errorf("Expected 'already exists' in error, got: %v", err)
+	}
+}
+
+// TestRunPersonaAddWithReader_MultilinePrompt tests multiline system prompt
+func TestRunPersonaAddWithReader_MultilinePrompt(t *testing.T) {
+	// Setup temp home
+	tmpDir := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	os.Setenv("HOME", tmpDir)
+	defer os.Setenv("HOME", oldHome)
+
+	// Create reader with multiline prompt
+	input := "Multi-line Persona\nLine 1\nLine 2\nLine 3\n"
+	reader := strings.NewReader(input)
+
+	err := runPersonaAddWithReader(reader, []string{"multiline"})
+	if err != nil {
+		t.Fatalf("runPersonaAddWithReader failed: %v", err)
+	}
+
+	// Verify multiline prompt
+	persona, err := config.GetPersona("multiline")
+	if err != nil {
+		t.Fatalf("Failed to get persona: %v", err)
+	}
+
+	expectedPrompt := "Line 1\nLine 2\nLine 3"
+	if persona.SystemPrompt != expectedPrompt {
+		t.Errorf("SystemPrompt = %s, want %s", persona.SystemPrompt, expectedPrompt)
+	}
+}
+
+// TestRunPersonaAddWithReader_SpecialCharacters tests special characters in inputs
+func TestRunPersonaAddWithReader_SpecialCharacters(t *testing.T) {
+	// Setup temp home
+	tmpDir := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	os.Setenv("HOME", tmpDir)
+	defer os.Setenv("HOME", oldHome)
+
+	// Create reader with special characters
+	input := "Tëst Nàmé 日本語\nPrompt with émojis 🎉 and ünïcödë\n"
+	reader := strings.NewReader(input)
+
+	err := runPersonaAddWithReader(reader, []string{"special"})
+	if err != nil {
+		t.Fatalf("runPersonaAddWithReader failed: %v", err)
+	}
+
+	// Verify persona with special characters was saved
+	persona, err := config.GetPersona("special")
+	if err != nil {
+		t.Fatalf("Failed to get persona: %v", err)
+	}
+
+	if persona.Name != "special" {
+		t.Errorf("Name = %s, want special", persona.Name)
+	}
+
+	if persona.Description != "Tëst Nàmé 日本語" {
+		t.Errorf("Description = %s, want Tëst Nàmé 日本語", persona.Description)
+	}
+}

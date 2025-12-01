@@ -6,7 +6,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/diogo/geminiweb/internal/api"
-	"github.com/diogo/geminiweb/internal/config"
 	"github.com/diogo/geminiweb/internal/models"
 	"github.com/diogo/geminiweb/internal/tui"
 )
@@ -24,12 +23,6 @@ Type 'exit', 'quit', or press Ctrl+C to end the session.`,
 }
 
 func runChat() error {
-	// Load cookies
-	cookies, err := config.LoadCookies()
-	if err != nil {
-		return fmt.Errorf("authentication required: %w", err)
-	}
-
 	modelName := getModel()
 	model := models.ModelFromName(modelName)
 
@@ -39,19 +32,20 @@ func runChat() error {
 		api.WithAutoRefresh(true),
 	}
 
-	// Add browser refresh if enabled
+	// Add browser refresh if enabled (also enables silent auto-login fallback)
 	if browserType, enabled := getBrowserRefresh(); enabled {
 		clientOpts = append(clientOpts, api.WithBrowserRefresh(browserType))
 	}
 
-	// Create client
-	client, err := api.NewClient(cookies, clientOpts...)
+	// Create client with nil cookies - Init() will load from disk or browser
+	client, err := api.NewClient(nil, clientOpts...)
 	if err != nil {
 		return fmt.Errorf("failed to create client: %w", err)
 	}
 	defer client.Close()
 
 	// Initialize client with animation
+	// Init() handles cookie loading from disk and browser fallback
 	spin := newSpinner("Connecting to Gemini")
 	spin.start()
 	if err := client.Init(); err != nil {

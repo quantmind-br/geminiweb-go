@@ -45,7 +45,7 @@ type ChatSessionInterface interface {
 
 // Model represents the TUI state
 type Model struct {
-	client    *api.GeminiClient
+	client    api.GeminiClientInterface
 	session   ChatSessionInterface
 	modelName string
 
@@ -74,7 +74,7 @@ type chatMessage struct {
 }
 
 // NewChatModel creates a new chat TUI model
-func NewChatModel(client *api.GeminiClient, modelName string) Model {
+func NewChatModel(client api.GeminiClientInterface, modelName string) Model {
 	// Create textarea for input
 	ta := textarea.New()
 	ta.Placeholder = "Type your message here..."
@@ -470,7 +470,7 @@ func (m *Model) updateViewport() {
 
 
 // RunChat starts the chat TUI
-func RunChat(client *api.GeminiClient, modelName string) error {
+func RunChat(client api.GeminiClientInterface, modelName string) error {
 	m := NewChatModel(client, modelName)
 
 	p := tea.NewProgram(

@@ -27,7 +27,18 @@ func (c *GeminiClient) GenerateContent(prompt string, opts *GenerateOptions) (*m
 
 	// If auth error and browser refresh is enabled, try to refresh and retry
 	if err != nil && c.IsBrowserRefreshEnabled() && isAuthError(err) {
-		refreshed, refreshErr := c.RefreshFromBrowser()
+		// Use injected refresh function if available (for testing)
+		var refreshed bool
+		var refreshErr error
+
+		if c.refreshFunc != nil {
+			// Use injected function for testing
+			refreshed, refreshErr = c.refreshFunc()
+		} else {
+			// Use default implementation
+			refreshed, refreshErr = c.RefreshFromBrowser()
+		}
+
 		if refreshErr == nil && refreshed {
 			// Retry the request with new cookies
 			return c.doGenerateContent(prompt, opts)
