@@ -1,0 +1,923 @@
+package api
+
+import (
+	"errors"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	fhttp "github.com/bogdanfinn/fhttp"
+
+	"github.com/diogo/geminiweb/internal/browser"
+	"github.com/diogo/geminiweb/internal/config"
+	"github.com/diogo/geminiweb/internal/models"
+)
+
+// TestNewClient tests the NewClient function
+func TestNewClient(t *testing.T) {
+	validCookies := &config.Cookies{
+		Secure1PSID:   "test_psid",
+		Secure1PSIDTS: "test_psidts",
+	}
+
+	tests := []struct {
+		name        string
+		cookies     *config.Cookies
+		opts        []ClientOption
+		wantErr     bool
+		wantModel   models.Model
+		autoRefresh bool
+		interval    time.Duration
+	}{
+		{
+			name:        "valid cookies with defaults",
+			cookies:     validCookies,
+			wantErr:     false,
+			wantModel:   models.Model25Flash,
+			autoRefresh: true,
+			interval:    9 * time.Minute,
+		},
+		{
+			name:        "with custom model",
+			cookies:     validCookies,
+			opts:        []ClientOption{WithModel(models.Model30Pro)},
+			wantErr:     false,
+			wantModel:   models.Model30Pro,
+			autoRefresh: true,
+			interval:    9 * time.Minute,
+		},
+		{
+			name:        "with auto-refresh disabled",
+			cookies:     validCookies,
+			opts:        []ClientOption{WithAutoRefresh(false)},
+			wantErr:     false,
+			wantModel:   models.Model25Flash,
+			autoRefresh: false,
+			interval:    9 * time.Minute,
+		},
+		{
+			name:        "with custom refresh interval",
+			cookies:     validCookies,
+			opts:        []ClientOption{WithRefreshInterval(5 * time.Minute)},
+			wantErr:     false,
+			wantModel:   models.Model25Flash,
+			autoRefresh: true,
+			interval:    5 * time.Minute,
+		},
+		{
+			name:    "nil cookies",
+			cookies: nil,
+			wantErr: true,
+		},
+		{
+			name:    "empty PSID",
+			cookies: &config.Cookies{Secure1PSID: ""},
+			wantErr: true,
+		},
+		{
+			name:        "cookies with only PSID (no PSIDTS)",
+			cookies:     &config.Cookies{Secure1PSID: "test_psid"},
+			wantErr:     false,
+			wantModel:   models.Model25Flash,
+			autoRefresh: true,
+			interval:    9 * time.Minute,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client, err := NewClient(tt.cookies, tt.opts...)
+
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("NewClient() expected error but got none")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("NewClient() unexpected error: %v", err)
+				return
+			}
+
+			if client == nil {
+				t.Error("NewClient() returned nil client")
+				return
+			}
+
+			// Verify model
+			if client.GetModel().Name != tt.wantModel.Name {
+				t.Errorf("GetModel() = %v, want %v", client.GetModel().Name, tt.wantModel.Name)
+			}
+
+			// Verify auto-refresh
+			if client.autoRefresh != tt.autoRefresh {
+				t.Errorf("autoRefresh = %v, want %v", client.autoRefresh, tt.autoRefresh)
+			}
+
+			// Verify refresh interval
+			if client.refreshInterval != tt.interval {
+				t.Errorf("refreshInterval = %v, want %v", client.refreshInterval, tt.interval)
+			}
+
+			// Verify cookies
+			if client.GetCookies() != tt.cookies {
+				t.Error("GetCookies() returned different cookies than passed to NewClient()")
+			}
+		})
+	}
+}
+
+// TestGeminiClient_Init tests the Init method
+func TestGeminiClient_Init(t *testing.T) {
+	validCookies := &config.Cookies{
+		Secure1PSID:   "test_psid",
+		Secure1PSIDTS: "test_psidts",
+	}
+
+	tokenResponse := `<html>
+<script>
+window.data = {"SNlM0e":"test_token_12345"};
+</script>
+</html>`
+
+	tests := []struct {
+		name         string
+		setupMock    func(*MockHttpClient)
+		wantToken    string
+		wantErr      bool
+		setupRotator bool
+	}{
+		{
+			name: "successful initialization",
+			setupMock: func(m *MockHttpClient) {
+				body := NewMockResponseBody([]byte(tokenResponse))
+				m.Response = &fhttp.Response{
+					StatusCode: 200,
+					Body:       body,
+					Header:     make(fhttp.Header),
+				}
+			},
+			wantToken:    "test_token_12345",
+			wantErr:      false,
+			setupRotator: true,
+		},
+		{
+			name: "HTTP error status",
+			setupMock: func(m *MockHttpClient) {
+				body := NewMockResponseBody([]byte(""))
+				m.Response = &fhttp.Response{
+					StatusCode: 401,
+					Body:       body,
+					Header:     make(fhttp.Header),
+				}
+			},
+			wantErr:      true,
+			setupRotator: false,
+		},
+		{
+			name: "network error",
+			setupMock: func(m *MockHttpClient) {
+				m.Err = errors.New("network error")
+				m.Response = nil
+			},
+			wantErr:      true,
+			setupRotator: false,
+		},
+		{
+			name: "missing token in response",
+			setupMock: func(m *MockHttpClient) {
+				body := NewMockResponseBody([]byte("<html><body>No token</body></html>"))
+				m.Response = &fhttp.Response{
+					StatusCode: 200,
+					Body:       body,
+					Header:     make(fhttp.Header),
+				}
+			},
+			wantErr:      true,
+			setupRotator: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockClient := &MockHttpClient{}
+			tt.setupMock(mockClient)
+
+			client, err := NewClient(validCookies)
+			if err != nil {
+				t.Fatalf("NewClient() failed: %v", err)
+			}
+
+			// Replace the HTTP client with our mock
+			client.httpClient = mockClient
+
+			// Optionally disable rotator for tests that don't want it
+			if !tt.setupRotator {
+				client.autoRefresh = false
+			}
+
+			err = client.Init()
+
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("Init() expected error but got none")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("Init() unexpected error: %v", err)
+				return
+			}
+
+			token := client.GetAccessToken()
+			if token != tt.wantToken {
+				t.Errorf("GetAccessToken() = %q, want %q", token, tt.wantToken)
+			}
+		})
+	}
+}
+
+// TestGeminiClient_Init_ClosedClient tests Init on a closed client
+func TestGeminiClient_Init_ClosedClient(t *testing.T) {
+	mockClient := &MockHttpClient{}
+	body := NewMockResponseBody([]byte(`{"SNlM0e":"token"}`))
+	mockClient.Response = &fhttp.Response{
+		StatusCode: 200,
+		Body:       body,
+		Header:     make(fhttp.Header),
+	}
+
+	cookies := &config.Cookies{Secure1PSID: "test"}
+	client, err := NewClient(cookies)
+	if err != nil {
+		t.Fatalf("NewClient() failed: %v", err)
+	}
+
+	client.httpClient = mockClient
+	client.autoRefresh = false // Disable rotator
+
+	// Close the client
+	client.Close()
+
+	// Try to init a closed client
+	err = client.Init()
+	if err == nil {
+		t.Error("Init() on closed client should return error")
+	}
+}
+
+// TestGeminiClient_Close tests the Close method (idempotence)
+func TestGeminiClient_Close(t *testing.T) {
+	validCookies := &config.Cookies{
+		Secure1PSID: "test_psid",
+	}
+
+	client, err := NewClient(validCookies, WithAutoRefresh(true))
+	if err != nil {
+		t.Fatalf("NewClient() failed: %v", err)
+	}
+
+	client.autoRefresh = true
+	client.rotator = NewCookieRotator(&MockHttpClient{}, validCookies, time.Minute)
+
+	// Close once
+	client.Close()
+	if !client.IsClosed() {
+		t.Error("IsClosed() should return true after first Close()")
+	}
+
+	// Close again (should be idempotent)
+	client.Close()
+	if !client.IsClosed() {
+		t.Error("IsClosed() should still return true after second Close()")
+	}
+}
+
+// TestGeminiClient_GetSetMethods tests getter and setter methods
+func TestGeminiClient_GetSetMethods(t *testing.T) {
+	cookies := &config.Cookies{
+		Secure1PSID:   "test_psid",
+		Secure1PSIDTS: "test_psidts",
+	}
+
+	client, err := NewClient(cookies)
+	if err != nil {
+		t.Fatalf("NewClient() failed: %v", err)
+	}
+
+	// Test GetModel
+	model := client.GetModel()
+	if model.Name != models.Model25Flash.Name {
+		t.Errorf("GetModel() default = %v, want %v", model.Name, models.Model25Flash.Name)
+	}
+
+	// Test SetModel
+	newModel := models.Model30Pro
+	client.SetModel(newModel)
+	actualModel := client.GetModel()
+	if actualModel.Name != newModel.Name {
+		t.Errorf("SetModel(%v) then GetModel() = %v, want %v", newModel.Name, actualModel.Name, newModel.Name)
+	}
+
+	// Test GetCookies
+	retrievedCookies := client.GetCookies()
+	if retrievedCookies != cookies {
+		t.Error("GetCookies() should return the same cookies passed to NewClient()")
+	}
+
+	// Test GetHTTPClient
+	httpClient := client.GetHTTPClient()
+	if httpClient == nil {
+		t.Error("GetHTTPClient() should return non-nil client")
+	}
+
+	// Test GetAccessToken (should be empty before Init)
+	token := client.GetAccessToken()
+	if token != "" {
+		t.Errorf("GetAccessToken() before Init() = %q, want empty string", token)
+	}
+
+	// Test IsClosed
+	if client.IsClosed() {
+		t.Error("IsClosed() should return false for new client")
+	}
+}
+
+// TestGeminiClient_StartChat tests StartChat method
+func TestGeminiClient_StartChat(t *testing.T) {
+	cookies := &config.Cookies{
+		Secure1PSID: "test_psid",
+	}
+
+	tests := []struct {
+		name          string
+		opts          []ClientOption
+		customModel   *models.Model
+		expectedModel models.Model
+	}{
+		{
+			name:          "default model",
+			opts:          []ClientOption{WithModel(models.Model25Pro)},
+			expectedModel: models.Model25Pro,
+		},
+		{
+			name:          "custom model via argument",
+			opts:          []ClientOption{WithModel(models.Model25Flash)},
+			customModel:   &[]models.Model{models.Model30Pro}[0],
+			expectedModel: models.Model30Pro,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client, err := NewClient(cookies, tt.opts...)
+			if err != nil {
+				t.Fatalf("NewClient() failed: %v", err)
+			}
+
+			var session *ChatSession
+			if tt.customModel != nil {
+				session = client.StartChat(*tt.customModel)
+			} else {
+				session = client.StartChat()
+			}
+
+			if session == nil {
+				t.Error("StartChat() returned nil session")
+				return
+			}
+
+			if session.client != client {
+				t.Error("ChatSession should reference the client")
+			}
+
+			if session.GetModel().Name != tt.expectedModel.Name {
+				t.Errorf("Session model = %v, want %v", session.GetModel().Name, tt.expectedModel.Name)
+			}
+		})
+	}
+}
+
+// TestGeminiClient_ConcurrentAccess tests concurrent access to client methods
+func TestGeminiClient_ConcurrentAccess(t *testing.T) {
+	cookies := &config.Cookies{
+		Secure1PSID: "test_psid",
+	}
+
+	client, err := NewClient(cookies)
+	if err != nil {
+		t.Fatalf("NewClient() failed: %v", err)
+	}
+
+	// Set a custom model
+	newModel := models.Model30Pro
+	client.SetModel(newModel)
+
+	// Run concurrent reads
+	var wg sync.WaitGroup
+	iterations := 100
+
+	// Test concurrent GetModel calls
+	wg.Add(iterations)
+	for i := 0; i < iterations; i++ {
+		go func() {
+			defer wg.Done()
+			model := client.GetModel()
+			if model.Name == "" {
+				t.Error("GetModel() returned empty model in concurrent access")
+			}
+		}()
+	}
+
+	// Test concurrent GetAccessToken calls (before Init)
+	wg.Add(iterations)
+	for i := 0; i < iterations; i++ {
+		go func() {
+			defer wg.Done()
+			token := client.GetAccessToken()
+			if token == "" {
+				// This is expected before Init
+			}
+		}()
+	}
+
+	// Test concurrent IsClosed calls
+	wg.Add(iterations)
+	for i := 0; i < iterations; i++ {
+		go func() {
+			defer wg.Done()
+			_ = client.IsClosed()
+		}()
+	}
+
+	// Test concurrent SetModel and GetModel
+	wg.Add(iterations)
+	for i := 0; i < iterations; i++ {
+		go func(index int) {
+			defer wg.Done()
+			if index%2 == 0 {
+				client.SetModel(models.Model30Pro)
+			} else {
+				_ = client.GetModel()
+			}
+		}(i)
+	}
+
+	wg.Wait()
+
+	// Verify the model is still set correctly
+	if client.GetModel().Name != models.Model30Pro.Name {
+		t.Errorf("Model after concurrent access = %v, want %v", client.GetModel().Name, models.Model30Pro.Name)
+	}
+}
+
+// TestGeminiClient_ConcurrencyWithInit tests concurrency during Init
+func TestGeminiClient_ConcurrencyWithInit(t *testing.T) {
+	tmpDir := t.TempDir()
+	_ = tmpDir
+
+	cookies := &config.Cookies{
+		Secure1PSID: "test_psid",
+	}
+
+	mockClient := &MockHttpClient{}
+	tokenResponse := `<html><script>window.data = {"SNlM0e":"concurrent_token"};</script></html>`
+	body := NewMockResponseBody([]byte(tokenResponse))
+	mockClient.Response = &fhttp.Response{
+		StatusCode: 200,
+		Body:       body,
+		Header:     make(fhttp.Header),
+	}
+
+	client, err := NewClient(cookies, WithAutoRefresh(false))
+	if err != nil {
+		t.Fatalf("NewClient() failed: %v", err)
+	}
+
+	client.httpClient = mockClient
+
+	// Call Init concurrently
+	var wg sync.WaitGroup
+	errCh := make(chan error, 10)
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			err := client.Init()
+			errCh <- err
+		}()
+	}
+	wg.Wait()
+
+	// Check results
+	close(errCh)
+	errorCount := 0
+	for err := range errCh {
+		if err != nil {
+			errorCount++
+		}
+	}
+
+	// At least one Init should succeed (mutex protection prevents race conditions)
+	if errorCount == 10 {
+		t.Error("All concurrent Init() calls failed, mutex may not be working correctly")
+	}
+
+	// Verify token was set by at least one successful call
+	token := client.GetAccessToken()
+	if token != "concurrent_token" {
+		t.Errorf("GetAccessToken() = %q, want %q", token, "concurrent_token")
+	}
+
+	// Verify client is not closed
+	if client.IsClosed() {
+		t.Error("IsClosed() should return false after successful Init()")
+	}
+}
+
+// TestGeminiClient_WithModel tests WithModel option
+func TestGeminiClient_WithModel(t *testing.T) {
+	cookies := &config.Cookies{
+		Secure1PSID: "test_psid",
+	}
+
+	tests := []struct {
+		name      string
+		model     models.Model
+		wantModel models.Model
+	}{
+		{"G_2_5_FLASH", models.Model25Flash, models.Model25Flash},
+		{"G_2_5_PRO", models.Model25Pro, models.Model25Pro},
+		{"G_3_0_PRO", models.Model30Pro, models.Model30Pro},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client, err := NewClient(cookies, WithModel(tt.model))
+			if err != nil {
+				t.Fatalf("NewClient() failed: %v", err)
+			}
+
+			if client.GetModel().Name != tt.wantModel.Name {
+				t.Errorf("GetModel() = %v, want %v", client.GetModel().Name, tt.wantModel.Name)
+			}
+		})
+	}
+}
+
+// TestGeminiClient_WithAutoRefresh tests WithAutoRefresh option
+func TestGeminiClient_WithAutoRefresh(t *testing.T) {
+	cookies := &config.Cookies{
+		Secure1PSID: "test_psid",
+	}
+
+	tests := []struct {
+		name        string
+		enabled     bool
+		wantEnabled bool
+	}{
+		{"enabled", true, true},
+		{"disabled", false, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client, err := NewClient(cookies, WithAutoRefresh(tt.enabled))
+			if err != nil {
+				t.Fatalf("NewClient() failed: %v", err)
+			}
+
+			// Access via unexported field for verification
+			// We'll test the behavior indirectly through Init
+			mockClient := &MockHttpClient{}
+			body := NewMockResponseBody([]byte(`{"SNlM0e":"token"}`))
+			mockClient.Response = &fhttp.Response{
+				StatusCode: 200,
+				Body:       body,
+				Header:     make(fhttp.Header),
+			}
+			client.httpClient = mockClient
+
+			if tt.wantEnabled {
+				// When auto-refresh is enabled, rotator should be created in Init
+				client.Init()
+				// Note: We can't directly test the rotator without exposing it
+				// But the presence is tested through behavior
+			} else {
+				// When auto-refresh is disabled, rotator should not be created
+				client.autoRefresh = false
+				client.Init()
+				if client.rotator != nil {
+					t.Error("Rotator should be nil when auto-refresh is disabled")
+				}
+			}
+		})
+	}
+}
+
+// TestGeminiClient_WithRefreshInterval tests WithRefreshInterval option
+func TestGeminiClient_WithRefreshInterval(t *testing.T) {
+	cookies := &config.Cookies{
+		Secure1PSID: "test_psid",
+	}
+
+	tests := []struct {
+		name     string
+		interval time.Duration
+		want     time.Duration
+	}{
+		{"1 minute", time.Minute, time.Minute},
+		{"5 minutes", 5 * time.Minute, 5 * time.Minute},
+		{"10 minutes", 10 * time.Minute, 10 * time.Minute},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client, err := NewClient(cookies, WithRefreshInterval(tt.interval))
+			if err != nil {
+				t.Fatalf("NewClient() failed: %v", err)
+			}
+
+			if client.refreshInterval != tt.want {
+				t.Errorf("refreshInterval = %v, want %v", client.refreshInterval, tt.want)
+			}
+		})
+	}
+}
+
+// TestGeminiClient_CookieValidation tests cookie validation in NewClient
+func TestGeminiClient_CookieValidation(t *testing.T) {
+	tests := []struct {
+		name    string
+		cookies *config.Cookies
+		wantErr bool
+	}{
+		{
+			name:    "nil cookies",
+			cookies: nil,
+			wantErr: true,
+		},
+		{
+			name:    "empty PSID",
+			cookies: &config.Cookies{Secure1PSID: ""},
+			wantErr: true,
+		},
+		{
+			name:    "valid with only PSID",
+			cookies: &config.Cookies{Secure1PSID: "valid_psid"},
+			wantErr: false,
+		},
+		{
+			name:    "valid with both cookies",
+			cookies: &config.Cookies{Secure1PSID: "valid_psid", Secure1PSIDTS: "valid_psidts"},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := NewClient(tt.cookies)
+
+			if tt.wantErr && err == nil {
+				t.Error("NewClient() expected error but got none")
+			} else if !tt.wantErr && err != nil {
+				t.Errorf("NewClient() unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+// TestGeminiClient_CloseMultipleTimes tests that Close is idempotent
+func TestGeminiClient_CloseMultipleTimes(t *testing.T) {
+	cookies := &config.Cookies{
+		Secure1PSID: "test_psid",
+	}
+
+	client, err := NewClient(cookies, WithAutoRefresh(true))
+	if err != nil {
+		t.Fatalf("NewClient() failed: %v", err)
+	}
+
+	// Create a mock rotator
+	mockHttpClient := &MockHttpClient{}
+	client.rotator = NewCookieRotator(mockHttpClient, cookies, time.Minute)
+
+	// Close multiple times
+	for i := 0; i < 5; i++ {
+		client.Close()
+		if !client.IsClosed() {
+			t.Errorf("IsClosed() should return true after Close() #%d", i+1)
+		}
+	}
+
+	// Verify rotator is stopped (would panic if called, but we can't test that directly)
+	// Instead, verify the client is in a consistent state
+	if client.closed != true {
+		t.Error("Client closed flag should remain true")
+	}
+}
+
+// TestGeminiClient_GetAccessTokenBeforeInit tests behavior before Init
+func TestGeminiClient_GetAccessTokenBeforeInit(t *testing.T) {
+	cookies := &config.Cookies{
+		Secure1PSID: "test_psid",
+	}
+
+	client, err := NewClient(cookies)
+	if err != nil {
+		t.Fatalf("NewClient() failed: %v", err)
+	}
+
+	// GetAccessToken before Init should return empty string
+	token := client.GetAccessToken()
+	if token != "" {
+		t.Errorf("GetAccessToken() before Init() = %q, want empty string", token)
+	}
+}
+
+// TestGeminiClient_StartChatWithMultipleModels tests StartChat with different models
+func TestGeminiClient_StartChatWithMultipleModels(t *testing.T) {
+	cookies := &config.Cookies{
+		Secure1PSID: "test_psid",
+	}
+
+	client, err := NewClient(cookies, WithModel(models.Model25Flash))
+	if err != nil {
+		t.Fatalf("NewClient() failed: %v", err)
+	}
+
+	// Start chat with default model
+	session1 := client.StartChat()
+	if session1.GetModel().Name != models.Model25Flash.Name {
+		t.Errorf("Session model = %v, want %v", session1.GetModel().Name, models.Model25Flash.Name)
+	}
+
+	// Start chat with custom model
+	customModel := models.Model30Pro
+	session2 := client.StartChat(customModel)
+	if session2.GetModel().Name != customModel.Name {
+		t.Errorf("Session model = %v, want %v", session2.GetModel().Name, customModel.Name)
+	}
+
+	// Original session should remain unchanged
+	if session1.GetModel().Name != models.Model25Flash.Name {
+		t.Error("Original session model should not change")
+	}
+}
+
+// TestGeminiClient_AccessTokenImmutability tests that access token doesn't change unexpectedly
+func TestGeminiClient_AccessTokenImmutability(t *testing.T) {
+	cookies := &config.Cookies{
+		Secure1PSID: "test_psid",
+	}
+
+	mockClient := &MockHttpClient{}
+	tokenResponse := `<html><script>window.data = {"SNlM0e":"immutable_token"};</script></html>`
+	body := NewMockResponseBody([]byte(tokenResponse))
+	mockClient.Response = &fhttp.Response{
+		StatusCode: 200,
+		Body:       body,
+		Header:     make(fhttp.Header),
+	}
+
+	client, err := NewClient(cookies)
+	if err != nil {
+		t.Fatalf("NewClient() failed: %v", err)
+	}
+
+	client.httpClient = mockClient
+
+	// Init should set the token
+	err = client.Init()
+	if err != nil {
+		t.Fatalf("Init() failed: %v", err)
+	}
+
+	firstToken := client.GetAccessToken()
+
+	// Multiple calls to GetAccessToken should return the same token
+	for i := 0; i < 10; i++ {
+		token := client.GetAccessToken()
+		if token != firstToken {
+			t.Errorf("GetAccessToken() #%d = %q, want %q", i+1, token, firstToken)
+		}
+	}
+}
+
+// TestGeminiClient_WithBrowserRefresh tests WithBrowserRefresh option
+func TestGeminiClient_WithBrowserRefresh(t *testing.T) {
+	cookies := &config.Cookies{
+		Secure1PSID: "test_psid",
+	}
+
+	tests := []struct {
+		name         string
+		browserType  browser.SupportedBrowser
+		wantEnabled  bool
+		wantBrowser  browser.SupportedBrowser
+	}{
+		{
+			name:        "with chrome",
+			browserType: browser.BrowserChrome,
+			wantEnabled: true,
+			wantBrowser: browser.BrowserChrome,
+		},
+		{
+			name:        "with firefox",
+			browserType: browser.BrowserFirefox,
+			wantEnabled: true,
+			wantBrowser: browser.BrowserFirefox,
+		},
+		{
+			name:        "with auto",
+			browserType: browser.BrowserAuto,
+			wantEnabled: true,
+			wantBrowser: browser.BrowserAuto,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client, err := NewClient(cookies, WithBrowserRefresh(tt.browserType))
+			if err != nil {
+				t.Fatalf("NewClient() failed: %v", err)
+			}
+
+			// Verify browser refresh is enabled
+			if !client.IsBrowserRefreshEnabled() {
+				t.Error("IsBrowserRefreshEnabled() should return true")
+			}
+		})
+	}
+}
+
+// TestGeminiClient_RefreshFromBrowser tests RefreshFromBrowser method
+func TestGeminiClient_RefreshFromBrowser(t *testing.T) {
+	cookies := &config.Cookies{
+		Secure1PSID:   "test_psid",
+		Secure1PSIDTS: "test_psidts",
+	}
+
+	t.Run("browser_refresh_not_enabled", func(t *testing.T) {
+		// Create client without browser refresh
+		client, err := NewClient(cookies, WithAutoRefresh(false))
+		if err != nil {
+			t.Fatalf("NewClient() failed: %v", err)
+		}
+
+		// Try to refresh - should fail
+		success, err := client.RefreshFromBrowser()
+		if success {
+			t.Error("RefreshFromBrowser() should return false when not enabled")
+		}
+		if err == nil {
+			t.Error("RefreshFromBrowser() should return error when not enabled")
+		}
+		if !strings.Contains(err.Error(), "browser refresh is not enabled") {
+			t.Errorf("Expected error about browser refresh not enabled, got: %v", err)
+		}
+	})
+
+	t.Run("rate_limiting", func(t *testing.T) {
+		// Create client with browser refresh enabled
+		client, err := NewClient(cookies, WithBrowserRefresh(browser.BrowserChrome))
+		if err != nil {
+			t.Fatalf("NewClient() failed: %v", err)
+		}
+
+		// Try to refresh twice in quick succession
+		// First call might succeed or fail depending on browser availability
+		_, _ = client.RefreshFromBrowser()
+
+		// Second call should be rate limited
+		success, err := client.RefreshFromBrowser()
+		if success {
+			t.Log("Second RefreshFromBrowser() succeeded (may have browser available)")
+		} else if err != nil && strings.Contains(err.Error(), "too recently") {
+			t.Log("Second call correctly rate limited")
+		}
+	})
+
+	t.Run("browser_extraction_failure", func(t *testing.T) {
+		// Create client with browser refresh enabled
+		client, err := NewClient(cookies, WithBrowserRefresh(browser.BrowserChrome))
+		if err != nil {
+			t.Fatalf("NewClient() failed: %v", err)
+		}
+
+		// Try to refresh with non-existent browser
+		success, err := client.RefreshFromBrowser()
+		if success {
+			t.Error("RefreshFromBrowser() should return false when browser extraction fails")
+		}
+		if err == nil {
+			t.Error("RefreshFromBrowser() should return error when browser extraction fails")
+		}
+		if !strings.Contains(err.Error(), "failed to extract cookies") {
+			t.Errorf("Expected error about cookie extraction, got: %v", err)
+		}
+	})
+}

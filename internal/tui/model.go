@@ -1,0 +1,483 @@
+package tui
+
+import (
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/charmbracelet/bubbles/spinner"
+	"github.com/charmbracelet/bubbles/textarea"
+	"github.com/charmbracelet/bubbles/viewport"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+
+	"github.com/diogo/geminiweb/internal/api"
+	"github.com/diogo/geminiweb/internal/models"
+	"github.com/diogo/geminiweb/internal/render"
+)
+
+// Animation tick message
+type animationTickMsg time.Time
+
+// Message types for the TUI
+type (
+	responseMsg struct {
+		output *models.ModelOutput
+	}
+	errMsg struct {
+		err error
+	}
+)
+
+// ChatSessionInterface defines the interface for chat session operations needed by the TUI
+type ChatSessionInterface interface {
+	SendMessage(prompt string) (*models.ModelOutput, error)
+	SetMetadata(cid, rid, rcid string)
+	GetMetadata() []string
+	CID() string
+	RID() string
+	RCID() string
+	GetModel() models.Model
+	SetModel(model models.Model)
+	LastOutput() *models.ModelOutput
+	ChooseCandidate(index int) error
+}
+
+// Model represents the TUI state
+type Model struct {
+	client    *api.GeminiClient
+	session   ChatSessionInterface
+	modelName string
+
+	// UI components
+	viewport viewport.Model
+	textarea textarea.Model
+	spinner  spinner.Model
+
+	// State
+	messages       []chatMessage
+	loading        bool
+	ready          bool
+	err            error
+	animationFrame int // Frame counter for loading animation
+
+	// Dimensions
+	width  int
+	height int
+}
+
+// chatMessage represents a message in the chat
+type chatMessage struct {
+	role     string // "user" or "assistant"
+	content  string
+	thoughts string
+}
+
+// NewChatModel creates a new chat TUI model
+func NewChatModel(client *api.GeminiClient, modelName string) Model {
+	// Create textarea for input
+	ta := textarea.New()
+	ta.Placeholder = "Type your message here..."
+	ta.CharLimit = 4000
+	ta.ShowLineNumbers = false
+	ta.SetHeight(2)
+	ta.Focus()
+
+	// Style the textarea
+	ta.FocusedStyle.CursorLine = lipgloss.NewStyle()
+	ta.FocusedStyle.Base = lipgloss.NewStyle().Foreground(colorText)
+	ta.FocusedStyle.Placeholder = lipgloss.NewStyle().Foreground(colorTextDim)
+	ta.BlurredStyle = ta.FocusedStyle
+
+	// Create spinner
+	s := spinner.New()
+	s.Spinner = spinner.Points
+	s.Style = loadingStyle
+
+	return Model{
+		client:    client,
+		session:   client.StartChat(),
+		modelName: modelName,
+		textarea:  ta,
+		spinner:   s,
+		messages:  []chatMessage{},
+	}
+}
+
+// Init initializes the model
+func (m Model) Init() tea.Cmd {
+	return tea.Batch(
+		textarea.Blink,
+		m.spinner.Tick,
+	)
+}
+
+// animationTick returns a command that sends animation tick messages
+func animationTick() tea.Cmd {
+	return tea.Tick(time.Millisecond*80, func(t time.Time) tea.Msg {
+		return animationTickMsg(t)
+	})
+}
+
+// Update handles messages and updates the model
+func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmds []tea.Cmd
+	var cmd tea.Cmd
+
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+
+		// Calculate component heights
+		headerHeight := 4 // Header panel with border
+		inputHeight := 6  // Input panel with border
+		statusHeight := 1 // Status bar
+		padding := 2      // Extra spacing
+
+		vpHeight := m.height - headerHeight - inputHeight - statusHeight - padding
+		if vpHeight < 5 {
+			vpHeight = 5
+		}
+
+		contentWidth := m.width - 4
+
+		// Initialize viewport on first size message
+		if !m.ready {
+			m.viewport = viewport.New(contentWidth, vpHeight)
+			m.textarea.SetWidth(contentWidth - 4)
+			m.ready = true
+		} else {
+			m.viewport.Width = contentWidth
+			m.viewport.Height = vpHeight
+			m.textarea.SetWidth(contentWidth - 4)
+		}
+		m.updateViewport()
+
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "ctrl+c":
+			return m, tea.Quit
+
+		case "esc":
+			if m.loading {
+				m.loading = false
+			} else {
+				return m, tea.Quit
+			}
+
+		case "enter":
+			if !m.loading && strings.TrimSpace(m.textarea.Value()) != "" {
+				// Check for exit commands
+				input := strings.TrimSpace(m.textarea.Value())
+				if input == "exit" || input == "quit" || input == "/exit" || input == "/quit" {
+					return m, tea.Quit
+				}
+
+				// Add user message
+				m.messages = append(m.messages, chatMessage{
+					role:    "user",
+					content: input,
+				})
+				m.updateViewport()
+				m.viewport.GotoBottom()
+
+				// Start loading
+				m.loading = true
+				m.err = nil
+				m.animationFrame = 0
+				userMsg := m.textarea.Value()
+				m.textarea.Reset()
+
+				cmd = m.sendMessage(userMsg)
+
+				return m, tea.Batch(
+					cmd,
+					m.spinner.Tick,
+					animationTick(),
+				)
+			}
+		}
+
+	case responseMsg:
+		m.loading = false
+		m.messages = append(m.messages, chatMessage{
+			role:     "assistant",
+			content:  msg.output.Text(),
+			thoughts: msg.output.Thoughts(),
+		})
+		m.updateViewport()
+		m.viewport.GotoBottom()
+
+	case errMsg:
+		m.loading = false
+		m.err = msg.err
+
+	case spinner.TickMsg:
+		if m.loading {
+			m.spinner, cmd = m.spinner.Update(msg)
+			cmds = append(cmds, cmd)
+		}
+
+	case animationTickMsg:
+		if m.loading {
+			m.animationFrame++
+			cmds = append(cmds, animationTick())
+		}
+	}
+
+	// Update child components - only pass KeyMsg to textarea to prevent escape sequence leaks
+	if !m.loading {
+		if _, ok := msg.(tea.KeyMsg); ok {
+			m.textarea, cmd = m.textarea.Update(msg)
+			cmds = append(cmds, cmd)
+		}
+	}
+
+	m.viewport, cmd = m.viewport.Update(msg)
+	cmds = append(cmds, cmd)
+
+	return m, tea.Batch(cmds...)
+}
+
+// View renders the TUI
+func (m Model) View() string {
+	if !m.ready {
+		return loadingStyle.Render("  Initializing...")
+	}
+
+	var sections []string
+	contentWidth := m.width - 4
+
+	// ═══════════════════════════════════════════════════════════════
+	// HEADER
+	// ═══════════════════════════════════════════════════════════════
+	headerContent := lipgloss.JoinHorizontal(
+		lipgloss.Center,
+		titleStyle.Render("✦ Gemini Chat"),
+		hintStyle.Render("  •  "),
+		subtitleStyle.Render(m.modelName),
+	)
+	header := headerStyle.Width(contentWidth).Render(headerContent)
+	sections = append(sections, header)
+
+	// ═══════════════════════════════════════════════════════════════
+	// MESSAGES AREA
+	// ═══════════════════════════════════════════════════════════════
+	var messagesContent string
+	if len(m.messages) == 0 {
+		// Welcome message when empty
+		messagesContent = m.renderWelcome()
+	} else {
+		messagesContent = m.viewport.View()
+	}
+
+	messagesPanel := messagesAreaStyle.
+		Width(contentWidth).
+		Height(m.viewport.Height).
+		Render(messagesContent)
+	sections = append(sections, messagesPanel)
+
+	// ═══════════════════════════════════════════════════════════════
+	// INPUT AREA
+	// ═══════════════════════════════════════════════════════════════
+	var inputContent string
+	if m.loading {
+		// Use colorful animated loading indicator
+		inputContent = m.renderLoadingAnimation()
+	} else {
+		inputContent = lipgloss.JoinVertical(
+			lipgloss.Left,
+			inputLabelStyle.Render("You"),
+			m.textarea.View(),
+		)
+	}
+
+	inputPanel := inputPanelStyle.Width(contentWidth).Render(inputContent)
+	sections = append(sections, inputPanel)
+
+	// ═══════════════════════════════════════════════════════════════
+	// STATUS BAR
+	// ═══════════════════════════════════════════════════════════════
+	statusBar := m.renderStatusBar(contentWidth)
+	sections = append(sections, statusBar)
+
+	// ═══════════════════════════════════════════════════════════════
+	// ERROR DISPLAY
+	// ═══════════════════════════════════════════════════════════════
+	if m.err != nil {
+		errorMsg := errorStyle.Render(fmt.Sprintf("⚠ Error: %v", m.err))
+		sections = append(sections, errorMsg)
+	}
+
+	return lipgloss.JoinVertical(lipgloss.Left, sections...)
+}
+
+// renderWelcome renders the welcome screen when no messages exist
+func (m Model) renderWelcome() string {
+	width := m.viewport.Width - 4
+	height := m.viewport.Height
+
+	icon := welcomeIconStyle.Width(width).Render("✦")
+	title := welcomeTitleStyle.Width(width).Render("Welcome to Gemini Chat")
+	subtitle := welcomeStyle.Width(width).Render("Start a conversation by typing a message below")
+
+	content := lipgloss.JoinVertical(
+		lipgloss.Center,
+		"",
+		icon,
+		"",
+		title,
+		"",
+		subtitle,
+		"",
+	)
+
+	// Center vertically
+	contentHeight := lipgloss.Height(content)
+	topPadding := (height - contentHeight) / 2
+	if topPadding < 0 {
+		topPadding = 0
+	}
+
+	return strings.Repeat("\n", topPadding) + content
+}
+
+// renderLoadingAnimation renders a colorful animated loading indicator
+func (m Model) renderLoadingAnimation() string {
+	// Animation characters
+	chars := []string{"⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷"}
+	barChars := []string{"█", "█", "█", "█", "█", "█", "█", "█", "▓", "▒", "░"}
+
+	// Get current animation frame
+	frame := m.animationFrame
+
+	// Render spinning character with color
+	spinIdx := frame % len(chars)
+	spinColor := gradientColors[frame%len(gradientColors)]
+	spinner := lipgloss.NewStyle().Foreground(spinColor).Bold(true).Render(chars[spinIdx])
+
+	// Render animated bar with gradient
+	barWidth := 20
+	var bar strings.Builder
+	for i := 0; i < barWidth; i++ {
+		// Calculate which color to use based on position and frame
+		colorIdx := (i + frame) % len(gradientColors)
+		charIdx := (i + frame/2) % len(barChars)
+
+		style := lipgloss.NewStyle().Foreground(gradientColors[colorIdx])
+		bar.WriteString(style.Render(barChars[charIdx]))
+	}
+
+	// Animated dots
+	dots := ""
+	numDots := (frame / 3) % 4
+	for i := 0; i < numDots; i++ {
+		dotColor := gradientColors[(frame+i)%len(gradientColors)]
+		dots += lipgloss.NewStyle().Foreground(dotColor).Render("●")
+	}
+	for i := numDots; i < 3; i++ {
+		dots += lipgloss.NewStyle().Foreground(colorTextMute).Render("○")
+	}
+
+	// Combine elements
+	text := lipgloss.NewStyle().Foreground(colorText).Render(" Gemini is thinking ")
+
+	return fmt.Sprintf("%s %s %s %s", spinner, bar.String(), text, dots)
+}
+
+// renderStatusBar renders the bottom status bar with shortcuts
+func (m Model) renderStatusBar(width int) string {
+	shortcuts := []struct {
+		key  string
+		desc string
+	}{
+		{"Enter", "Send"},
+		{"Esc", "Quit"},
+		{"↑↓", "Scroll"},
+	}
+
+	var items []string
+	for _, s := range shortcuts {
+		item := lipgloss.JoinHorizontal(
+			lipgloss.Center,
+			statusKeyStyle.Render(s.key),
+			statusDescStyle.Render(" "+s.desc),
+		)
+		items = append(items, item)
+	}
+
+	bar := lipgloss.JoinHorizontal(lipgloss.Center, strings.Join(items, "  │  "))
+	return statusBarStyle.Width(width).Align(lipgloss.Center).Render(bar)
+}
+
+// sendMessage creates a command to send a message to the API
+func (m Model) sendMessage(prompt string) tea.Cmd {
+	return func() tea.Msg {
+		output, err := m.session.SendMessage(prompt)
+		if err != nil {
+			return errMsg{err: err}
+		}
+		return responseMsg{output: output}
+	}
+}
+
+// updateViewport refreshes the viewport content with styled messages
+func (m *Model) updateViewport() {
+	var content strings.Builder
+	bubbleWidth := m.viewport.Width - 6
+
+	for i, msg := range m.messages {
+		if i > 0 {
+			content.WriteString("\n")
+		}
+
+		if msg.role == "user" {
+			// User message
+			label := userLabelStyle.Render("⬤ You")
+			bubble := userBubbleStyle.Width(bubbleWidth).Render(msg.content)
+			content.WriteString(label + "\n" + bubble)
+		} else {
+			// Assistant message
+			label := assistantLabelStyle.Render("✦ Gemini")
+
+			// Render thoughts if present
+			if msg.thoughts != "" {
+				thoughtsContent := thoughtsStyle.Width(bubbleWidth - 4).Render(
+					"💭 " + msg.thoughts,
+				)
+				content.WriteString(label + "\n" + thoughtsContent + "\n")
+			} else {
+				content.WriteString(label + "\n")
+			}
+
+			// Render markdown content
+			rendered, err := render.MarkdownWithWidth(msg.content, bubbleWidth-4)
+			if err != nil {
+				rendered = msg.content
+			}
+			// Trim trailing newlines from glamour
+			rendered = strings.TrimRight(rendered, "\n")
+
+			bubble := assistantBubbleStyle.Width(bubbleWidth).Render(rendered)
+			content.WriteString(bubble)
+		}
+		content.WriteString("\n")
+	}
+
+	m.viewport.SetContent(content.String())
+}
+
+
+// RunChat starts the chat TUI
+func RunChat(client *api.GeminiClient, modelName string) error {
+	m := NewChatModel(client, modelName)
+
+	p := tea.NewProgram(
+		m,
+		tea.WithAltScreen(),
+	)
+
+	_, err := p.Run()
+	return err
+}

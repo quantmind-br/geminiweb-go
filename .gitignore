@@ -1,0 +1,69 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+build/
+geminiweb
+
+# Test binary, built with `go test -c`
+*.test
+api.test
+
+# Output of the go coverage tool, specifically when used with LiteIDE
+*.out
+coverage.out
+coverage.html
+
+# Dependency directories (remove the comment below to include it)
+# vendor/
+
+# Go workspace file
+go.work
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Local config files
+cookies.json
+config.json
+
+# Temporary files
+*.tmp
+*.temp
+
+# Shotgun prompt files
+shotgun-prompt-*
+
+# Go specific patterns
+*.6
+*.8
+*.prof
+*.pprof
+
+# Log files
+*.log
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Debug files
+debug
+debug.test
+
+# Performance profiling
+*.prof
+*.cpu
+*.mem
+*.trace

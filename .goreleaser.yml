@@ -1,0 +1,84 @@
+# GoReleaser configuration for geminiweb
+# https://goreleaser.com
+
+version: 2
+
+project_name: geminiweb
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: geminiweb
+    main: ./cmd/geminiweb
+    binary: geminiweb
+    env:
+      - CGO_ENABLED=1
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X github.com/diogo/geminiweb/internal/commands.Version={{.Version}}
+      - -X github.com/diogo/geminiweb/internal/commands.BuildTime={{.Date}}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - id: default
+    formats:
+      - tar.gz
+      - zip
+    format_overrides:
+      - goos: windows
+        format: zip
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+    files:
+      - README.md
+      - LICENSE*
+
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^ci:"
+      - "Merge pull request"
+      - "Merge branch"
+
+release:
+  github:
+    owner: diogo
+    name: geminiweb
+  draft: true
+  prerelease: auto
+  name_template: "v{{.Version}}"
+
+# Homebrew tap (optional)
+brews:
+  - name: geminiweb
+    repository:
+      owner: diogo
+      name: homebrew-tap
+    skip_upload: true
+    description: "CLI for Google Gemini Web API"
+    homepage: "https://github.com/diogo/geminiweb"
+    license: "MIT"
+    install: |
+      bin.install "geminiweb"
+    test: |
+      system "#{bin}/geminiweb", "--version"
