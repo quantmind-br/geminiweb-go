@@ -53,13 +53,21 @@ Examples:
 		stat, _ := os.Stdin.Stat()
 		hasStdin := (stat.Mode() & os.ModeCharDevice) == 0
 
+		// Determine raw output mode:
+		// - If outputFlag is set (writing to file), use raw mode
+		// - If stdin is piped AND stdout is not a TTY, use raw mode
+		isTTY := isStdoutTTY()
+		isFileOutput := outputFlag != ""
+		isPipeOutput := hasStdin && !isTTY
+		rawOutput := isFileOutput || isPipeOutput
+
 		// Check for file input
 		if fileFlag != "" {
 			data, err := os.ReadFile(fileFlag)
 			if err != nil {
 				return fmt.Errorf("failed to read file: %w", err)
 			}
-			return runQuery(string(data))
+			return runQuery(string(data), rawOutput)
 		}
 
 		// Check for stdin
@@ -68,12 +76,12 @@ Examples:
 			if err != nil {
 				return fmt.Errorf("failed to read stdin: %w", err)
 			}
-			return runQuery(string(data))
+			return runQuery(string(data), rawOutput)
 		}
 
 		// Check for positional argument
 		if len(args) > 0 {
-			return runQuery(args[0])
+			return runQuery(args[0], rawOutput)
 		}
 
 		// No input - show help

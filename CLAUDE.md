@@ -39,6 +39,7 @@ make fmt                  # go fmt + gofumpt
 - **`internal/config/`** - Settings and cookie storage in `~/.geminiweb/`
 - **`internal/models/`** - Types (ModelOutput, Candidate, WebImage), model definitions, API constants/endpoints
 - **`internal/tui/`** - Bubble Tea TUI with Glamour markdown rendering and Lipgloss styling
+- **`internal/render/`** - Markdown rendering with Glamour, pooled renderers, configurable themes and caching
 - **`internal/history/`** - JSON-based conversation history persistence
 - **`internal/errors/`** - Custom error types
 
@@ -71,6 +72,7 @@ client.Close()
 3. **Auto Cookie Rotation** - Background goroutine refreshes tokens at `/accounts.google.com/RotateCookies` (default 9 min interval)
 4. **Browser Cookie Refresh** - On auth failure (401), automatically extracts fresh cookies from browser and retries (rate-limited to 30s)
 5. **Bubble Tea Architecture** - TUI uses Model/Update/View pattern; messages flow through Update, never mutate state directly
+6. **Dependency Injection** - Key components use interfaces (`GeminiClientInterface`, `ChatSessionInterface`, `BrowserCookieExtractor`) and option functions (`WithRefreshFunc`, `WithCookieLoader`) for testability
 
 ### TUI Notes
 
@@ -87,6 +89,8 @@ client.Close()
 - Use `bogdanfinn/fhttp` for HTTP requests (not net/http)
 
 ## Models
+
+Default model is `models.Model30Pro` (gemini-3.0-pro).
 
 - `models.Model25Flash` - Fast model (gemini-2.5-flash)
 - `models.Model25Pro` - Balanced model (gemini-2.5-pro)

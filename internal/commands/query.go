@@ -164,7 +164,8 @@ func (s *spinner) stopWithError() {
 }
 
 // runQuery executes a single query and outputs the response
-func runQuery(prompt string) error {
+// If rawOutput is true, only the raw response text is printed without decoration
+func runQuery(prompt string, rawOutput bool) error {
 	prompt = strings.TrimSpace(prompt)
 	if prompt == "" {
 		return fmt.Errorf("prompt cannot be empty")
@@ -191,35 +192,50 @@ func runQuery(prompt string) error {
 	}
 	defer client.Close()
 
-	// Initialize client with animation
+	// Initialize client
 	// Init() handles cookie loading from disk and browser fallback
-	spin := newSpinner("Connecting to Gemini")
-	spin.start()
+	var spin *spinner
+	if !rawOutput {
+		spin = newSpinner("Connecting to Gemini")
+		spin.start()
+	}
 
 	if err := client.Init(); err != nil {
-		spin.stopWithError()
+		if !rawOutput {
+			spin.stopWithError()
+		}
 		return fmt.Errorf("failed to initialize: %w", err)
 	}
-	spin.stopWithSuccess("Connected")
+	if !rawOutput {
+		spin.stopWithSuccess("Connected")
+	}
 
 	// Upload image if provided
 	var images []*api.UploadedImage
 	if imageFlag != "" {
-		spin = newSpinner("Uploading image")
-		spin.start()
+		if !rawOutput {
+			spin = newSpinner("Uploading image")
+			spin.start()
+		}
 
 		img, err := client.UploadImage(imageFlag)
 		if err != nil {
-			spin.stopWithError()
+			if !rawOutput {
+				spin.stopWithError()
+			}
 			return fmt.Errorf("failed to upload image: %w", err)
 		}
 		images = append(images, img)
-		spin.stopWithSuccess("Image uploaded")
+		if !rawOutput {
+			spin.stopWithSuccess("Image uploaded")
+		}
 	}
 
-	// Generate content with animation
-	spin = newSpinner("Generating response")
-	spin.start()
+	// Generate content
+	if !rawOutput {
+		spin = newSpinner("Generating response")
+		spin.start()
+	}
 
 	opts := &api.GenerateOptions{
 		Images: images,
@@ -227,15 +243,34 @@ func runQuery(prompt string) error {
 
 	output, err := client.GenerateContent(prompt, opts)
 	if err != nil {
-		spin.stopWithError()
+		if !rawOutput {
+			spin.stopWithError()
+		}
 		return fmt.Errorf("generation failed: %w", err)
 	}
-	spin.stopWithSuccess("Done")
-
-	// Add spacing
-	fmt.Fprintln(os.Stderr)
+	if !rawOutput {
+		spin.stopWithSuccess("Done")
+	}
 
 	text := output.Text()
+
+	// Raw output mode: output only the raw text
+	if rawOutput {
+		// Output to file if specified
+		if outputFlag != "" {
+			if err := os.WriteFile(outputFlag, []byte(text), 0o644); err != nil {
+				return fmt.Errorf("failed to write output file: %w", err)
+			}
+			return nil
+		}
+		// Output raw text to stdout
+		fmt.Print(text)
+		return nil
+	}
+
+	// Decorated output mode (TTY)
+	// Add spacing
+	fmt.Fprintln(os.Stderr)
 
 	// Copy to clipboard if enabled in config
 	cfg, _ := config.LoadConfig()
@@ -308,4 +343,9 @@ func getTerminalWidth() int {
 		return 80 // default width
 	}
 	return width
+}
+
+// isStdoutTTY returns true if stdout is connected to a terminal
+func isStdoutTTY() bool {
+	return term.IsTerminal(int(os.Stdout.Fd()))
 }

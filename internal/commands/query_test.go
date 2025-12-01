@@ -279,8 +279,8 @@ func TestRunQuery_EmptyPrompt(t *testing.T) {
 	os.Setenv("HOME", tmpDir)
 	defer os.Setenv("HOME", oldHome)
 
-	// Test with empty prompt (trimmed)
-	err := runQuery("   ")
+	// Test with empty prompt (trimmed) - test both raw and decorated modes
+	err := runQuery("   ", false)
 	if err == nil {
 		t.Error("Expected error for empty prompt")
 	}
@@ -290,7 +290,7 @@ func TestRunQuery_EmptyPrompt(t *testing.T) {
 	}
 
 	// Test with completely empty string
-	err = runQuery("")
+	err = runQuery("", true)
 	if err == nil {
 		t.Error("Expected error for empty prompt")
 	}
@@ -572,7 +572,7 @@ func TestRunQuery_IntegrationSuccess(t *testing.T) {
 	t.Skip("Cannot fully test without extensive API client mocking")
 }
 
-// TestRunQuery_EmptyPrompt tests runQuery with empty prompt
+// TestRunQuery_EmptyPromptReal tests runQuery with empty prompt
 func TestRunQuery_EmptyPromptReal(t *testing.T) {
 	// Create temporary directory for config
 	tmpDir := t.TempDir()
@@ -591,8 +591,8 @@ func TestRunQuery_EmptyPromptReal(t *testing.T) {
 	imageFlag = ""
 	outputFlag = ""
 
-	// Test with empty prompt
-	err := runQuery("")
+	// Test with empty prompt (raw mode)
+	err := runQuery("", true)
 	if err == nil {
 		t.Error("Expected error for empty prompt, got nil")
 	}
@@ -601,8 +601,8 @@ func TestRunQuery_EmptyPromptReal(t *testing.T) {
 		t.Errorf("Expected 'cannot be empty' in error, got: %v", err)
 	}
 
-	// Test with whitespace-only prompt
-	err = runQuery("   \n\t  ")
+	// Test with whitespace-only prompt (decorated mode)
+	err = runQuery("   \n\t  ", false)
 	if err == nil {
 		t.Error("Expected error for whitespace-only prompt, got nil")
 	}
@@ -632,7 +632,7 @@ func TestRunQuery_AuthErrorReal(t *testing.T) {
 
 	// Test should fail due to missing cookies and browser extraction failure
 	// With the new silent auth, the error will mention "authentication failed"
-	err := runQuery("Test prompt")
+	err := runQuery("Test prompt", false)
 	if err == nil {
 		t.Error("Expected error for missing cookies, got nil")
 	}
@@ -672,10 +672,15 @@ func TestRunQuery_ClientCreationError(t *testing.T) {
 	imageFlag = ""
 	outputFlag = ""
 
-	// Test should fail due to invalid cookies
-	err := runQuery("Test prompt")
+	// Test should fail due to invalid cookies (test both modes)
+	err := runQuery("Test prompt", false)
 	if err == nil {
 		t.Error("Expected error for invalid cookies, got nil")
+	}
+
+	err = runQuery("Test prompt", true)
+	if err == nil {
+		t.Error("Expected error for invalid cookies in raw mode, got nil")
 	}
 }
 
@@ -724,7 +729,7 @@ func TestRunQuery_WithImageUpload(t *testing.T) {
 	outputFlag = ""
 
 	// Test with image (will fail due to client mocking limitations)
-	err := runQuery("Describe this image")
+	err := runQuery("Describe this image", false)
 	if err != nil && !strings.Contains(err.Error(), "failed to upload image") {
 		t.Logf("Expected image upload error, got: %v", err)
 	}
@@ -761,8 +766,8 @@ func TestRunQuery_OutputToFileReal(t *testing.T) {
 	imageFlag = ""
 	outputFlag = outputFile
 
-	// Test with output file (will fail due to client mocking limitations)
-	err := runQuery("Test prompt")
+	// Test with output file (raw mode since outputFlag is set)
+	err := runQuery("Test prompt", true)
 	if err != nil && !strings.Contains(err.Error(), "failed to initialize") {
 		t.Logf("Expected initialization error, got: %v", err)
 	}
@@ -811,8 +816,8 @@ func TestRunQuery_CopyToClipboard(t *testing.T) {
 	imageFlag = ""
 	outputFlag = ""
 
-	// Test with clipboard enabled (will fail due to client mocking limitations)
-	err := runQuery("Test prompt")
+	// Test with clipboard enabled (decorated mode, will fail due to client mocking limitations)
+	err := runQuery("Test prompt", false)
 	if err != nil && !strings.Contains(err.Error(), "failed to initialize") {
 		t.Logf("Expected initialization error, got: %v", err)
 	}
@@ -848,7 +853,7 @@ func TestRunQuery_NonExistentImageFile(t *testing.T) {
 
 	// Test should fail - either due to non-existent image file or initialization
 	// (the test cookies are not valid for real token extraction)
-	err := runQuery("Describe this image")
+	err := runQuery("Describe this image", false)
 	if err == nil {
 		t.Error("Expected error for non-existent image, got nil")
 	}
@@ -889,8 +894,8 @@ func TestRunQuery_InvalidOutputFile(t *testing.T) {
 	imageFlag = ""
 	outputFlag = "/invalid/path/output.txt"
 
-	// Test should fail due to invalid output path
-	err := runQuery("Test prompt")
+	// Test should fail due to invalid output path (raw mode since outputFlag is set)
+	err := runQuery("Test prompt", true)
 	if err == nil {
 		t.Error("Expected error for invalid output path, got nil")
 	}
@@ -928,7 +933,7 @@ func TestRunQuery_WithModelFlag(t *testing.T) {
 	modelFlag = "gemini-2.5-pro"
 
 	// Test with custom model (will fail due to client mocking limitations)
-	err := runQuery("Test prompt")
+	err := runQuery("Test prompt", false)
 	if err != nil && !strings.Contains(err.Error(), "failed to initialize") {
 		t.Logf("Expected initialization error, got: %v", err)
 	}
@@ -966,8 +971,97 @@ func TestRunQuery_WithBrowserRefreshFlag(t *testing.T) {
 	browserRefreshFlag = "chrome"
 
 	// Test with browser refresh (will fail due to client mocking limitations)
-	err := runQuery("Test prompt")
+	err := runQuery("Test prompt", false)
 	if err != nil && !strings.Contains(err.Error(), "failed to initialize") {
 		t.Logf("Expected initialization error, got: %v", err)
 	}
+}
+
+// TestIsStdoutTTY tests the isStdoutTTY function
+func TestIsStdoutTTY(t *testing.T) {
+	// Just verify the function exists and returns a boolean
+	// In a test environment, stdout is typically not a TTY
+	result := isStdoutTTY()
+
+	// The result is environment-dependent, so we just verify it returns a valid boolean
+	if result != true && result != false {
+		t.Error("isStdoutTTY() should return a boolean")
+	}
+}
+
+// TestRunQuery_RawOutputMode tests runQuery in raw output mode
+func TestRunQuery_RawOutputMode(t *testing.T) {
+	// Create temporary directory for config
+	tmpDir := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	os.Setenv("HOME", tmpDir)
+	defer os.Setenv("HOME", oldHome)
+
+	// Set flags
+	oldImageFlag := imageFlag
+	oldOutputFlag := outputFlag
+	defer func() {
+		imageFlag = oldImageFlag
+		outputFlag = oldOutputFlag
+	}()
+
+	imageFlag = ""
+	outputFlag = ""
+
+	t.Run("empty_prompt_raw_mode", func(t *testing.T) {
+		err := runQuery("", true)
+		if err == nil {
+			t.Error("Expected error for empty prompt in raw mode")
+		}
+		if !strings.Contains(err.Error(), "cannot be empty") {
+			t.Errorf("Expected 'cannot be empty' error, got: %v", err)
+		}
+	})
+
+	t.Run("whitespace_prompt_raw_mode", func(t *testing.T) {
+		err := runQuery("   \t\n", true)
+		if err == nil {
+			t.Error("Expected error for whitespace-only prompt in raw mode")
+		}
+		if !strings.Contains(err.Error(), "cannot be empty") {
+			t.Errorf("Expected 'cannot be empty' error, got: %v", err)
+		}
+	})
+}
+
+// TestRunQuery_DecoratedVsRawMode tests differences between decorated and raw output modes
+func TestRunQuery_DecoratedVsRawMode(t *testing.T) {
+	// This test verifies that both modes handle errors consistently
+	tmpDir := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	os.Setenv("HOME", tmpDir)
+	defer os.Setenv("HOME", oldHome)
+
+	// Set flags
+	oldImageFlag := imageFlag
+	oldOutputFlag := outputFlag
+	defer func() {
+		imageFlag = oldImageFlag
+		outputFlag = oldOutputFlag
+	}()
+
+	imageFlag = ""
+	outputFlag = ""
+
+	t.Run("both_modes_reject_empty_prompt", func(t *testing.T) {
+		errRaw := runQuery("", true)
+		errDecorated := runQuery("", false)
+
+		if errRaw == nil || errDecorated == nil {
+			t.Error("Both modes should reject empty prompts")
+		}
+
+		// Both errors should contain the same message
+		if !strings.Contains(errRaw.Error(), "cannot be empty") {
+			t.Errorf("Raw mode error should contain 'cannot be empty', got: %v", errRaw)
+		}
+		if !strings.Contains(errDecorated.Error(), "cannot be empty") {
+			t.Errorf("Decorated mode error should contain 'cannot be empty', got: %v", errDecorated)
+		}
+	})
 }
