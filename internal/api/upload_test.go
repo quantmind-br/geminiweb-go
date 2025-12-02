@@ -28,6 +28,47 @@ func TestSupportedImageTypes(t *testing.T) {
 	}
 }
 
+func TestSupportedTextTypes(t *testing.T) {
+	types := SupportedTextTypes()
+
+	expected := []string{
+		"text/plain",
+		"text/markdown",
+		"text/x-markdown",
+		"application/json",
+		"text/csv",
+		"text/html",
+		"text/xml",
+		"application/xml",
+	}
+
+	if len(types) != len(expected) {
+		t.Errorf("expected %d types, got %d", len(expected), len(types))
+	}
+
+	for i, tp := range types {
+		if tp != expected[i] {
+			t.Errorf("types[%d] = %s, want %s", i, tp, expected[i])
+		}
+	}
+}
+
+func TestMaxFileSize(t *testing.T) {
+	expected := 50 * 1024 * 1024 // 50MB
+
+	if MaxFileSize != expected {
+		t.Errorf("MaxFileSize = %d, want %d", MaxFileSize, expected)
+	}
+}
+
+func TestLargePromptThreshold(t *testing.T) {
+	expected := 100 * 1024 // 100KB
+
+	if LargePromptThreshold != expected {
+		t.Errorf("LargePromptThreshold = %d, want %d", LargePromptThreshold, expected)
+	}
+}
+
 func TestUploadedImage_Fields(t *testing.T) {
 	img := &UploadedImage{
 		ResourceID: "resource-123",
@@ -349,7 +390,7 @@ func TestGeminiClient_UploadImage(t *testing.T) {
 
 		// Setup mock client
 		mockClient := &MockHttpClient{}
-		body := NewMockResponseBody([]byte(`{"resourceId": "test_resource_123"}`))
+		body := NewMockResponseBody([]byte(`/contrib_service/ttl_1d/test_resource_123`))
 		mockClient.Response = &fhttp.Response{
 			StatusCode: 200,
 			Body:       body,
@@ -376,8 +417,8 @@ func TestGeminiClient_UploadImage(t *testing.T) {
 			return
 		}
 
-		if uploaded.ResourceID != "test_resource_123" {
-			t.Errorf("ResourceID = %s, want test_resource_123", uploaded.ResourceID)
+		if uploaded.ResourceID != "/contrib_service/ttl_1d/test_resource_123" {
+			t.Errorf("ResourceID = %s, want /contrib_service/ttl_1d/test_resource_123", uploaded.ResourceID)
 		}
 
 		if uploaded.FileName != "test.png" {
@@ -412,7 +453,7 @@ func TestGeminiClient_UploadImageFromReader(t *testing.T) {
 	t.Run("successful_upload", func(t *testing.T) {
 		// Setup mock client
 		mockClient := &MockHttpClient{}
-		body := NewMockResponseBody([]byte(`{"resourceId": "reader_resource_456"}`))
+		body := NewMockResponseBody([]byte(`/contrib_service/ttl_1d/reader_resource_456`))
 		mockClient.Response = &fhttp.Response{
 			StatusCode: 200,
 			Body:       body,
@@ -442,8 +483,8 @@ func TestGeminiClient_UploadImageFromReader(t *testing.T) {
 			return
 		}
 
-		if uploaded.ResourceID != "reader_resource_456" {
-			t.Errorf("ResourceID = %s, want reader_resource_456", uploaded.ResourceID)
+		if uploaded.ResourceID != "/contrib_service/ttl_1d/reader_resource_456" {
+			t.Errorf("ResourceID = %s, want /contrib_service/ttl_1d/reader_resource_456", uploaded.ResourceID)
 		}
 
 		if uploaded.FileName != "test.jpg" {
@@ -482,7 +523,7 @@ func TestImageUploader_UploadStream(t *testing.T) {
 	t.Run("successful_stream_upload", func(t *testing.T) {
 		// Setup mock client
 		mockClient := &MockHttpClient{}
-		body := NewMockResponseBody([]byte(`{"resourceId": "stream_resource_789"}`))
+		body := NewMockResponseBody([]byte(`/contrib_service/ttl_1d/stream_resource_789`))
 		mockClient.Response = &fhttp.Response{
 			StatusCode: 200,
 			Body:       body,
@@ -513,8 +554,8 @@ func TestImageUploader_UploadStream(t *testing.T) {
 			return
 		}
 
-		if uploaded.ResourceID != "stream_resource_789" {
-			t.Errorf("ResourceID = %s, want stream_resource_789", uploaded.ResourceID)
+		if uploaded.ResourceID != "/contrib_service/ttl_1d/stream_resource_789" {
+			t.Errorf("ResourceID = %s, want /contrib_service/ttl_1d/stream_resource_789", uploaded.ResourceID)
 		}
 
 		if uploaded.FileName != "stream.png" {
@@ -550,48 +591,10 @@ func TestImageUploader_UploadStream(t *testing.T) {
 		}
 	})
 
-	t.Run("parse_error_with_header_fallback", func(t *testing.T) {
-		// Setup mock client with response that has resource ID in header
+	t.Run("plain_text_response", func(t *testing.T) {
+		// Setup mock client with plain text response (the new expected format)
 		mockClient := &MockHttpClient{}
-		body := NewMockResponseBody([]byte("invalid json"))
-		mockClient.Response = &fhttp.Response{
-			StatusCode: 200,
-			Body:       body,
-			Header:     make(fhttp.Header),
-		}
-		mockClient.Response.Header.Set("X-Goog-Upload-URL", "header_resource_123")
-
-		client, err := NewClient(validCookies)
-		if err != nil {
-			t.Fatalf("NewClient failed: %v", err)
-		}
-		client.httpClient = mockClient
-		client.autoRefresh = false
-
-		uploader := NewImageUploader(client)
-		reader := bytes.NewReader([]byte("data"))
-
-		uploaded, err := uploader.uploadStream(reader, "test.png", "image/png", 1024)
-		if err != nil {
-			t.Errorf("uploadStream() unexpected error: %v", err)
-			return
-		}
-
-		if uploaded == nil {
-			t.Error("uploadStream() returned nil")
-			return
-		}
-
-		// Should use header value when JSON parse fails
-		if uploaded.ResourceID != "header_resource_123" {
-			t.Errorf("ResourceID = %s, want header_resource_123", uploaded.ResourceID)
-		}
-	})
-
-	t.Run("parse_error_with_fallback_id", func(t *testing.T) {
-		// Setup mock client with invalid JSON and no header
-		mockClient := &MockHttpClient{}
-		body := NewMockResponseBody([]byte("invalid json"))
+		body := NewMockResponseBody([]byte("/contrib_service/ttl_1d/plain_text_id"))
 		mockClient.Response = &fhttp.Response{
 			StatusCode: 200,
 			Body:       body,
@@ -619,9 +622,377 @@ func TestImageUploader_UploadStream(t *testing.T) {
 			return
 		}
 
-		// Should use upload ID as fallback when both JSON and header fail
-		if uploaded.ResourceID == "" {
-			t.Error("ResourceID should not be empty with fallback")
+		// Response is parsed as plain text
+		if uploaded.ResourceID != "/contrib_service/ttl_1d/plain_text_id" {
+			t.Errorf("ResourceID = %s, want /contrib_service/ttl_1d/plain_text_id", uploaded.ResourceID)
 		}
 	})
+
+	t.Run("empty_response_error", func(t *testing.T) {
+		// Setup mock client with empty response
+		mockClient := &MockHttpClient{}
+		body := NewMockResponseBody([]byte(""))
+		mockClient.Response = &fhttp.Response{
+			StatusCode: 200,
+			Body:       body,
+			Header:     make(fhttp.Header),
+		}
+
+		client, err := NewClient(validCookies)
+		if err != nil {
+			t.Fatalf("NewClient failed: %v", err)
+		}
+		client.httpClient = mockClient
+		client.autoRefresh = false
+
+		uploader := NewImageUploader(client)
+		reader := bytes.NewReader([]byte("data"))
+
+		_, err = uploader.uploadStream(reader, "test.png", "image/png", 1024)
+		if err == nil {
+			t.Error("uploadStream() expected error for empty response")
+		}
+
+		if !strings.Contains(err.Error(), "empty resource ID") {
+			t.Errorf("Expected 'empty resource ID' in error, got: %v", err)
+		}
+	})
+}
+
+// TestNewFileUploader tests FileUploader creation
+func TestNewFileUploader(t *testing.T) {
+	client := &GeminiClient{}
+	uploader := NewFileUploader(client)
+
+	if uploader == nil {
+		t.Error("NewFileUploader returned nil")
+	}
+
+	if uploader.client != client {
+		t.Error("uploader client does not match input client")
+	}
+}
+
+// TestFileUploader_IsImageType tests image type detection
+func TestFileUploader_IsImageType(t *testing.T) {
+	uploader := &FileUploader{}
+
+	tests := []struct {
+		mimeType string
+		expected bool
+	}{
+		{"image/jpeg", true},
+		{"image/png", true},
+		{"image/gif", true},
+		{"image/webp", true},
+		{"text/plain", false},
+		{"text/markdown", false},
+		{"application/json", false},
+	}
+
+	for _, tt := range tests {
+		result := uploader.isImageType(tt.mimeType)
+		if result != tt.expected {
+			t.Errorf("isImageType(%s) = %v, want %v", tt.mimeType, result, tt.expected)
+		}
+	}
+}
+
+// TestFileUploader_IsTextType tests text type detection
+func TestFileUploader_IsTextType(t *testing.T) {
+	uploader := &FileUploader{}
+
+	tests := []struct {
+		mimeType string
+		expected bool
+	}{
+		{"text/plain", true},
+		{"text/markdown", true},
+		{"text/x-markdown", true},
+		{"application/json", true},
+		{"text/csv", true},
+		{"text/html", true},
+		{"image/png", false},
+		{"application/pdf", false},
+	}
+
+	for _, tt := range tests {
+		result := uploader.isTextType(tt.mimeType)
+		if result != tt.expected {
+			t.Errorf("isTextType(%s) = %v, want %v", tt.mimeType, result, tt.expected)
+		}
+	}
+}
+
+// TestFileUploader_UploadText tests text content upload
+func TestFileUploader_UploadText(t *testing.T) {
+	validCookies := &config.Cookies{
+		Secure1PSID:   "test_psid",
+		Secure1PSIDTS: "test_psidts",
+	}
+
+	t.Run("successful_text_upload", func(t *testing.T) {
+		// Setup mock client
+		mockClient := &MockHttpClient{}
+		body := NewMockResponseBody([]byte(`/contrib_service/ttl_1d/text_resource_123`))
+		mockClient.Response = &fhttp.Response{
+			StatusCode: 200,
+			Body:       body,
+			Header:     make(fhttp.Header),
+		}
+
+		// Create client and set mock
+		client, err := NewClient(validCookies)
+		if err != nil {
+			t.Fatalf("NewClient failed: %v", err)
+		}
+		client.httpClient = mockClient
+		client.autoRefresh = false
+
+		// Upload text content
+		uploaded, err := client.UploadText("This is test content", "test.txt")
+		if err != nil {
+			t.Errorf("UploadText() unexpected error: %v", err)
+			return
+		}
+
+		if uploaded == nil {
+			t.Error("UploadText() returned nil")
+			return
+		}
+
+		if uploaded.ResourceID != "/contrib_service/ttl_1d/text_resource_123" {
+			t.Errorf("ResourceID = %s, want /contrib_service/ttl_1d/text_resource_123", uploaded.ResourceID)
+		}
+
+		if uploaded.FileName != "test.txt" {
+			t.Errorf("FileName = %s, want test.txt", uploaded.FileName)
+		}
+
+		if uploaded.MIMEType != "text/plain; charset=utf-8" {
+			t.Errorf("MIMEType = %s, want text/plain; charset=utf-8", uploaded.MIMEType)
+		}
+	})
+
+	t.Run("upload_text_default_filename", func(t *testing.T) {
+		// Setup mock client
+		mockClient := &MockHttpClient{}
+		body := NewMockResponseBody([]byte(`/contrib_service/ttl_1d/text_resource_456`))
+		mockClient.Response = &fhttp.Response{
+			StatusCode: 200,
+			Body:       body,
+			Header:     make(fhttp.Header),
+		}
+
+		client, err := NewClient(validCookies)
+		if err != nil {
+			t.Fatalf("NewClient failed: %v", err)
+		}
+		client.httpClient = mockClient
+		client.autoRefresh = false
+
+		// Upload with empty filename
+		uploaded, err := client.UploadText("content", "")
+		if err != nil {
+			t.Errorf("UploadText() unexpected error: %v", err)
+			return
+		}
+
+		if uploaded.FileName != "prompt.txt" {
+			t.Errorf("FileName = %s, want prompt.txt", uploaded.FileName)
+		}
+	})
+
+	t.Run("upload_text_too_large", func(t *testing.T) {
+		client, err := NewClient(validCookies)
+		if err != nil {
+			t.Fatalf("NewClient failed: %v", err)
+		}
+
+		// Create content larger than MaxFileSize
+		largeContent := strings.Repeat("a", MaxFileSize+1)
+
+		_, err = client.UploadText(largeContent, "large.txt")
+		if err == nil {
+			t.Error("UploadText() expected error for large content")
+		}
+
+		if !strings.Contains(err.Error(), "exceeds maximum") {
+			t.Errorf("expected 'exceeds maximum' in error, got: %v", err)
+		}
+	})
+}
+
+// TestFileUploader_UploadFile_TextFile tests text file upload
+func TestFileUploader_UploadFile_TextFile(t *testing.T) {
+	validCookies := &config.Cookies{
+		Secure1PSID:   "test_psid",
+		Secure1PSIDTS: "test_psidts",
+	}
+
+	t.Run("successful_text_file_upload", func(t *testing.T) {
+		// Create a temporary text file
+		tmpDir := t.TempDir()
+		testFile := filepath.Join(tmpDir, "test.md")
+		err := os.WriteFile(testFile, []byte("# Hello World\n\nThis is markdown."), 0644)
+		if err != nil {
+			t.Fatalf("Failed to create test file: %v", err)
+		}
+
+		// Setup mock client
+		mockClient := &MockHttpClient{}
+		body := NewMockResponseBody([]byte(`/contrib_service/ttl_1d/file_resource_789`))
+		mockClient.Response = &fhttp.Response{
+			StatusCode: 200,
+			Body:       body,
+			Header:     make(fhttp.Header),
+		}
+
+		// Create client and set mock
+		client, err := NewClient(validCookies)
+		if err != nil {
+			t.Fatalf("NewClient failed: %v", err)
+		}
+		client.httpClient = mockClient
+		client.autoRefresh = false
+
+		// Upload file
+		uploaded, err := client.UploadFile(testFile)
+		if err != nil {
+			t.Errorf("UploadFile() unexpected error: %v", err)
+			return
+		}
+
+		if uploaded == nil {
+			t.Error("UploadFile() returned nil")
+			return
+		}
+
+		if uploaded.ResourceID != "/contrib_service/ttl_1d/file_resource_789" {
+			t.Errorf("ResourceID = %s, want /contrib_service/ttl_1d/file_resource_789", uploaded.ResourceID)
+		}
+
+		if uploaded.FileName != "test.md" {
+			t.Errorf("FileName = %s, want test.md", uploaded.FileName)
+		}
+	})
+
+	t.Run("file_too_large_text", func(t *testing.T) {
+		// Create a temporary text file larger than MaxFileSize
+		tmpDir := t.TempDir()
+		testFile := filepath.Join(tmpDir, "large.txt")
+		largeData := make([]byte, MaxFileSize+1)
+		err := os.WriteFile(testFile, largeData, 0644)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		client := &GeminiClient{}
+		uploader := NewFileUploader(client)
+
+		_, err = uploader.UploadFile(testFile)
+		if err == nil {
+			t.Error("expected error for too large file")
+		}
+
+		if !strings.Contains(err.Error(), "exceeds maximum") {
+			t.Errorf("expected 'exceeds maximum' in error, got: %v", err)
+		}
+	})
+
+	t.Run("file_not_found", func(t *testing.T) {
+		client := &GeminiClient{}
+		uploader := NewFileUploader(client)
+
+		_, err := uploader.UploadFile("/nonexistent/file.txt")
+		if err == nil {
+			t.Error("expected error for nonexistent file")
+		}
+
+		if !strings.Contains(err.Error(), "failed to stat file") {
+			t.Errorf("expected 'failed to stat file' in error, got: %v", err)
+		}
+	})
+}
+
+// TestFileUploader_UploadStream tests the private uploadStream function
+func TestFileUploader_UploadStream(t *testing.T) {
+	validCookies := &config.Cookies{
+		Secure1PSID:   "test_psid",
+		Secure1PSIDTS: "test_psidts",
+	}
+
+	t.Run("successful_stream_upload", func(t *testing.T) {
+		// Setup mock client
+		mockClient := &MockHttpClient{}
+		body := NewMockResponseBody([]byte(`/contrib_service/ttl_1d/stream_text_123`))
+		mockClient.Response = &fhttp.Response{
+			StatusCode: 200,
+			Body:       body,
+			Header:     make(fhttp.Header),
+		}
+
+		client, err := NewClient(validCookies)
+		if err != nil {
+			t.Fatalf("NewClient failed: %v", err)
+		}
+		client.httpClient = mockClient
+		client.autoRefresh = false
+
+		uploader := NewFileUploader(client)
+		reader := bytes.NewReader([]byte("stream text data"))
+
+		uploaded, err := uploader.uploadStream(reader, "stream.txt", "text/plain", 1024)
+		if err != nil {
+			t.Errorf("uploadStream() unexpected error: %v", err)
+			return
+		}
+
+		if uploaded == nil {
+			t.Error("uploadStream() returned nil")
+			return
+		}
+
+		if uploaded.ResourceID != "/contrib_service/ttl_1d/stream_text_123" {
+			t.Errorf("ResourceID = %s, want /contrib_service/ttl_1d/stream_text_123", uploaded.ResourceID)
+		}
+	})
+
+	t.Run("http_error_status", func(t *testing.T) {
+		mockClient := &MockHttpClient{}
+		body := NewMockResponseBody([]byte("error"))
+		mockClient.Response = &fhttp.Response{
+			StatusCode: 500,
+			Body:       body,
+			Header:     make(fhttp.Header),
+		}
+
+		client, err := NewClient(validCookies)
+		if err != nil {
+			t.Fatalf("NewClient failed: %v", err)
+		}
+		client.httpClient = mockClient
+		client.autoRefresh = false
+
+		uploader := NewFileUploader(client)
+		reader := bytes.NewReader([]byte("data"))
+
+		_, err = uploader.uploadStream(reader, "test.txt", "text/plain", 1024)
+		if err == nil {
+			t.Error("uploadStream() expected error for HTTP 500")
+		} else if !strings.Contains(err.Error(), "upload failed") {
+			t.Errorf("Expected 'upload failed' in error, got: %v", err)
+		}
+	})
+}
+
+// TestGeminiClient_ConvenienceMethods tests the client convenience methods
+func TestGeminiClient_ConvenienceMethods(t *testing.T) {
+	client := &GeminiClient{}
+
+	// Verify methods exist
+	_ = client.UploadFile
+	_ = client.UploadText
+	_ = client.UploadImage
+	_ = client.UploadImageFromReader
 }

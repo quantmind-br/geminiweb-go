@@ -13,6 +13,7 @@ import (
 
 	"github.com/diogo/geminiweb/internal/api"
 	"github.com/diogo/geminiweb/internal/config"
+	apierrors "github.com/diogo/geminiweb/internal/errors"
 	"github.com/diogo/geminiweb/internal/models"
 	"github.com/diogo/geminiweb/internal/render"
 )
@@ -203,6 +204,7 @@ func runQuery(prompt string, rawOutput bool) error {
 	if err := client.Init(); err != nil {
 		if !rawOutput {
 			spin.stopWithError()
+			fmt.Fprintln(os.Stderr, formatErrorMessage(err, "Failed to initialize"))
 		}
 		return fmt.Errorf("failed to initialize: %w", err)
 	}
@@ -222,6 +224,7 @@ func runQuery(prompt string, rawOutput bool) error {
 		if err != nil {
 			if !rawOutput {
 				spin.stopWithError()
+				fmt.Fprintln(os.Stderr, formatErrorMessage(err, "Failed to upload image"))
 			}
 			return fmt.Errorf("failed to upload image: %w", err)
 		}
@@ -229,6 +232,36 @@ func runQuery(prompt string, rawOutput bool) error {
 		if !rawOutput {
 			spin.stopWithSuccess("Image uploaded")
 		}
+	}
+
+	// For large prompts, upload as a file and use a reference prompt
+	var actualPrompt string
+	if len(prompt) > api.LargePromptThreshold {
+		if !rawOutput {
+			spin = newSpinner("Uploading large prompt as file")
+			spin.start()
+		}
+
+		// Upload the prompt as a text file
+		uploadedFile, err := client.UploadText(prompt, "prompt.md")
+		if err != nil {
+			if !rawOutput {
+				spin.stopWithError()
+				fmt.Fprintln(os.Stderr, formatErrorMessage(err, "Failed to upload prompt"))
+			}
+			return fmt.Errorf("failed to upload prompt: %w", err)
+		}
+
+		// Add as an "image" (the API treats uploaded files similarly)
+		images = append(images, uploadedFile)
+
+		// Use a minimal prompt that references the uploaded file
+		actualPrompt = "Please process and respond to the content in the uploaded file."
+		if !rawOutput {
+			spin.stopWithSuccess(fmt.Sprintf("Prompt uploaded (%d KB)", len(prompt)/1024))
+		}
+	} else {
+		actualPrompt = prompt
 	}
 
 	// Generate content
@@ -241,10 +274,11 @@ func runQuery(prompt string, rawOutput bool) error {
 		Images: images,
 	}
 
-	output, err := client.GenerateContent(prompt, opts)
+	output, err := client.GenerateContent(actualPrompt, opts)
 	if err != nil {
 		if !rawOutput {
 			spin.stopWithError()
+			fmt.Fprintln(os.Stderr, formatErrorMessage(err, "Generation failed"))
 		}
 		return fmt.Errorf("generation failed: %w", err)
 	}
@@ -348,4 +382,44 @@ func getTerminalWidth() int {
 // isStdoutTTY returns true if stdout is connected to a terminal
 func isStdoutTTY() bool {
 	return term.IsTerminal(int(os.Stdout.Fd()))
+}
+
+// formatErrorMessage formats an error with additional context from structured errors
+func formatErrorMessage(err error, context string) string {
+	if err == nil {
+		return ""
+	}
+
+	errorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#f7768e"))
+	dimStyle := lipgloss.NewStyle().Foreground(colorTextDim)
+
+	var sb strings.Builder
+	sb.WriteString(errorStyle.Render(fmt.Sprintf("✗ %s: %v", context, err)))
+
+	// Extract additional context from structured errors
+	if status := apierrors.GetHTTPStatus(err); status > 0 {
+		sb.WriteString(dimStyle.Render(fmt.Sprintf("\n  HTTP Status: %d", status)))
+	}
+
+	if code := apierrors.GetErrorCode(err); code != apierrors.ErrCodeUnknown {
+		sb.WriteString(dimStyle.Render(fmt.Sprintf("\n  Error Code: %d (%s)", code, code.String())))
+	}
+
+	if endpoint := apierrors.GetEndpoint(err); endpoint != "" {
+		sb.WriteString(dimStyle.Render(fmt.Sprintf("\n  Endpoint: %s", endpoint)))
+	}
+
+	// Provide helpful hints based on error type
+	switch {
+	case apierrors.IsAuthError(err):
+		sb.WriteString(dimStyle.Render("\n  Hint: Try running 'geminiweb auto-login' to refresh your session"))
+	case apierrors.IsRateLimitError(err):
+		sb.WriteString(dimStyle.Render("\n  Hint: You've hit the usage limit. Try again later or use a different model"))
+	case apierrors.IsNetworkError(err):
+		sb.WriteString(dimStyle.Render("\n  Hint: Check your internet connection and try again"))
+	case apierrors.IsTimeoutError(err):
+		sb.WriteString(dimStyle.Render("\n  Hint: Request timed out. Try again or check your connection"))
+	}
+
+	return sb.String()
 }

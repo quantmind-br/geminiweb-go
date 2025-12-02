@@ -527,32 +527,23 @@ func TestIsAuthError(t *testing.T) {
 			expected: false,
 		},
 		{
-			name: "APIError with 401",
-			err: &apierrors.APIError{
-				StatusCode: 401,
-				Message:    "Unauthorized",
-			},
+			name:     "APIError with 401",
+			err:      apierrors.NewAPIError(401, "test", "Unauthorized"),
 			expected: true,
 		},
 		{
-			name: "APIError with 200",
-			err: &apierrors.APIError{
-				StatusCode: 200,
-				Message:    "OK",
-			},
+			name:     "APIError with 200",
+			err:      apierrors.NewAPIError(200, "test", "OK"),
 			expected: false,
 		},
 		{
-			name: "APIError with 500",
-			err: &apierrors.APIError{
-				StatusCode: 500,
-				Message:    "Internal Server Error",
-			},
+			name:     "APIError with 500",
+			err:      apierrors.NewAPIError(500, "test", "Internal Server Error"),
 			expected: false,
 		},
 		{
 			name:     "AuthError",
-			err:      &apierrors.AuthError{},
+			err:      apierrors.NewAuthError("test"),
 			expected: true,
 		},
 		{

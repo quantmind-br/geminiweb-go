@@ -10,6 +10,10 @@ const (
 	PathMetadata  = "1"
 	PathErrorCode = "0.5.2.0.1.0"
 
+	// Alternative error path - used when API returns simple error format
+	// e.g., [["wrb.fr",null,null,null,null,[3]],...]  - error code at position 0.5.0
+	PathAltErrorCode = "0.5.0"
+
 	// Candidate paths (relative to candidate object)
 	PathCandRCID      = "0"
 	PathCandText      = "1.0"

@@ -49,22 +49,9 @@ func (c *GeminiClient) GenerateContent(prompt string, opts *GenerateOptions) (*m
 }
 
 // isAuthError checks if an error is an authentication error
+// using the centralized error checking function
 func isAuthError(err error) bool {
-	if err == nil {
-		return false
-	}
-
-	// Check for APIError with 401 status
-	if apiErr, ok := err.(*apierrors.APIError); ok {
-		return apiErr.StatusCode == 401
-	}
-
-	// Check for AuthError
-	if _, ok := err.(*apierrors.AuthError); ok {
-		return true
-	}
-
-	return false
+	return apierrors.IsAuthError(err)
 }
 
 // doGenerateContent performs the actual content generation request
@@ -128,7 +115,7 @@ func (c *GeminiClient) doGenerateContent(prompt string, opts *GenerateOptions) (
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
+		return nil, apierrors.NewNetworkErrorWithEndpoint("generate content", models.EndpointGenerate, err)
 	}
 	defer func() {
 		if resp != nil && resp.Body != nil {
@@ -137,7 +124,23 @@ func (c *GeminiClient) doGenerateContent(prompt string, opts *GenerateOptions) (
 	}()
 
 	if resp.StatusCode != 200 {
-		return nil, apierrors.NewAPIError(resp.StatusCode, models.EndpointGenerate, "generate content failed")
+		// Read response body for error diagnostics
+		errorBody := make([]byte, 0, 4096)
+		buf := make([]byte, 1024)
+		for {
+			n, readErr := resp.Body.Read(buf)
+			if n > 0 {
+				errorBody = append(errorBody, buf[:n]...)
+				// Limit error body to 4KB for safety
+				if len(errorBody) >= 4096 {
+					break
+				}
+			}
+			if readErr != nil {
+				break
+			}
+		}
+		return nil, apierrors.NewAPIErrorWithBody(resp.StatusCode, models.EndpointGenerate, "generate content failed", string(errorBody))
 	}
 
 	// Read response body
@@ -161,30 +164,35 @@ func buildPayload(prompt string, metadata []string) (string, error) {
 	return buildPayloadWithImages(prompt, metadata, nil)
 }
 
-// buildPayloadWithImages creates the f.req payload including image references
+// buildPayloadWithImages creates the f.req payload including file references
+// Based on the Python Gemini-API implementation
 func buildPayloadWithImages(prompt string, metadata []string, images []*UploadedImage) (string, error) {
-	// Build image parts
-	var imageParts []interface{}
-	if len(images) > 0 {
-		for _, img := range images {
-			imageParts = append(imageParts, []interface{}{
-				img.ResourceID,
-				img.MIMEType,
-				img.FileName,
-			})
-		}
-	}
-
-	// Inner payload: [[prompt], [images], [cid, rid, rcid]]
+	// Inner payload structure depends on whether files are included
 	var inner []interface{}
 
-	if len(imageParts) > 0 {
+	if len(images) > 0 {
+		// Build file parts: [[file_id], filename] for each file
+		var fileParts []interface{}
+		for _, img := range images {
+			fileParts = append(fileParts, []interface{}{
+				[]interface{}{img.ResourceID}, // File ID wrapped in array
+				img.FileName,                  // Original filename
+			})
+		}
+
+		// With files: [prompt, 0, None, files_array], None, metadata
 		inner = []interface{}{
-			[]interface{}{prompt},
-			imageParts,
-			metadata,
+			[]interface{}{
+				prompt, // Prompt directly (not in array)
+				0,      // Flags/mode
+				nil,    // Reserved
+				fileParts,
+			},
+			nil,      // Reserved
+			metadata, // Chat metadata [cid, rid, rcid]
 		}
 	} else {
+		// Without files: [[prompt]], None, metadata
 		inner = []interface{}{
 			[]interface{}{prompt},
 			nil,
@@ -229,6 +237,14 @@ func parseResponse(body []byte, modelName string) (*models.ModelOutput, error) {
 
 	parsed := gjson.Parse(jsonLine)
 
+	// Check for alternative error format first
+	// Format: [["wrb.fr",null,null,null,null,[3]],...]
+	// Error code at position 0.5.0 (first element of the array at position 5)
+	altErrorCode := parsed.Get(PathAltErrorCode)
+	if altErrorCode.Exists() && !altErrorCode.IsArray() && altErrorCode.Int() > 0 {
+		return nil, handleErrorCode(models.ErrorCode(altErrorCode.Int()), modelName)
+	}
+
 	// Find the response body
 	var responseBody gjson.Result
 	var bodyIndex int
@@ -250,7 +266,7 @@ func parseResponse(body []byte, modelName string) (*models.ModelOutput, error) {
 	})
 
 	if !responseBody.Exists() {
-		// Check for error codes
+		// Check for error codes in the standard path
 		errorCode := parsed.Get(PathErrorCode)
 		if errorCode.Exists() {
 			return nil, handleErrorCode(models.ErrorCode(errorCode.Int()), modelName)
@@ -366,17 +382,7 @@ func parseResponse(body []byte, modelName string) (*models.ModelOutput, error) {
 }
 
 // handleErrorCode converts API error codes to appropriate errors
+// using the centralized error handling function
 func handleErrorCode(code models.ErrorCode, modelName string) error {
-	switch code {
-	case models.ErrUsageLimitExceeded:
-		return apierrors.NewUsageLimitError(modelName)
-	case models.ErrModelInconsistent:
-		return apierrors.NewModelError("model is inconsistent with chat history")
-	case models.ErrModelHeaderInvalid:
-		return apierrors.NewModelError("model header is invalid or model is not available")
-	case models.ErrIPBlocked:
-		return apierrors.NewBlockedError("IP temporarily blocked by Google")
-	default:
-		return apierrors.NewAPIError(int(code), models.EndpointGenerate, "unknown error")
-	}
+	return apierrors.HandleErrorCode(code, models.EndpointGenerate, modelName)
 }

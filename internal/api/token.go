@@ -19,7 +19,7 @@ var snlm0ePattern = regexp.MustCompile(`"SNlM0e":"([^"]+)"`)
 func GetAccessToken(client tls_client.HttpClient, cookies *config.Cookies) (string, error) {
 	req, err := http.NewRequest(http.MethodGet, models.EndpointInit, nil)
 	if err != nil {
-		return "", fmt.Errorf("failed to create request: %w", err)
+		return "", apierrors.NewGeminiErrorWithCause("create access token request", err)
 	}
 
 	// Set headers
@@ -35,7 +35,7 @@ func GetAccessToken(client tls_client.HttpClient, cookies *config.Cookies) (stri
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("failed to fetch access token: %w", err)
+		return "", apierrors.NewNetworkErrorWithEndpoint("fetch access token", models.EndpointInit, err)
 	}
 	defer func() {
 		if resp != nil && resp.Body != nil {
@@ -44,7 +44,29 @@ func GetAccessToken(client tls_client.HttpClient, cookies *config.Cookies) (stri
 	}()
 
 	if resp.StatusCode != 200 {
-		return "", apierrors.NewAuthError(fmt.Sprintf("failed to fetch access token, status: %d", resp.StatusCode))
+		// Read response body for diagnostics
+		errorBody := make([]byte, 0, 2048)
+		buf := make([]byte, 512)
+		for {
+			n, readErr := resp.Body.Read(buf)
+			if n > 0 {
+				errorBody = append(errorBody, buf[:n]...)
+				if len(errorBody) >= 2048 {
+					break
+				}
+			}
+			if readErr != nil {
+				break
+			}
+		}
+
+		authErr := apierrors.NewAuthErrorWithEndpoint(
+			fmt.Sprintf("failed to fetch access token, status: %d", resp.StatusCode),
+			models.EndpointInit,
+		)
+		authErr.GeminiError.HTTPStatus = resp.StatusCode
+		authErr.GeminiError.WithBody(string(errorBody))
+		return "", authErr
 	}
 
 	// Read response body
@@ -63,7 +85,10 @@ func GetAccessToken(client tls_client.HttpClient, cookies *config.Cookies) (stri
 	// Extract SNlM0e token using regex
 	matches := snlm0ePattern.FindSubmatch(body)
 	if len(matches) < 2 {
-		return "", apierrors.NewAuthError("SNlM0e token not found in response. Cookies may be expired.")
+		return "", apierrors.NewAuthErrorWithEndpoint(
+			"SNlM0e token not found in response. Cookies may be expired.",
+			models.EndpointInit,
+		)
 	}
 
 	return string(matches[1]), nil

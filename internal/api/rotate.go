@@ -36,7 +36,7 @@ func RotateCookies(client tls_client.HttpClient, cookies *config.Cookies) (strin
 		strings.NewReader(`[000,"-0000000000000000000"]`),
 	)
 	if err != nil {
-		return "", fmt.Errorf("failed to create rotate request: %w", err)
+		return "", apierrors.NewGeminiErrorWithCause("create rotate request", err)
 	}
 
 	// Set headers
@@ -52,7 +52,7 @@ func RotateCookies(client tls_client.HttpClient, cookies *config.Cookies) (strin
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("failed to rotate cookies: %w", err)
+		return "", apierrors.NewNetworkErrorWithEndpoint("rotate cookies", models.EndpointRotateCookies, err)
 	}
 	defer func() {
 		if resp != nil && resp.Body != nil {
@@ -61,11 +61,12 @@ func RotateCookies(client tls_client.HttpClient, cookies *config.Cookies) (strin
 	}()
 
 	if resp.StatusCode == 401 {
-		return "", apierrors.NewAuthError("unauthorized during cookie rotation")
+		return "", apierrors.NewAuthErrorWithEndpoint("unauthorized during cookie rotation", models.EndpointRotateCookies)
 	}
 
 	if resp.StatusCode != 200 {
-		return "", fmt.Errorf("cookie rotation failed with status: %d", resp.StatusCode)
+		return "", apierrors.NewAPIError(resp.StatusCode, models.EndpointRotateCookies,
+			fmt.Sprintf("cookie rotation failed with status: %d", resp.StatusCode))
 	}
 
 	// Update last rotate time

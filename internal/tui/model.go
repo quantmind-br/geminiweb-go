@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/diogo/geminiweb/internal/api"
+	apierrors "github.com/diogo/geminiweb/internal/errors"
 	"github.com/diogo/geminiweb/internal/models"
 	"github.com/diogo/geminiweb/internal/render"
 )
@@ -306,8 +307,8 @@ func (m Model) View() string {
 	// ERROR DISPLAY
 	// ═══════════════════════════════════════════════════════════════
 	if m.err != nil {
-		errorMsg := errorStyle.Render(fmt.Sprintf("⚠ Error: %v", m.err))
-		sections = append(sections, errorMsg)
+		errorDisplay := m.formatError(m.err)
+		sections = append(sections, errorDisplay)
 	}
 
 	return lipgloss.JoinVertical(lipgloss.Left, sections...)
@@ -468,6 +469,50 @@ func (m *Model) updateViewport() {
 	m.viewport.SetContent(content.String())
 }
 
+
+// formatError formats an error with structured error details for display
+func (m Model) formatError(err error) string {
+	if err == nil {
+		return ""
+	}
+
+	var sb strings.Builder
+
+	// Main error message
+	sb.WriteString(errorStyle.Render(fmt.Sprintf("⚠ Error: %v", err)))
+
+	// Add structured error details
+	detailStyle := lipgloss.NewStyle().Foreground(colorTextDim).PaddingLeft(2)
+
+	if status := apierrors.GetHTTPStatus(err); status > 0 {
+		sb.WriteString("\n")
+		sb.WriteString(detailStyle.Render(fmt.Sprintf("HTTP Status: %d", status)))
+	}
+
+	if code := apierrors.GetErrorCode(err); code != apierrors.ErrCodeUnknown {
+		sb.WriteString("\n")
+		sb.WriteString(detailStyle.Render(fmt.Sprintf("Error Code: %d (%s)", code, code.String())))
+	}
+
+	// Add helpful hints
+	hintStyle := lipgloss.NewStyle().Foreground(colorPrimary).PaddingLeft(2)
+	switch {
+	case apierrors.IsAuthError(err):
+		sb.WriteString("\n")
+		sb.WriteString(hintStyle.Render("💡 Try 'geminiweb auto-login' to refresh your session"))
+	case apierrors.IsRateLimitError(err):
+		sb.WriteString("\n")
+		sb.WriteString(hintStyle.Render("💡 Usage limit reached. Try again later or use a different model"))
+	case apierrors.IsNetworkError(err):
+		sb.WriteString("\n")
+		sb.WriteString(hintStyle.Render("💡 Check your internet connection"))
+	case apierrors.IsTimeoutError(err):
+		sb.WriteString("\n")
+		sb.WriteString(hintStyle.Render("💡 Request timed out. Try again"))
+	}
+
+	return sb.String()
+}
 
 // RunChat starts the chat TUI
 func RunChat(client api.GeminiClientInterface, modelName string) error {

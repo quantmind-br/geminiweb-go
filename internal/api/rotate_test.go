@@ -463,8 +463,8 @@ func TestRotateCookies_WithHttpError(t *testing.T) {
 		return
 	}
 
-	if !strings.Contains(err.Error(), "failed to rotate cookies") {
-		t.Errorf("Expected 'failed to rotate cookies' in error, got: %v", err)
+	if !strings.Contains(err.Error(), "rotate cookies") {
+		t.Errorf("Expected 'rotate cookies' in error, got: %v", err)
 	}
 }
 

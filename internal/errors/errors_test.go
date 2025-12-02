@@ -2,164 +2,786 @@ package errors
 
 import (
 	"errors"
+	"fmt"
+	"net"
 	"testing"
+	"time"
 )
 
+// mockNetError implements net.Error for testing
+type mockNetError struct {
+	timeout   bool
+	temporary bool
+}
+
+func (e *mockNetError) Error() string   { return "mock network error" }
+func (e *mockNetError) Timeout() bool   { return e.timeout }
+func (e *mockNetError) Temporary() bool { return e.temporary }
+
+// Ensure mockNetError implements net.Error
+var _ net.Error = (*mockNetError)(nil)
+
+func TestErrorCodeString(t *testing.T) {
+	tests := []struct {
+		code     ErrorCode
+		expected string
+	}{
+		{ErrCodeUnknown, "unknown error"},
+		{ErrCodeUsageLimitExceeded, "usage limit exceeded"},
+		{ErrCodeModelInconsistent, "model inconsistent with chat history"},
+		{ErrCodeModelHeaderInvalid, "model header invalid or model unavailable"},
+		{ErrCodeIPBlocked, "IP temporarily blocked"},
+		{ErrorCode(9999), "unknown error"},
+	}
+
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("code_%d", tt.code), func(t *testing.T) {
+			if got := tt.code.String(); got != tt.expected {
+				t.Errorf("ErrorCode.String() = %q, want %q", got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestGeminiError(t *testing.T) {
+	t.Run("basic error", func(t *testing.T) {
+		err := NewGeminiError("test operation", "test message")
+		if err == nil {
+			t.Fatal("Expected non-nil error")
+		}
+		if !containsString(err.Error(), "test operation") {
+			t.Errorf("Error() should contain operation, got %q", err.Error())
+		}
+		if !containsString(err.Error(), "test message") {
+			t.Errorf("Error() should contain message, got %q", err.Error())
+		}
+	})
+
+	t.Run("error with status", func(t *testing.T) {
+		err := NewGeminiErrorWithStatus("op", 401, "https://example.com", "unauthorized")
+		if err.HTTPStatus != 401 {
+			t.Errorf("HTTPStatus = %d, want 401", err.HTTPStatus)
+		}
+		if err.Endpoint != "https://example.com" {
+			t.Errorf("Endpoint = %q, want %q", err.Endpoint, "https://example.com")
+		}
+	})
+
+	t.Run("error with code", func(t *testing.T) {
+		err := NewGeminiErrorWithCode("op", ErrCodeUsageLimitExceeded, "https://example.com")
+		if err.Code != ErrCodeUsageLimitExceeded {
+			t.Errorf("Code = %d, want %d", err.Code, ErrCodeUsageLimitExceeded)
+		}
+	})
+
+	t.Run("error with cause", func(t *testing.T) {
+		cause := errors.New("underlying cause")
+		err := NewGeminiErrorWithCause("op", cause)
+		if err.Unwrap() != cause {
+			t.Error("Unwrap() should return the cause")
+		}
+	})
+
+	t.Run("WithBody truncates long body", func(t *testing.T) {
+		err := NewGeminiError("op", "msg")
+		longBody := make([]byte, 1000)
+		for i := range longBody {
+			longBody[i] = 'a'
+		}
+		err.WithBody(string(longBody))
+		if len(err.Body) <= 500 {
+			t.Errorf("Body should be truncated to ~500 chars, got %d", len(err.Body))
+		}
+		if !containsString(err.Body, "truncated") {
+			t.Error("Body should contain truncation marker")
+		}
+	})
+
+	t.Run("Is method", func(t *testing.T) {
+		err := &GeminiError{HTTPStatus: 401}
+		if !err.Is(ErrAuthFailed) {
+			t.Error("401 error should match ErrAuthFailed")
+		}
+
+		err = &GeminiError{Code: ErrCodeUsageLimitExceeded}
+		if !err.Is(ErrRateLimited) {
+			t.Error("UsageLimitExceeded error should match ErrRateLimited")
+		}
+
+		err = &GeminiError{HTTPStatus: 429}
+		if !err.Is(ErrRateLimited) {
+			t.Error("429 error should match ErrRateLimited")
+		}
+	})
+
+	t.Run("IsAuth", func(t *testing.T) {
+		err := &GeminiError{HTTPStatus: 401}
+		if !err.IsAuth() {
+			t.Error("401 error should be auth error")
+		}
+		err = &GeminiError{HTTPStatus: 200}
+		if err.IsAuth() {
+			t.Error("200 error should not be auth error")
+		}
+	})
+
+	t.Run("IsRateLimit", func(t *testing.T) {
+		err := &GeminiError{Code: ErrCodeUsageLimitExceeded}
+		if !err.IsRateLimit() {
+			t.Error("UsageLimitExceeded should be rate limit error")
+		}
+		err = &GeminiError{HTTPStatus: 429}
+		if !err.IsRateLimit() {
+			t.Error("429 should be rate limit error")
+		}
+	})
+
+	t.Run("IsNetwork", func(t *testing.T) {
+		netErr := &mockNetError{}
+		err := &GeminiError{Cause: netErr}
+		if !err.IsNetwork() {
+			t.Error("Error with net.Error cause should be network error")
+		}
+		err = &GeminiError{Cause: errors.New("not a net error")}
+		if err.IsNetwork() {
+			t.Error("Error with non-net.Error cause should not be network error")
+		}
+	})
+
+	t.Run("IsTimeout", func(t *testing.T) {
+		netErr := &mockNetError{timeout: true}
+		err := &GeminiError{Cause: netErr}
+		if !err.IsTimeout() {
+			t.Error("Error with timeout net.Error should be timeout error")
+		}
+		netErr = &mockNetError{timeout: false}
+		err = &GeminiError{Cause: netErr}
+		if err.IsTimeout() {
+			t.Error("Error with non-timeout net.Error should not be timeout error")
+		}
+	})
+
+	t.Run("IsBlocked", func(t *testing.T) {
+		err := &GeminiError{Code: ErrCodeIPBlocked}
+		if !err.IsBlocked() {
+			t.Error("IPBlocked error should be blocked")
+		}
+	})
+
+	t.Run("IsModelError", func(t *testing.T) {
+		err := &GeminiError{Code: ErrCodeModelInconsistent}
+		if !err.IsModelError() {
+			t.Error("ModelInconsistent should be model error")
+		}
+		err = &GeminiError{Code: ErrCodeModelHeaderInvalid}
+		if !err.IsModelError() {
+			t.Error("ModelHeaderInvalid should be model error")
+		}
+	})
+}
+
 func TestAuthError(t *testing.T) {
-	err := NewAuthError("test auth error")
+	t.Run("basic", func(t *testing.T) {
+		err := NewAuthError("test auth error")
+		if err == nil {
+			t.Fatal("Expected non-nil error")
+		}
+		expected := "authentication failed: test auth error"
+		if err.Error() != expected {
+			t.Errorf("Error() = %q, want %q", err.Error(), expected)
+		}
+	})
 
-	if err == nil {
-		t.Fatal("Expected non-nil error")
-	}
+	t.Run("empty message", func(t *testing.T) {
+		err := NewAuthError("")
+		expected := "authentication failed: cookies may have expired"
+		if err.Error() != expected {
+			t.Errorf("Error() = %q, want %q", err.Error(), expected)
+		}
+	})
 
-	expected := "authentication failed: test auth error"
-	if err.Error() != expected {
-		t.Errorf("Error() = %s, want %s", err.Error(), expected)
-	}
+	t.Run("with endpoint", func(t *testing.T) {
+		err := NewAuthErrorWithEndpoint("test", "https://example.com")
+		if err.GeminiError.Endpoint != "https://example.com" {
+			t.Errorf("Endpoint = %q, want %q", err.GeminiError.Endpoint, "https://example.com")
+		}
+	})
 
-	// Test Is method
-	target := NewAuthError("target")
-	if !err.Is(target) {
-		t.Error("Expected error to be auth error type")
-	}
-
-	// Test Is with different type
-	other := NewAPIError(400, "test", "other error")
-	if err.Is(other) {
-		t.Error("Expected error not to match different type")
-	}
-
-	// Test Is with standard errors
-	stdErr := errors.New("standard error")
-	if err.Is(stdErr) {
-		t.Error("Expected error not to match standard error")
-	}
+	t.Run("Is method", func(t *testing.T) {
+		err := NewAuthError("test")
+		if !err.Is(ErrAuthFailed) {
+			t.Error("AuthError should match ErrAuthFailed")
+		}
+		if !err.Is(NewAuthError("other")) {
+			t.Error("AuthError should match other AuthError")
+		}
+		if err.Is(NewAPIError(400, "", "")) {
+			t.Error("AuthError should not match APIError")
+		}
+	})
 }
 
 func TestAPIError(t *testing.T) {
-	err := NewAPIError(400, "test-endpoint", "test API error")
+	t.Run("basic", func(t *testing.T) {
+		err := NewAPIError(400, "test-endpoint", "test API error")
+		if err == nil {
+			t.Fatal("Expected non-nil error")
+		}
+		expected := "API error [400] at test-endpoint: test API error"
+		if err.Error() != expected {
+			t.Errorf("Error() = %q, want %q", err.Error(), expected)
+		}
+	})
 
-	if err == nil {
-		t.Fatal("Expected non-nil error")
-	}
+	t.Run("with body", func(t *testing.T) {
+		err := NewAPIErrorWithBody(500, "endpoint", "error", "response body")
+		if !containsString(err.Error(), "response body") {
+			t.Errorf("Error() should contain body, got %q", err.Error())
+		}
+	})
 
-	expected := "API error [400] at test-endpoint: test API error"
-	if err.Error() != expected {
-		t.Errorf("Error() = %s, want %s", err.Error(), expected)
-	}
+	t.Run("with code", func(t *testing.T) {
+		err := NewAPIErrorWithCode(ErrCodeUsageLimitExceeded, "endpoint")
+		if err.GeminiError.Code != ErrCodeUsageLimitExceeded {
+			t.Errorf("Code = %d, want %d", err.GeminiError.Code, ErrCodeUsageLimitExceeded)
+		}
+	})
 
-	// APIError doesn't have Is method, so we skip that test
+	t.Run("StatusCode method", func(t *testing.T) {
+		err := NewAPIError(404, "", "")
+		if err.StatusCode() != 404 {
+			t.Errorf("StatusCode() = %d, want 404", err.StatusCode())
+		}
+	})
+
+	t.Run("Is method", func(t *testing.T) {
+		err := NewAPIError(401, "", "")
+		if !err.Is(ErrAuthFailed) {
+			t.Error("401 APIError should match ErrAuthFailed")
+		}
+		err = NewAPIError(429, "", "")
+		if !err.Is(ErrRateLimited) {
+			t.Error("429 APIError should match ErrRateLimited")
+		}
+	})
+}
+
+func TestNetworkError(t *testing.T) {
+	t.Run("basic", func(t *testing.T) {
+		cause := errors.New("connection refused")
+		err := NewNetworkError("test op", cause)
+		if err == nil {
+			t.Fatal("Expected non-nil error")
+		}
+		if !containsString(err.Error(), "network error") {
+			t.Errorf("Error() should contain 'network error', got %q", err.Error())
+		}
+	})
+
+	t.Run("with endpoint", func(t *testing.T) {
+		err := NewNetworkErrorWithEndpoint("op", "https://example.com", nil)
+		if err.GeminiError.Endpoint != "https://example.com" {
+			t.Errorf("Endpoint = %q, want %q", err.GeminiError.Endpoint, "https://example.com")
+		}
+	})
+
+	t.Run("Is method", func(t *testing.T) {
+		err := NewNetworkError("op", nil)
+		if !err.Is(ErrNetworkFailure) {
+			t.Error("NetworkError should match ErrNetworkFailure")
+		}
+		if !err.Is(NewNetworkError("other", nil)) {
+			t.Error("NetworkError should match other NetworkError")
+		}
+	})
+
+	t.Run("Is with timeout", func(t *testing.T) {
+		netErr := &mockNetError{timeout: true}
+		err := NewNetworkError("op", netErr)
+		if !err.Is(ErrTimeout) {
+			t.Error("NetworkError with timeout cause should match ErrTimeout")
+		}
+	})
 }
 
 func TestTimeoutError(t *testing.T) {
-	err := NewTimeoutError("test timeout error")
+	t.Run("basic", func(t *testing.T) {
+		err := NewTimeoutError("test timeout")
+		if err == nil {
+			t.Fatal("Expected non-nil error")
+		}
+		expected := "request timed out: test timeout"
+		if err.Error() != expected {
+			t.Errorf("Error() = %q, want %q", err.Error(), expected)
+		}
+	})
 
-	if err == nil {
-		t.Fatal("Expected non-nil error")
-	}
+	t.Run("empty message", func(t *testing.T) {
+		err := NewTimeoutError("")
+		expected := "request timed out"
+		if err.Error() != expected {
+			t.Errorf("Error() = %q, want %q", err.Error(), expected)
+		}
+	})
 
-	expected := "request timed out: test timeout error"
-	if err.Error() != expected {
-		t.Errorf("Error() = %s, want %s", err.Error(), expected)
-	}
+	t.Run("with endpoint", func(t *testing.T) {
+		cause := &mockNetError{timeout: true}
+		err := NewTimeoutErrorWithEndpoint("https://example.com", cause)
+		if err.GeminiError.Endpoint != "https://example.com" {
+			t.Errorf("Endpoint = %q, want %q", err.GeminiError.Endpoint, "https://example.com")
+		}
+	})
 
-	// TimeoutError doesn't have Is method, so we skip that test
+	t.Run("Is method", func(t *testing.T) {
+		err := NewTimeoutError("test")
+		if !err.Is(ErrTimeout) {
+			t.Error("TimeoutError should match ErrTimeout")
+		}
+		if !err.Is(NewTimeoutError("other")) {
+			t.Error("TimeoutError should match other TimeoutError")
+		}
+	})
 }
 
 func TestUsageLimitError(t *testing.T) {
-	err := NewUsageLimitError("test usage limit error")
+	t.Run("basic", func(t *testing.T) {
+		err := NewUsageLimitError("gemini-pro")
+		if err == nil {
+			t.Fatal("Expected non-nil error")
+		}
+		if !containsString(err.Error(), "usage limit exceeded") {
+			t.Errorf("Error() should contain 'usage limit exceeded', got %q", err.Error())
+		}
+		if !containsString(err.Error(), "gemini-pro") {
+			t.Errorf("Error() should contain model name, got %q", err.Error())
+		}
+	})
 
-	if err == nil {
-		t.Fatal("Expected non-nil error")
-	}
-
-	expected := "usage limit exceeded: test usage limit error"
-	if err.Error() != expected {
-		t.Errorf("Error() = %s, want %s", err.Error(), expected)
-	}
-
-	// UsageLimitError doesn't have Is method, so we skip that test
+	t.Run("Is method", func(t *testing.T) {
+		err := NewUsageLimitError("model")
+		if !err.Is(ErrRateLimited) {
+			t.Error("UsageLimitError should match ErrRateLimited")
+		}
+	})
 }
 
 func TestModelError(t *testing.T) {
-	err := NewModelError("test model error")
+	t.Run("basic", func(t *testing.T) {
+		err := NewModelError("model not found")
+		if err == nil {
+			t.Fatal("Expected non-nil error")
+		}
+		expected := "model error: model not found"
+		if err.Error() != expected {
+			t.Errorf("Error() = %q, want %q", err.Error(), expected)
+		}
+	})
 
-	if err == nil {
-		t.Fatal("Expected non-nil error")
-	}
+	t.Run("with code", func(t *testing.T) {
+		err := NewModelErrorWithCode(ErrCodeModelInconsistent)
+		if err.GeminiError.Code != ErrCodeModelInconsistent {
+			t.Errorf("Code = %d, want %d", err.GeminiError.Code, ErrCodeModelInconsistent)
+		}
+	})
 
-	expected := "model error: test model error"
-	if err.Error() != expected {
-		t.Errorf("Error() = %s, want %s", err.Error(), expected)
-	}
-
-	// ModelError doesn't have Is method, so we skip that test
+	t.Run("Is method", func(t *testing.T) {
+		err := NewModelError("test")
+		if !err.Is(NewModelError("other")) {
+			t.Error("ModelError should match other ModelError")
+		}
+	})
 }
 
 func TestBlockedError(t *testing.T) {
-	err := NewBlockedError("test blocked error")
+	t.Run("basic", func(t *testing.T) {
+		err := NewBlockedError("IP blocked")
+		if err == nil {
+			t.Fatal("Expected non-nil error")
+		}
+		if !containsString(err.Error(), "blocked") {
+			t.Errorf("Error() should contain 'blocked', got %q", err.Error())
+		}
+	})
 
-	if err == nil {
-		t.Fatal("Expected non-nil error")
-	}
-
-	expected := "content blocked: test blocked error"
-	if err.Error() != expected {
-		t.Errorf("Error() = %s, want %s", err.Error(), expected)
-	}
-
-	// BlockedError doesn't have Is method, so we skip that test
+	t.Run("Is method", func(t *testing.T) {
+		err := NewBlockedError("test")
+		if !err.Is(NewBlockedError("other")) {
+			t.Error("BlockedError should match other BlockedError")
+		}
+	})
 }
 
 func TestParseError(t *testing.T) {
-	err := NewParseError("test parse error", "test/path")
+	t.Run("basic", func(t *testing.T) {
+		err := NewParseError("invalid JSON", "response.body")
+		if err == nil {
+			t.Fatal("Expected non-nil error")
+		}
+		if !containsString(err.Error(), "parse error") {
+			t.Errorf("Error() should contain 'parse error', got %q", err.Error())
+		}
+		if !containsString(err.Error(), "response.body") {
+			t.Errorf("Error() should contain path, got %q", err.Error())
+		}
+	})
 
-	if err == nil {
-		t.Fatal("Expected non-nil error")
+	t.Run("empty path", func(t *testing.T) {
+		err := NewParseError("invalid", "")
+		if containsString(err.Error(), "at") {
+			t.Errorf("Error() without path should not contain 'at', got %q", err.Error())
+		}
+	})
+
+	t.Run("Is method", func(t *testing.T) {
+		err := NewParseError("test", "path")
+		if !err.Is(ErrInvalidResponse) {
+			t.Error("ParseError should match ErrInvalidResponse")
+		}
+		if !err.Is(NewParseError("other", "other")) {
+			t.Error("ParseError should match other ParseError")
+		}
+	})
+}
+
+func TestHandleErrorCode(t *testing.T) {
+	tests := []struct {
+		code      ErrorCode
+		endpoint  string
+		modelName string
+		checkType func(error) bool
+	}{
+		{
+			code:      ErrCodeUsageLimitExceeded,
+			modelName: "test-model",
+			checkType: func(e error) bool {
+				var usageErr *UsageLimitError
+				return errors.As(e, &usageErr)
+			},
+		},
+		{
+			code: ErrCodeModelInconsistent,
+			checkType: func(e error) bool {
+				var modelErr *ModelError
+				return errors.As(e, &modelErr)
+			},
+		},
+		{
+			code: ErrCodeModelHeaderInvalid,
+			checkType: func(e error) bool {
+				var modelErr *ModelError
+				return errors.As(e, &modelErr)
+			},
+		},
+		{
+			code: ErrCodeIPBlocked,
+			checkType: func(e error) bool {
+				var blockedErr *BlockedError
+				return errors.As(e, &blockedErr)
+			},
+		},
+		{
+			code:     ErrorCode(9999),
+			endpoint: "test-endpoint",
+			checkType: func(e error) bool {
+				var apiErr *APIError
+				return errors.As(e, &apiErr)
+			},
+		},
 	}
 
-	expected := "parse error: test parse error"
-	if err.Error() != expected {
-		t.Errorf("Error() = %s, want %s", err.Error(), expected)
-	}
-
-	// Test Is method
-	target := NewParseError("target", "target/path")
-	if !err.Is(target) {
-		t.Error("Expected error to be parse error type")
-	}
-
-	// Test Is with different type
-	blockedErr := NewBlockedError("blocked")
-	if err.Is(blockedErr) {
-		t.Error("Expected error not to match different type")
-	}
-
-	// Test Is with standard errors
-	stdErr := errors.New("parse error")
-	if !err.Is(stdErr) {
-		t.Error("Expected parse error to match standard parse error")
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("code_%d", tt.code), func(t *testing.T) {
+			err := HandleErrorCode(tt.code, tt.endpoint, tt.modelName)
+			if err == nil {
+				t.Fatal("Expected non-nil error")
+			}
+			if !tt.checkType(err) {
+				t.Errorf("HandleErrorCode(%d) returned wrong error type", tt.code)
+			}
+		})
 	}
 }
 
-func TestErrorIs(t *testing.T) {
-	// Test that AuthError and ParseError implement the Is method correctly
-	authErr := NewAuthError("auth")
-	parseErr := NewParseError("parse", "path")
-
-	// Test AuthError.Is
-	if !authErr.Is(ErrAuthFailed) {
-		t.Error("AuthError should match ErrAuthFailed")
+func TestIsAuthError(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      error
+		expected bool
+	}{
+		{"nil", nil, false},
+		{"AuthError", NewAuthError("test"), true},
+		{"APIError 401", NewAPIError(401, "", ""), true},
+		{"APIError 500", NewAPIError(500, "", ""), false},
+		{"GeminiError 401", &GeminiError{HTTPStatus: 401}, true},
+		{"ErrAuthFailed", ErrAuthFailed, true},
+		{"wrapped AuthError", fmt.Errorf("wrapped: %w", NewAuthError("test")), true},
+		{"other error", errors.New("other"), false},
 	}
 
-	// Test ParseError.Is
-	if !parseErr.Is(ErrInvalidResponse) {
-		t.Error("ParseError should match ErrInvalidResponse")
-	}
-
-	// Test with standard errors
-	stdErr := errors.New("parse error")
-	if !parseErr.Is(stdErr) {
-		t.Error("ParseError should match standard parse error")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := IsAuthError(tt.err); got != tt.expected {
+				t.Errorf("IsAuthError() = %v, want %v", got, tt.expected)
+			}
+		})
 	}
 }
+
+func TestIsNetworkError(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      error
+		expected bool
+	}{
+		{"nil", nil, false},
+		{"NetworkError", NewNetworkError("op", nil), true},
+		{"ErrNetworkFailure", ErrNetworkFailure, true},
+		{"wrapped NetworkError", fmt.Errorf("wrapped: %w", NewNetworkError("op", nil)), true},
+		{"other error", errors.New("other"), false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := IsNetworkError(tt.err); got != tt.expected {
+				t.Errorf("IsNetworkError() = %v, want %v", got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestIsTimeoutError(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      error
+		expected bool
+	}{
+		{"nil", nil, false},
+		{"TimeoutError", NewTimeoutError("test"), true},
+		{"ErrTimeout", ErrTimeout, true},
+		{"net.Error timeout", &mockNetError{timeout: true}, true},
+		{"net.Error no timeout", &mockNetError{timeout: false}, false},
+		{"wrapped TimeoutError", fmt.Errorf("wrapped: %w", NewTimeoutError("test")), true},
+		{"other error", errors.New("other"), false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := IsTimeoutError(tt.err); got != tt.expected {
+				t.Errorf("IsTimeoutError() = %v, want %v", got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestIsRateLimitError(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      error
+		expected bool
+	}{
+		{"nil", nil, false},
+		{"UsageLimitError", NewUsageLimitError("model"), true},
+		{"ErrRateLimited", ErrRateLimited, true},
+		{"wrapped UsageLimitError", fmt.Errorf("wrapped: %w", NewUsageLimitError("model")), true},
+		{"other error", errors.New("other"), false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := IsRateLimitError(tt.err); got != tt.expected {
+				t.Errorf("IsRateLimitError() = %v, want %v", got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestGetHTTPStatus(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      error
+		expected int
+	}{
+		{"nil", nil, 0},
+		{"GeminiError", &GeminiError{HTTPStatus: 401}, 401},
+		{"APIError", NewAPIError(500, "", ""), 500},
+		{"AuthError", NewAuthError("test"), 401},
+		{"wrapped GeminiError", fmt.Errorf("wrapped: %w", &GeminiError{HTTPStatus: 403}), 403},
+		{"other error", errors.New("other"), 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := GetHTTPStatus(tt.err); got != tt.expected {
+				t.Errorf("GetHTTPStatus() = %d, want %d", got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestGetErrorCode(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      error
+		expected ErrorCode
+	}{
+		{"nil", nil, ErrCodeUnknown},
+		{"GeminiError", &GeminiError{Code: ErrCodeUsageLimitExceeded}, ErrCodeUsageLimitExceeded},
+		{"APIError with code", NewAPIErrorWithCode(ErrCodeIPBlocked, ""), ErrCodeIPBlocked},
+		{"wrapped GeminiError", fmt.Errorf("wrapped: %w", &GeminiError{Code: ErrCodeModelInconsistent}), ErrCodeModelInconsistent},
+		{"other error", errors.New("other"), ErrCodeUnknown},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := GetErrorCode(tt.err); got != tt.expected {
+				t.Errorf("GetErrorCode() = %d, want %d", got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestGetEndpoint(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      error
+		expected string
+	}{
+		{"nil", nil, ""},
+		{"GeminiError", &GeminiError{Endpoint: "https://test.com"}, "https://test.com"},
+		{"APIError", NewAPIError(500, "https://api.test.com", ""), "https://api.test.com"},
+		{"AuthError", NewAuthErrorWithEndpoint("test", "https://auth.test.com"), "https://auth.test.com"},
+		{"NetworkError", NewNetworkErrorWithEndpoint("op", "https://net.test.com", nil), "https://net.test.com"},
+		{"wrapped GeminiError", fmt.Errorf("wrapped: %w", &GeminiError{Endpoint: "https://wrapped.com"}), "https://wrapped.com"},
+		{"other error", errors.New("other"), ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := GetEndpoint(tt.err); got != tt.expected {
+				t.Errorf("GetEndpoint() = %q, want %q", got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestErrorWrapping(t *testing.T) {
+	t.Run("AuthError embeds GeminiError", func(t *testing.T) {
+		err := NewAuthError("test")
+		// AuthError embeds *GeminiError, accessible via field
+		if err.GeminiError == nil {
+			t.Error("AuthError.GeminiError should not be nil")
+		}
+		if err.GeminiError.HTTPStatus != 401 {
+			t.Errorf("AuthError.GeminiError.HTTPStatus = %d, want 401", err.GeminiError.HTTPStatus)
+		}
+	})
+
+	t.Run("APIError embeds GeminiError", func(t *testing.T) {
+		err := NewAPIError(500, "endpoint", "message")
+		// APIError embeds *GeminiError, accessible via field
+		if err.GeminiError == nil {
+			t.Error("APIError.GeminiError should not be nil")
+		}
+		if err.GeminiError.HTTPStatus != 500 {
+			t.Errorf("APIError.GeminiError.HTTPStatus = %d, want 500", err.GeminiError.HTTPStatus)
+		}
+	})
+
+	t.Run("errors.Is works through wrapping", func(t *testing.T) {
+		authErr := NewAuthError("test")
+		wrapped := fmt.Errorf("context: %w", authErr)
+		if !errors.Is(wrapped, ErrAuthFailed) {
+			t.Error("wrapped AuthError should match ErrAuthFailed via errors.Is")
+		}
+	})
+
+	t.Run("errors.As finds AuthError through wrapping", func(t *testing.T) {
+		authErr := NewAuthError("test")
+		wrapped := fmt.Errorf("context: %w", authErr)
+		var foundErr *AuthError
+		if !errors.As(wrapped, &foundErr) {
+			t.Error("wrapped AuthError should be findable via errors.As")
+		}
+	})
+
+	t.Run("errors.As finds APIError through wrapping", func(t *testing.T) {
+		apiErr := NewAPIError(500, "", "")
+		wrapped := fmt.Errorf("context: %w", apiErr)
+		var foundErr *APIError
+		if !errors.As(wrapped, &foundErr) {
+			t.Error("wrapped APIError should be findable via errors.As")
+		}
+	})
+}
+
+func TestSentinelErrors(t *testing.T) {
+	sentinels := []struct {
+		name string
+		err  error
+	}{
+		{"ErrAuthFailed", ErrAuthFailed},
+		{"ErrCookiesExpired", ErrCookiesExpired},
+		{"ErrNoCookies", ErrNoCookies},
+		{"ErrInvalidResponse", ErrInvalidResponse},
+		{"ErrNoContent", ErrNoContent},
+		{"ErrNetworkFailure", ErrNetworkFailure},
+		{"ErrTimeout", ErrTimeout},
+		{"ErrRateLimited", ErrRateLimited},
+	}
+
+	for _, s := range sentinels {
+		t.Run(s.name, func(t *testing.T) {
+			if s.err == nil {
+				t.Errorf("%s should not be nil", s.name)
+			}
+			if s.err.Error() == "" {
+				t.Errorf("%s.Error() should not be empty", s.name)
+			}
+		})
+	}
+}
+
+// Helper function
+func containsString(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsStringHelper(s, substr))
+}
+
+func containsStringHelper(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}
+
+// Ensure interfaces are implemented
+var _ error = (*GeminiError)(nil)
+var _ error = (*AuthError)(nil)
+var _ error = (*APIError)(nil)
+var _ error = (*NetworkError)(nil)
+var _ error = (*TimeoutError)(nil)
+var _ error = (*UsageLimitError)(nil)
+var _ error = (*ModelError)(nil)
+var _ error = (*BlockedError)(nil)
+var _ error = (*ParseError)(nil)
+
+// Benchmark tests
+func BenchmarkIsAuthError(b *testing.B) {
+	err := NewAuthError("test")
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		IsAuthError(err)
+	}
+}
+
+func BenchmarkGetHTTPStatus(b *testing.B) {
+	err := NewAPIError(500, "endpoint", "message")
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		GetHTTPStatus(err)
+	}
+}
+
+// Ensure time package is used
+var _ = time.Second

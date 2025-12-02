@@ -1,6 +1,8 @@
 // Package models contains data types and constants for the Gemini Web API.
 package models
 
+import apierrors "github.com/diogo/geminiweb/internal/errors"
+
 // Endpoints for Gemini Web API
 const (
 	EndpointGoogle        = "https://www.google.com"
@@ -66,13 +68,15 @@ func ModelFromName(name string) Model {
 }
 
 // ErrorCode represents known API error codes
-type ErrorCode int
+// Deprecated: Use errors.ErrorCode instead. These are kept for backward compatibility.
+type ErrorCode = apierrors.ErrorCode
 
+// Error code constants - aliased from errors package for backward compatibility
 const (
-	ErrUsageLimitExceeded ErrorCode = 1037
-	ErrModelInconsistent  ErrorCode = 1050
-	ErrModelHeaderInvalid ErrorCode = 1052
-	ErrIPBlocked          ErrorCode = 1060
+	ErrUsageLimitExceeded = apierrors.ErrCodeUsageLimitExceeded
+	ErrModelInconsistent  = apierrors.ErrCodeModelInconsistent
+	ErrModelHeaderInvalid = apierrors.ErrCodeModelHeaderInvalid
+	ErrIPBlocked          = apierrors.ErrCodeIPBlocked
 )
 
 // DefaultHeaders returns the default headers for Gemini requests
@@ -91,5 +95,12 @@ func DefaultHeaders() map[string]string {
 func RotateCookiesHeaders() map[string]string {
 	return map[string]string{
 		"Content-Type": "application/json",
+	}
+}
+
+// UploadHeaders returns headers for the file upload endpoint
+func UploadHeaders() map[string]string {
+	return map[string]string{
+		"Push-ID": "feeds/mcudyrk2a4khkz",
 	}
 }
