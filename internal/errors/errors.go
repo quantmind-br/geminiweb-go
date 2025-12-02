@@ -834,6 +834,40 @@ func GetEndpoint(err error) string {
 	return ""
 }
 
+// GetResponseBody extracts the response body from an error, if available
+func GetResponseBody(err error) string {
+	if err == nil {
+		return ""
+	}
+
+	var geminiErr *GeminiError
+	if errors.As(err, &geminiErr) {
+		return geminiErr.Body
+	}
+
+	var apiErr *APIError
+	if errors.As(err, &apiErr) {
+		return apiErr.GeminiError.Body
+	}
+
+	var authErr *AuthError
+	if errors.As(err, &authErr) {
+		return authErr.GeminiError.Body
+	}
+
+	var netErr *NetworkError
+	if errors.As(err, &netErr) {
+		return netErr.GeminiError.Body
+	}
+
+	var uploadErr *UploadError
+	if errors.As(err, &uploadErr) {
+		return uploadErr.GeminiError.Body
+	}
+
+	return ""
+}
+
 // UploadError represents a file upload failure
 type UploadError struct {
 	*GeminiError
