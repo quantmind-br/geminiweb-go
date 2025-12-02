@@ -13,6 +13,7 @@ import (
 
 	fhttp "github.com/bogdanfinn/fhttp"
 
+	apierrors "github.com/diogo/geminiweb/internal/errors"
 	"github.com/diogo/geminiweb/internal/models"
 )
 
@@ -149,11 +150,11 @@ func (u *FileUploader) uploadStream(
 	// Add file field
 	part, err := writer.CreateFormFile("file", fileName)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create form file: %w", err)
+		return nil, apierrors.NewUploadError(fileName, fmt.Sprintf("failed to create form file: %v", err))
 	}
 
 	if _, err := io.Copy(part, reader); err != nil {
-		return nil, fmt.Errorf("failed to write file data: %w", err)
+		return nil, apierrors.NewUploadError(fileName, fmt.Sprintf("failed to write file data: %v", err))
 	}
 
 	_ = writer.Close()
@@ -161,7 +162,7 @@ func (u *FileUploader) uploadStream(
 	// Simple POST to upload endpoint (no URL parameters)
 	req, err := fhttp.NewRequest(fhttp.MethodPost, models.EndpointUpload, &body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+		return nil, apierrors.NewUploadError(fileName, fmt.Sprintf("failed to create request: %v", err))
 	}
 
 	// Headers - only Content-Type and Push-ID are needed
@@ -174,25 +175,25 @@ func (u *FileUploader) uploadStream(
 
 	resp, err := u.client.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("upload request failed: %w", err)
+		return nil, apierrors.NewUploadNetworkError(fileName, err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 && resp.StatusCode != 201 {
 		bodyBytes, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("upload failed with status %d: %s", resp.StatusCode, string(bodyBytes))
+		return nil, apierrors.NewUploadErrorWithStatus(fileName, resp.StatusCode, string(bodyBytes))
 	}
 
 	// Response is plain text containing the file identifier
 	// Example: /contrib_service/ttl_1d/1709764705i7wdlyx3mdzndme3a767pluckv4flj
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
+		return nil, apierrors.NewUploadError(fileName, fmt.Sprintf("failed to read response: %v", err))
 	}
 
 	resourceID := strings.TrimSpace(string(respBody))
 	if resourceID == "" {
-		return nil, fmt.Errorf("empty resource ID in upload response")
+		return nil, apierrors.NewUploadError(fileName, "empty resource ID in upload response")
 	}
 
 	return &UploadedFile{
@@ -306,11 +307,11 @@ func (u *ImageUploader) uploadStream(
 	// Add file field
 	part, err := writer.CreateFormFile("file", fileName)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create form file: %w", err)
+		return nil, apierrors.NewUploadError(fileName, fmt.Sprintf("failed to create form file: %v", err))
 	}
 
 	if _, err := io.Copy(part, reader); err != nil {
-		return nil, fmt.Errorf("failed to write file data: %w", err)
+		return nil, apierrors.NewUploadError(fileName, fmt.Sprintf("failed to write file data: %v", err))
 	}
 
 	_ = writer.Close()
@@ -318,7 +319,7 @@ func (u *ImageUploader) uploadStream(
 	// Simple POST to upload endpoint (no URL parameters)
 	req, err := fhttp.NewRequest(fhttp.MethodPost, models.EndpointUpload, &body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+		return nil, apierrors.NewUploadError(fileName, fmt.Sprintf("failed to create request: %v", err))
 	}
 
 	// Headers - only Content-Type and Push-ID are needed
@@ -331,25 +332,25 @@ func (u *ImageUploader) uploadStream(
 
 	resp, err := u.client.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("upload request failed: %w", err)
+		return nil, apierrors.NewUploadNetworkError(fileName, err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 && resp.StatusCode != 201 {
 		bodyBytes, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("upload failed with status %d: %s", resp.StatusCode, string(bodyBytes))
+		return nil, apierrors.NewUploadErrorWithStatus(fileName, resp.StatusCode, string(bodyBytes))
 	}
 
 	// Response is plain text containing the file identifier
 	// Example: /contrib_service/ttl_1d/1709764705i7wdlyx3mdzndme3a767pluckv4flj
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
+		return nil, apierrors.NewUploadError(fileName, fmt.Sprintf("failed to read response: %v", err))
 	}
 
 	resourceID := strings.TrimSpace(string(respBody))
 	if resourceID == "" {
-		return nil, fmt.Errorf("empty resource ID in upload response")
+		return nil, apierrors.NewUploadError(fileName, "empty resource ID in upload response")
 	}
 
 	return &UploadedImage{

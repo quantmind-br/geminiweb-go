@@ -821,5 +821,221 @@ func GetEndpoint(err error) string {
 		return netErr.GeminiError.Endpoint
 	}
 
+	var uploadErr *UploadError
+	if errors.As(err, &uploadErr) {
+		return uploadErr.GeminiError.Endpoint
+	}
+
 	return ""
+}
+
+// UploadError represents a file upload failure
+type UploadError struct {
+	*GeminiError
+	FileName string
+}
+
+// NewUploadError creates a new UploadError
+func NewUploadError(fileName, message string) *UploadError {
+	return &UploadError{
+		GeminiError: &GeminiError{
+			Operation: "upload file",
+			Endpoint:  "https://content-push.googleapis.com/upload",
+			Message:   message,
+		},
+		FileName: fileName,
+	}
+}
+
+// NewUploadErrorWithStatus creates an UploadError with HTTP status
+func NewUploadErrorWithStatus(fileName string, statusCode int, body string) *UploadError {
+	e := &UploadError{
+		GeminiError: &GeminiError{
+			HTTPStatus: statusCode,
+			Operation:  "upload file",
+			Endpoint:   "https://content-push.googleapis.com/upload",
+			Message:    fmt.Sprintf("upload failed with status %d", statusCode),
+		},
+		FileName: fileName,
+	}
+	e.GeminiError.WithBody(body)
+	return e
+}
+
+// NewUploadNetworkError creates an UploadError for network failures
+func NewUploadNetworkError(fileName string, cause error) *UploadError {
+	return &UploadError{
+		GeminiError: &GeminiError{
+			Operation: "upload file",
+			Endpoint:  "https://content-push.googleapis.com/upload",
+			Message:   "network request failed",
+			Cause:     cause,
+		},
+		FileName: fileName,
+	}
+}
+
+// Error implements the error interface
+func (e *UploadError) Error() string {
+	if e.FileName != "" {
+		if e.GeminiError.HTTPStatus > 0 {
+			return fmt.Sprintf("upload error for '%s': HTTP %d - %s",
+				e.FileName, e.GeminiError.HTTPStatus, e.GeminiError.Message)
+		}
+		if e.GeminiError.Cause != nil {
+			return fmt.Sprintf("upload error for '%s': %v", e.FileName, e.GeminiError.Cause)
+		}
+		return fmt.Sprintf("upload error for '%s': %s", e.FileName, e.GeminiError.Message)
+	}
+	return fmt.Sprintf("upload error: %s", e.GeminiError.Message)
+}
+
+// Is allows comparison with other errors
+func (e *UploadError) Is(target error) bool {
+	if _, ok := target.(*UploadError); ok {
+		return true
+	}
+	if target == ErrNetworkFailure && e.GeminiError.Cause != nil {
+		return true
+	}
+	return false
+}
+
+// Unwrap returns the underlying cause
+func (e *UploadError) Unwrap() error {
+	return e.GeminiError.Cause
+}
+
+// IsUploadError checks if an error is an upload error
+func IsUploadError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	var uploadErr *UploadError
+	return errors.As(err, &uploadErr)
+}
+
+// GemError represents errors specific to gem operations
+type GemError struct {
+	*GeminiError
+	GemID   string
+	GemName string
+}
+
+// NewGemError creates a new generic gem error
+func NewGemError(gemID, gemName, message string) *GemError {
+	return &GemError{
+		GeminiError: &GeminiError{
+			Operation: "gem operation",
+			Endpoint:  "https://gemini.google.com/_/BardChatUi/data/batchexecute",
+			Message:   message,
+		},
+		GemID:   gemID,
+		GemName: gemName,
+	}
+}
+
+// NewGemNotFoundError creates an error for gem not found
+func NewGemNotFoundError(idOrName string) *GemError {
+	return &GemError{
+		GeminiError: &GeminiError{
+			Operation: "get gem",
+			Endpoint:  "https://gemini.google.com/_/BardChatUi/data/batchexecute",
+			Message:   fmt.Sprintf("gem '%s' not found", idOrName),
+		},
+	}
+}
+
+// NewGemReadOnlyError creates an error for attempting to modify a system gem
+func NewGemReadOnlyError(gemName string) *GemError {
+	return &GemError{
+		GeminiError: &GeminiError{
+			Operation: "modify gem",
+			Endpoint:  "https://gemini.google.com/_/BardChatUi/data/batchexecute",
+			Message:   fmt.Sprintf("cannot modify system gem '%s'", gemName),
+		},
+		GemName: gemName,
+	}
+}
+
+// NewGemCreateError creates an error for gem creation failure
+func NewGemCreateError(name, message string) *GemError {
+	return &GemError{
+		GeminiError: &GeminiError{
+			Operation: "create gem",
+			Endpoint:  "https://gemini.google.com/_/BardChatUi/data/batchexecute",
+			Message:   message,
+		},
+		GemName: name,
+	}
+}
+
+// NewGemUpdateError creates an error for gem update failure
+func NewGemUpdateError(gemID, message string) *GemError {
+	return &GemError{
+		GeminiError: &GeminiError{
+			Operation: "update gem",
+			Endpoint:  "https://gemini.google.com/_/BardChatUi/data/batchexecute",
+			Message:   message,
+		},
+		GemID: gemID,
+	}
+}
+
+// NewGemDeleteError creates an error for gem deletion failure
+func NewGemDeleteError(gemID, message string) *GemError {
+	return &GemError{
+		GeminiError: &GeminiError{
+			Operation: "delete gem",
+			Endpoint:  "https://gemini.google.com/_/BardChatUi/data/batchexecute",
+			Message:   message,
+		},
+		GemID: gemID,
+	}
+}
+
+// NewGemFetchError creates an error for gem fetch failure
+func NewGemFetchError(message string) *GemError {
+	return &GemError{
+		GeminiError: &GeminiError{
+			Operation: "fetch gems",
+			Endpoint:  "https://gemini.google.com/_/BardChatUi/data/batchexecute",
+			Message:   message,
+		},
+	}
+}
+
+// Error implements the error interface
+func (e *GemError) Error() string {
+	if e.GemName != "" {
+		return fmt.Sprintf("gem error (%s): %s", e.GemName, e.GeminiError.Message)
+	}
+	if e.GemID != "" {
+		return fmt.Sprintf("gem error (ID: %s): %s", e.GemID, e.GeminiError.Message)
+	}
+	return fmt.Sprintf("gem error: %s", e.GeminiError.Message)
+}
+
+// Is allows comparison with other errors
+func (e *GemError) Is(target error) bool {
+	if _, ok := target.(*GemError); ok {
+		return true
+	}
+	return false
+}
+
+// Unwrap returns the underlying cause
+func (e *GemError) Unwrap() error {
+	return e.GeminiError.Cause
+}
+
+// IsGemError checks if an error is a gem error
+func IsGemError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	var gemErr *GemError
+	return errors.As(err, &gemErr)
 }

@@ -755,6 +755,256 @@ func containsStringHelper(s, substr string) bool {
 	return false
 }
 
+func TestUploadError(t *testing.T) {
+	t.Run("basic", func(t *testing.T) {
+		err := NewUploadError("test.txt", "file not found")
+		if err == nil {
+			t.Fatal("Expected non-nil error")
+		}
+		if !containsString(err.Error(), "upload error") {
+			t.Errorf("Error() should contain 'upload error', got %q", err.Error())
+		}
+		if !containsString(err.Error(), "test.txt") {
+			t.Errorf("Error() should contain filename, got %q", err.Error())
+		}
+		if err.FileName != "test.txt" {
+			t.Errorf("FileName = %q, want 'test.txt'", err.FileName)
+		}
+	})
+
+	t.Run("with status", func(t *testing.T) {
+		err := NewUploadErrorWithStatus("test.png", 404, "not found")
+		if err.GeminiError.HTTPStatus != 404 {
+			t.Errorf("HTTPStatus = %d, want 404", err.GeminiError.HTTPStatus)
+		}
+		if !containsString(err.Error(), "HTTP 404") {
+			t.Errorf("Error() should contain 'HTTP 404', got %q", err.Error())
+		}
+	})
+
+	t.Run("network error", func(t *testing.T) {
+		cause := errors.New("connection refused")
+		err := NewUploadNetworkError("large.md", cause)
+		if err.GeminiError.Cause != cause {
+			t.Error("Cause should be set")
+		}
+		if !containsString(err.Error(), "connection refused") {
+			t.Errorf("Error() should contain cause message, got %q", err.Error())
+		}
+	})
+
+	t.Run("Is method", func(t *testing.T) {
+		err := NewUploadError("test.txt", "error")
+		if !err.Is(NewUploadError("other.txt", "other")) {
+			t.Error("UploadError should match other UploadError")
+		}
+	})
+
+	t.Run("Unwrap returns cause", func(t *testing.T) {
+		cause := errors.New("underlying")
+		err := NewUploadNetworkError("test.txt", cause)
+		if err.Unwrap() != cause {
+			t.Error("Unwrap should return the cause")
+		}
+	})
+}
+
+func TestIsUploadError(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      error
+		expected bool
+	}{
+		{"nil", nil, false},
+		{"UploadError", NewUploadError("test.txt", "error"), true},
+		{"UploadErrorWithStatus", NewUploadErrorWithStatus("test.txt", 500, "error"), true},
+		{"UploadNetworkError", NewUploadNetworkError("test.txt", errors.New("net")), true},
+		{"wrapped UploadError", fmt.Errorf("wrapped: %w", NewUploadError("test.txt", "error")), true},
+		{"other error", errors.New("other"), false},
+		{"APIError", NewAPIError(500, "", ""), false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := IsUploadError(tt.err); got != tt.expected {
+				t.Errorf("IsUploadError() = %v, want %v", got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestGetEndpointWithUploadError(t *testing.T) {
+	err := NewUploadError("test.txt", "error")
+	endpoint := GetEndpoint(err)
+	if endpoint != "https://content-push.googleapis.com/upload" {
+		t.Errorf("GetEndpoint() = %q, want upload endpoint", endpoint)
+	}
+}
+
+func TestGemError(t *testing.T) {
+	t.Run("basic", func(t *testing.T) {
+		err := NewGemError("gem-id", "Test Gem", "operation failed")
+		if err == nil {
+			t.Fatal("Expected non-nil error")
+		}
+		if !containsString(err.Error(), "gem error") {
+			t.Errorf("Error() should contain 'gem error', got %q", err.Error())
+		}
+		if !containsString(err.Error(), "Test Gem") {
+			t.Errorf("Error() should contain gem name, got %q", err.Error())
+		}
+		if err.GemID != "gem-id" {
+			t.Errorf("GemID = %q, want 'gem-id'", err.GemID)
+		}
+		if err.GemName != "Test Gem" {
+			t.Errorf("GemName = %q, want 'Test Gem'", err.GemName)
+		}
+	})
+
+	t.Run("not found", func(t *testing.T) {
+		err := NewGemNotFoundError("my-gem")
+		if !containsString(err.Error(), "not found") {
+			t.Errorf("Error() should contain 'not found', got %q", err.Error())
+		}
+		if !containsString(err.Error(), "my-gem") {
+			t.Errorf("Error() should contain gem identifier, got %q", err.Error())
+		}
+	})
+
+	t.Run("read only", func(t *testing.T) {
+		err := NewGemReadOnlyError("System Gem")
+		if !containsString(err.Error(), "cannot modify") {
+			t.Errorf("Error() should contain 'cannot modify', got %q", err.Error())
+		}
+		if !containsString(err.Error(), "System Gem") {
+			t.Errorf("Error() should contain gem name, got %q", err.Error())
+		}
+		if err.GemName != "System Gem" {
+			t.Errorf("GemName = %q, want 'System Gem'", err.GemName)
+		}
+	})
+
+	t.Run("create error", func(t *testing.T) {
+		err := NewGemCreateError("New Gem", "validation failed")
+		if !containsString(err.Error(), "validation failed") {
+			t.Errorf("Error() should contain message, got %q", err.Error())
+		}
+		if err.GemName != "New Gem" {
+			t.Errorf("GemName = %q, want 'New Gem'", err.GemName)
+		}
+		if err.GeminiError.Operation != "create gem" {
+			t.Errorf("Operation = %q, want 'create gem'", err.GeminiError.Operation)
+		}
+	})
+
+	t.Run("update error", func(t *testing.T) {
+		err := NewGemUpdateError("gem-123", "not found")
+		if err.GemID != "gem-123" {
+			t.Errorf("GemID = %q, want 'gem-123'", err.GemID)
+		}
+		if err.GeminiError.Operation != "update gem" {
+			t.Errorf("Operation = %q, want 'update gem'", err.GeminiError.Operation)
+		}
+	})
+
+	t.Run("delete error", func(t *testing.T) {
+		err := NewGemDeleteError("gem-456", "permission denied")
+		if err.GemID != "gem-456" {
+			t.Errorf("GemID = %q, want 'gem-456'", err.GemID)
+		}
+		if err.GeminiError.Operation != "delete gem" {
+			t.Errorf("Operation = %q, want 'delete gem'", err.GeminiError.Operation)
+		}
+	})
+
+	t.Run("fetch error", func(t *testing.T) {
+		err := NewGemFetchError("network error")
+		if !containsString(err.Error(), "network error") {
+			t.Errorf("Error() should contain message, got %q", err.Error())
+		}
+		if err.GeminiError.Operation != "fetch gems" {
+			t.Errorf("Operation = %q, want 'fetch gems'", err.GeminiError.Operation)
+		}
+	})
+
+	t.Run("error with only ID", func(t *testing.T) {
+		err := &GemError{
+			GeminiError: &GeminiError{Message: "test"},
+			GemID:       "only-id",
+		}
+		if !containsString(err.Error(), "ID: only-id") {
+			t.Errorf("Error() should show ID when no name, got %q", err.Error())
+		}
+	})
+
+	t.Run("error without ID or name", func(t *testing.T) {
+		err := &GemError{
+			GeminiError: &GeminiError{Message: "generic error"},
+		}
+		expected := "gem error: generic error"
+		if err.Error() != expected {
+			t.Errorf("Error() = %q, want %q", err.Error(), expected)
+		}
+	})
+
+	t.Run("Is method", func(t *testing.T) {
+		err := NewGemError("id", "name", "msg")
+		if !err.Is(NewGemError("other", "other", "other")) {
+			t.Error("GemError should match other GemError")
+		}
+		if err.Is(NewAPIError(500, "", "")) {
+			t.Error("GemError should not match APIError")
+		}
+	})
+
+	t.Run("Unwrap returns cause", func(t *testing.T) {
+		cause := errors.New("underlying")
+		err := &GemError{
+			GeminiError: &GeminiError{Cause: cause},
+		}
+		if err.Unwrap() != cause {
+			t.Error("Unwrap should return the cause")
+		}
+	})
+
+	t.Run("endpoint is set to batch execute", func(t *testing.T) {
+		err := NewGemError("id", "name", "msg")
+		expected := "https://gemini.google.com/_/BardChatUi/data/batchexecute"
+		if err.GeminiError.Endpoint != expected {
+			t.Errorf("Endpoint = %q, want %q", err.GeminiError.Endpoint, expected)
+		}
+	})
+}
+
+func TestIsGemError(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      error
+		expected bool
+	}{
+		{"nil", nil, false},
+		{"GemError", NewGemError("id", "name", "msg"), true},
+		{"GemNotFoundError", NewGemNotFoundError("name"), true},
+		{"GemReadOnlyError", NewGemReadOnlyError("name"), true},
+		{"GemCreateError", NewGemCreateError("name", "msg"), true},
+		{"GemUpdateError", NewGemUpdateError("id", "msg"), true},
+		{"GemDeleteError", NewGemDeleteError("id", "msg"), true},
+		{"GemFetchError", NewGemFetchError("msg"), true},
+		{"wrapped GemError", fmt.Errorf("wrapped: %w", NewGemError("id", "name", "msg")), true},
+		{"other error", errors.New("other"), false},
+		{"APIError", NewAPIError(500, "", ""), false},
+		{"UploadError", NewUploadError("file", "msg"), false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := IsGemError(tt.err); got != tt.expected {
+				t.Errorf("IsGemError() = %v, want %v", got, tt.expected)
+			}
+		})
+	}
+}
+
 // Ensure interfaces are implemented
 var _ error = (*GeminiError)(nil)
 var _ error = (*AuthError)(nil)
@@ -765,6 +1015,8 @@ var _ error = (*UsageLimitError)(nil)
 var _ error = (*ModelError)(nil)
 var _ error = (*BlockedError)(nil)
 var _ error = (*ParseError)(nil)
+var _ error = (*UploadError)(nil)
+var _ error = (*GemError)(nil)
 
 // Benchmark tests
 func BenchmarkIsAuthError(b *testing.B) {

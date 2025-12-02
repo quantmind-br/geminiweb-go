@@ -21,6 +21,7 @@ type BrowserCookieExtractor interface {
 
 // GeminiClientInterface defines the interface for GeminiClient to enable dependency injection and mocking
 type GeminiClientInterface interface {
+	// Core client methods
 	Init() error
 	Close()
 	GetAccessToken() string
@@ -28,11 +29,29 @@ type GeminiClientInterface interface {
 	GetModel() models.Model
 	SetModel(model models.Model)
 	IsClosed() bool
+
+	// Chat methods
 	StartChat(model ...models.Model) *ChatSession
+	StartChatWithOptions(opts ...ChatOption) *ChatSession
+
+	// Content generation
 	GenerateContent(prompt string, opts *GenerateOptions) (*models.ModelOutput, error)
 	UploadImage(filePath string) (*UploadedImage, error)
+
+	// Browser refresh
 	RefreshFromBrowser() (bool, error)
 	IsBrowserRefreshEnabled() bool
+
+	// Gems methods
+	FetchGems(includeHidden bool) (*models.GemJar, error)
+	CreateGem(name, prompt, description string) (*models.Gem, error)
+	UpdateGem(gemID, name, prompt, description string) (*models.Gem, error)
+	DeleteGem(gemID string) error
+	Gems() *models.GemJar
+	GetGem(id, name string) *models.Gem
+
+	// Batch RPC
+	BatchExecute(requests []RPCData) ([]BatchResponse, error)
 }
 
 // RefreshFunc is a function type for dependency injection of refresh behavior
@@ -56,8 +75,10 @@ type GeminiClient struct {
 	// Injected dependencies for testing
 	refreshFunc  RefreshFunc
 	cookieLoader CookieLoader
-	mu           sync.RWMutex
-	closed       bool
+	// Gems cache
+	gems *models.GemJar
+	mu   sync.RWMutex
+	closed bool
 }
 
 // ClientOption is a function that configures the client
@@ -407,4 +428,42 @@ func (c *GeminiClient) RefreshFromBrowser() (bool, error) {
 	c.accessToken = token
 
 	return true, nil
+}
+
+// ChatOption configura uma ChatSession
+type ChatOption func(*ChatSession)
+
+// WithChatModel define o modelo para a sessão
+func WithChatModel(model models.Model) ChatOption {
+	return func(s *ChatSession) {
+		s.model = model
+	}
+}
+
+// WithGem define o gem para a sessão (usando objeto Gem)
+func WithGem(gem *models.Gem) ChatOption {
+	return func(s *ChatSession) {
+		if gem != nil {
+			s.gemID = gem.ID
+		}
+	}
+}
+
+// WithGemID define o gem para a sessão (usando ID direto)
+func WithGemID(gemID string) ChatOption {
+	return func(s *ChatSession) {
+		s.gemID = gemID
+	}
+}
+
+// StartChatWithOptions cria uma nova sessão de chat com opções
+func (c *GeminiClient) StartChatWithOptions(opts ...ChatOption) *ChatSession {
+	session := &ChatSession{
+		client: c,
+		model:  c.GetModel(),
+	}
+	for _, opt := range opts {
+		opt(session)
+	}
+	return session
 }

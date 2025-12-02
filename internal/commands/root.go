@@ -19,6 +19,7 @@ var (
 	fileFlag           string
 	imageFlag          string
 	browserRefreshFlag string
+	gemFlag            string
 
 	// Version info (set at build time)
 	Version   = "0.1.0"
@@ -40,7 +41,8 @@ Examples:
   geminiweb "What is Go?"               Send a single query
   geminiweb -f prompt.md                Read prompt from file
   cat prompt.md | geminiweb             Read prompt from stdin
-  geminiweb "Hello" -o response.md      Save response to file`,
+  geminiweb "Hello" -o response.md      Save response to file
+  geminiweb --gem "Code Helper" "prompt" Use a gem (server-side persona)`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// Check for version flag
@@ -104,6 +106,7 @@ func init() {
 	rootCmd.Flags().StringVarP(&outputFlag, "output", "o", "", "Save response to file")
 	rootCmd.Flags().StringVarP(&fileFlag, "file", "f", "", "Read prompt from file")
 	rootCmd.Flags().StringVarP(&imageFlag, "image", "i", "", "Path to image file to include")
+	rootCmd.Flags().StringVar(&gemFlag, "gem", "", "Use a gem (by ID or name) - server-side persona")
 	rootCmd.Flags().BoolP("version", "v", false, "Show version and exit")
 
 	// Add subcommands
@@ -113,6 +116,7 @@ func init() {
 	rootCmd.AddCommand(autoLoginCmd)
 	rootCmd.AddCommand(historyCmd)
 	rootCmd.AddCommand(personaCmd)
+	rootCmd.AddCommand(gemsCmd)
 }
 
 // getModel returns the model to use (from flag or config)

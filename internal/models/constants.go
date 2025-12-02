@@ -13,6 +13,21 @@ const (
 	EndpointBatchExec     = "https://gemini.google.com/_/BardChatUi/data/batchexecute"
 )
 
+// RPC IDs para operações de Gems (batch execute)
+const (
+	RPCListGems   = "CNgdBe"
+	RPCCreateGem  = "oMH3Zd"
+	RPCUpdateGem  = "kHv0Vd"
+	RPCDeleteGem  = "UXcSJb"
+)
+
+// Parâmetros para ListGems
+const (
+	ListGemsNormal        = 3 // Gems normais (visíveis na UI)
+	ListGemsIncludeHidden = 4 // Incluir gems ocultos de sistema
+	ListGemsCustom        = 2 // Gems customizados do usuário
+)
+
 // Model represents available Gemini models with their headers
 type Model struct {
 	Name   string

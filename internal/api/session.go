@@ -10,6 +10,7 @@ type ChatSession struct {
 	model      models.Model
 	metadata   []string // [cid, rid, rcid]
 	lastOutput *models.ModelOutput
+	gemID      string // ID do gem associado à sessão (server-side persona)
 }
 
 // SendMessage sends a message in the chat session and updates context
@@ -17,6 +18,7 @@ func (s *ChatSession) SendMessage(prompt string) (*models.ModelOutput, error) {
 	opts := &GenerateOptions{
 		Model:    s.model,
 		Metadata: s.metadata,
+		GemID:    s.gemID,
 	}
 
 	output, err := s.client.GenerateContent(prompt, opts)
@@ -107,4 +109,14 @@ func (s *ChatSession) ChooseCandidate(index int) error {
 	s.lastOutput.Chosen = index
 	s.updateMetadata(s.lastOutput)
 	return nil
+}
+
+// SetGem define o gem para a sessão
+func (s *ChatSession) SetGem(gemID string) {
+	s.gemID = gemID
+}
+
+// GetGemID retorna o gem ID da sessão
+func (s *ChatSession) GetGemID() string {
+	return s.gemID
 }

@@ -212,6 +212,28 @@ func runQuery(prompt string, rawOutput bool) error {
 		spin.stopWithSuccess("Connected")
 	}
 
+	// Resolve gem if provided
+	var gemID string
+	if gemFlag != "" {
+		if !rawOutput {
+			spin = newSpinner("Loading gems")
+			spin.start()
+		}
+
+		gem, err := resolveGem(client, gemFlag)
+		if err != nil {
+			if !rawOutput {
+				spin.stopWithError()
+				fmt.Fprintln(os.Stderr, formatErrorMessage(err, "Gem resolution failed"))
+			}
+			return fmt.Errorf("gem resolution failed: %w", err)
+		}
+		gemID = gem.ID
+		if !rawOutput {
+			spin.stopWithSuccess(fmt.Sprintf("Using gem: %s", gem.Name))
+		}
+	}
+
 	// Upload image if provided
 	var images []*api.UploadedImage
 	if imageFlag != "" {
@@ -272,6 +294,7 @@ func runQuery(prompt string, rawOutput bool) error {
 
 	opts := &api.GenerateOptions{
 		Images: images,
+		GemID:  gemID,
 	}
 
 	output, err := client.GenerateContent(actualPrompt, opts)
@@ -419,6 +442,8 @@ func formatErrorMessage(err error, context string) string {
 		sb.WriteString(dimStyle.Render("\n  Hint: Check your internet connection and try again"))
 	case apierrors.IsTimeoutError(err):
 		sb.WriteString(dimStyle.Render("\n  Hint: Request timed out. Try again or check your connection"))
+	case apierrors.IsUploadError(err):
+		sb.WriteString(dimStyle.Render("\n  Hint: File upload failed. Check the file exists and is accessible"))
 	}
 
 	return sb.String()

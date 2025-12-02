@@ -19,6 +19,7 @@ type GenerateOptions struct {
 	Model    models.Model
 	Metadata []string         // [cid, rid, rcid] for chat context
 	Images   []*UploadedImage // Images to include in the prompt
+	GemID    string           // ID do gem a usar (server-side persona)
 }
 
 // GenerateContent sends a prompt to Gemini and returns the response
@@ -67,6 +68,7 @@ func (c *GeminiClient) doGenerateContent(prompt string, opts *GenerateOptions) (
 	model := c.GetModel()
 	var metadata []string
 	var images []*UploadedImage
+	var gemID string
 
 	if opts != nil {
 		if opts.Model.Name != "" {
@@ -74,10 +76,11 @@ func (c *GeminiClient) doGenerateContent(prompt string, opts *GenerateOptions) (
 		}
 		metadata = opts.Metadata
 		images = opts.Images
+		gemID = opts.GemID
 	}
 
 	// Build the request payload
-	payload, err := buildPayloadWithImages(prompt, metadata, images)
+	payload, err := buildPayloadWithGem(prompt, metadata, images, gemID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build payload: %w", err)
 	}
@@ -161,12 +164,18 @@ func (c *GeminiClient) doGenerateContent(prompt string, opts *GenerateOptions) (
 
 // buildPayload creates the f.req payload for the generate request
 func buildPayload(prompt string, metadata []string) (string, error) {
-	return buildPayloadWithImages(prompt, metadata, nil)
+	return buildPayloadWithGem(prompt, metadata, nil, "")
 }
 
 // buildPayloadWithImages creates the f.req payload including file references
 // Based on the Python Gemini-API implementation
 func buildPayloadWithImages(prompt string, metadata []string, images []*UploadedImage) (string, error) {
+	return buildPayloadWithGem(prompt, metadata, images, "")
+}
+
+// buildPayloadWithGem creates the f.req payload including file references and gem
+// Based on the Python Gemini-API implementation
+func buildPayloadWithGem(prompt string, metadata []string, images []*UploadedImage, gemID string) (string, error) {
 	// Inner payload structure depends on whether files are included
 	var inner []interface{}
 
@@ -198,6 +207,15 @@ func buildPayloadWithImages(prompt string, metadata []string, images []*Uploaded
 			nil,
 			metadata,
 		}
+	}
+
+	// Add gem_id if provided
+	// Format: 16 nulls followed by gem_id (position 19 total)
+	if gemID != "" {
+		for i := 0; i < 16; i++ {
+			inner = append(inner, nil)
+		}
+		inner = append(inner, gemID)
 	}
 
 	innerJSON, err := json.Marshal(inner)
