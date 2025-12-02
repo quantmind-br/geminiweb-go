@@ -1087,3 +1087,551 @@ func TestHistoryStoreInterface(t *testing.T) {
 	// Verify the interface is implemented by mockHistoryStoreForModel
 	var _ HistoryStoreInterface = &mockHistoryStoreForModel{}
 }
+
+// mockChatSessionWithMetadata is a mock that also tracks metadata
+type mockChatSessionWithMetadata struct {
+	mockChatSession
+	cid  string
+	rid  string
+	rcid string
+}
+
+func (m *mockChatSessionWithMetadata) CID() string  { return m.cid }
+func (m *mockChatSessionWithMetadata) RID() string  { return m.rid }
+func (m *mockChatSessionWithMetadata) RCID() string { return m.rcid }
+
+func TestModel_SaveMessageToHistory(t *testing.T) {
+	t.Run("saves message when store and conversation are set", func(t *testing.T) {
+		mockStore := &mockHistoryStoreForModel{}
+		conv := &history.Conversation{ID: "conv-123"}
+
+		m := &Model{
+			conversation: conv,
+			historyStore: mockStore,
+		}
+
+		m.saveMessageToHistory("user", "Hello world", "")
+
+		if len(mockStore.addMessageCalls) != 1 {
+			t.Errorf("expected 1 addMessage call, got %d", len(mockStore.addMessageCalls))
+			return
+		}
+
+		call := mockStore.addMessageCalls[0]
+		if call.id != "conv-123" {
+			t.Errorf("expected id 'conv-123', got '%s'", call.id)
+		}
+		if call.role != "user" {
+			t.Errorf("expected role 'user', got '%s'", call.role)
+		}
+		if call.content != "Hello world" {
+			t.Errorf("expected content 'Hello world', got '%s'", call.content)
+		}
+	})
+
+	t.Run("saves assistant message with thoughts", func(t *testing.T) {
+		mockStore := &mockHistoryStoreForModel{}
+		conv := &history.Conversation{ID: "conv-456"}
+
+		m := &Model{
+			conversation: conv,
+			historyStore: mockStore,
+		}
+
+		m.saveMessageToHistory("assistant", "Response text", "Thinking process")
+
+		if len(mockStore.addMessageCalls) != 1 {
+			t.Errorf("expected 1 addMessage call, got %d", len(mockStore.addMessageCalls))
+			return
+		}
+
+		call := mockStore.addMessageCalls[0]
+		if call.role != "assistant" {
+			t.Errorf("expected role 'assistant', got '%s'", call.role)
+		}
+		if call.thoughts != "Thinking process" {
+			t.Errorf("expected thoughts 'Thinking process', got '%s'", call.thoughts)
+		}
+	})
+
+	t.Run("does nothing when historyStore is nil", func(t *testing.T) {
+		conv := &history.Conversation{ID: "conv-123"}
+
+		m := &Model{
+			conversation: conv,
+			historyStore: nil,
+		}
+
+		// Should not panic
+		m.saveMessageToHistory("user", "Hello", "")
+	})
+
+	t.Run("does nothing when conversation is nil", func(t *testing.T) {
+		mockStore := &mockHistoryStoreForModel{}
+
+		m := &Model{
+			conversation: nil,
+			historyStore: mockStore,
+		}
+
+		m.saveMessageToHistory("user", "Hello", "")
+
+		if len(mockStore.addMessageCalls) != 0 {
+			t.Errorf("expected 0 addMessage calls, got %d", len(mockStore.addMessageCalls))
+		}
+	})
+
+	t.Run("does nothing when both are nil", func(t *testing.T) {
+		m := &Model{
+			conversation: nil,
+			historyStore: nil,
+		}
+
+		// Should not panic
+		m.saveMessageToHistory("user", "Hello", "")
+	})
+}
+
+func TestModel_SaveMetadataToHistory(t *testing.T) {
+	t.Run("saves metadata when session has values", func(t *testing.T) {
+		mockStore := &mockHistoryStoreForModel{}
+		conv := &history.Conversation{ID: "conv-123"}
+		mockSession := &mockChatSessionWithMetadata{
+			cid:  "cid-abc",
+			rid:  "rid-def",
+			rcid: "rcid-ghi",
+		}
+
+		m := &Model{
+			conversation: conv,
+			historyStore: mockStore,
+			session:      mockSession,
+		}
+
+		m.saveMetadataToHistory()
+
+		if len(mockStore.updateMetadataCalls) != 1 {
+			t.Errorf("expected 1 updateMetadata call, got %d", len(mockStore.updateMetadataCalls))
+			return
+		}
+
+		call := mockStore.updateMetadataCalls[0]
+		if call.id != "conv-123" {
+			t.Errorf("expected id 'conv-123', got '%s'", call.id)
+		}
+		if call.cid != "cid-abc" {
+			t.Errorf("expected cid 'cid-abc', got '%s'", call.cid)
+		}
+		if call.rid != "rid-def" {
+			t.Errorf("expected rid 'rid-def', got '%s'", call.rid)
+		}
+		if call.rcid != "rcid-ghi" {
+			t.Errorf("expected rcid 'rcid-ghi', got '%s'", call.rcid)
+		}
+	})
+
+	t.Run("does nothing when all metadata is empty", func(t *testing.T) {
+		mockStore := &mockHistoryStoreForModel{}
+		conv := &history.Conversation{ID: "conv-123"}
+		mockSession := &mockChatSessionWithMetadata{
+			cid:  "",
+			rid:  "",
+			rcid: "",
+		}
+
+		m := &Model{
+			conversation: conv,
+			historyStore: mockStore,
+			session:      mockSession,
+		}
+
+		m.saveMetadataToHistory()
+
+		if len(mockStore.updateMetadataCalls) != 0 {
+			t.Errorf("expected 0 updateMetadata calls, got %d", len(mockStore.updateMetadataCalls))
+		}
+	})
+
+	t.Run("saves when only cid is set", func(t *testing.T) {
+		mockStore := &mockHistoryStoreForModel{}
+		conv := &history.Conversation{ID: "conv-123"}
+		mockSession := &mockChatSessionWithMetadata{
+			cid:  "cid-only",
+			rid:  "",
+			rcid: "",
+		}
+
+		m := &Model{
+			conversation: conv,
+			historyStore: mockStore,
+			session:      mockSession,
+		}
+
+		m.saveMetadataToHistory()
+
+		if len(mockStore.updateMetadataCalls) != 1 {
+			t.Errorf("expected 1 updateMetadata call, got %d", len(mockStore.updateMetadataCalls))
+		}
+	})
+
+	t.Run("does nothing when historyStore is nil", func(t *testing.T) {
+		conv := &history.Conversation{ID: "conv-123"}
+		mockSession := &mockChatSessionWithMetadata{cid: "cid-abc"}
+
+		m := &Model{
+			conversation: conv,
+			historyStore: nil,
+			session:      mockSession,
+		}
+
+		// Should not panic
+		m.saveMetadataToHistory()
+	})
+
+	t.Run("does nothing when conversation is nil", func(t *testing.T) {
+		mockStore := &mockHistoryStoreForModel{}
+		mockSession := &mockChatSessionWithMetadata{cid: "cid-abc"}
+
+		m := &Model{
+			conversation: nil,
+			historyStore: mockStore,
+			session:      mockSession,
+		}
+
+		m.saveMetadataToHistory()
+
+		if len(mockStore.updateMetadataCalls) != 0 {
+			t.Errorf("expected 0 updateMetadata calls, got %d", len(mockStore.updateMetadataCalls))
+		}
+	})
+
+	t.Run("does nothing when session is nil", func(t *testing.T) {
+		mockStore := &mockHistoryStoreForModel{}
+		conv := &history.Conversation{ID: "conv-123"}
+
+		m := &Model{
+			conversation: conv,
+			historyStore: mockStore,
+			session:      nil,
+		}
+
+		// Should not panic
+		m.saveMetadataToHistory()
+
+		if len(mockStore.updateMetadataCalls) != 0 {
+			t.Errorf("expected 0 updateMetadata calls, got %d", len(mockStore.updateMetadataCalls))
+		}
+	})
+}
+
+func TestModel_AutoSaveOnResponse(t *testing.T) {
+	t.Run("auto-saves assistant message and metadata on response", func(t *testing.T) {
+		mockStore := &mockHistoryStoreForModel{}
+		conv := &history.Conversation{ID: "conv-123"}
+		mockSession := &mockChatSessionWithMetadata{
+			cid:  "new-cid",
+			rid:  "new-rid",
+			rcid: "new-rcid",
+		}
+
+		ta := textarea.New()
+		ta.SetWidth(80)
+
+		m := Model{
+			ready:        true,
+			loading:      true,
+			messages:     []chatMessage{{role: "user", content: "test"}},
+			conversation: conv,
+			historyStore: mockStore,
+			session:      mockSession,
+			textarea:     ta,
+		}
+
+		// Simulate response message
+		output := &models.ModelOutput{
+			Candidates: []models.Candidate{{Text: "response text", Thoughts: "thinking"}},
+			Chosen:     0,
+		}
+		msg := responseMsg{output: output}
+		updatedModel, _ := m.Update(msg)
+
+		typedModel := updatedModel.(Model)
+
+		// Verify loading stopped
+		if typedModel.loading {
+			t.Error("model should not be loading after response")
+		}
+
+		// Verify message was added
+		if len(typedModel.messages) != 2 {
+			t.Errorf("expected 2 messages, got %d", len(typedModel.messages))
+		}
+
+		// Verify auto-save was called for message
+		if len(mockStore.addMessageCalls) != 1 {
+			t.Errorf("expected 1 addMessage call, got %d", len(mockStore.addMessageCalls))
+		} else {
+			call := mockStore.addMessageCalls[0]
+			if call.role != "assistant" {
+				t.Errorf("expected role 'assistant', got '%s'", call.role)
+			}
+			if call.content != "response text" {
+				t.Errorf("expected content 'response text', got '%s'", call.content)
+			}
+		}
+
+		// Verify metadata was saved
+		if len(mockStore.updateMetadataCalls) != 1 {
+			t.Errorf("expected 1 updateMetadata call, got %d", len(mockStore.updateMetadataCalls))
+		} else {
+			call := mockStore.updateMetadataCalls[0]
+			if call.cid != "new-cid" {
+				t.Errorf("expected cid 'new-cid', got '%s'", call.cid)
+			}
+		}
+	})
+}
+
+func TestModel_AutoSaveOnSend(t *testing.T) {
+	t.Run("auto-saves user message when sending", func(t *testing.T) {
+		mockStore := &mockHistoryStoreForModel{}
+		conv := &history.Conversation{ID: "conv-789"}
+		mockSession := &mockChatSession{
+			sendMessageFunc: func(prompt string, files []*api.UploadedFile) (*models.ModelOutput, error) {
+				return &models.ModelOutput{
+					Candidates: []models.Candidate{{Text: "response"}},
+					Chosen:     0,
+				}, nil
+			},
+		}
+
+		ta := textarea.New()
+		ta.SetWidth(80)
+		ta.SetValue("Hello, Gemini!")
+
+		vp := viewport.New(80, 20)
+
+		m := Model{
+			ready:        true,
+			loading:      false,
+			messages:     []chatMessage{},
+			conversation: conv,
+			historyStore: mockStore,
+			session:      mockSession,
+			textarea:     ta,
+			viewport:     vp,
+			width:        100,
+			height:       40,
+		}
+
+		// Simulate enter key to send message
+		msg := tea.KeyMsg{Type: tea.KeyEnter}
+		updatedModel, _ := m.Update(msg)
+
+		typedModel := updatedModel.(Model)
+
+		// Verify model is now loading
+		if !typedModel.loading {
+			t.Error("model should be loading after sending message")
+		}
+
+		// Verify user message was added
+		if len(typedModel.messages) != 1 {
+			t.Errorf("expected 1 message, got %d", len(typedModel.messages))
+		}
+
+		// Verify auto-save was called for user message
+		if len(mockStore.addMessageCalls) != 1 {
+			t.Errorf("expected 1 addMessage call, got %d", len(mockStore.addMessageCalls))
+		} else {
+			call := mockStore.addMessageCalls[0]
+			if call.id != "conv-789" {
+				t.Errorf("expected id 'conv-789', got '%s'", call.id)
+			}
+			if call.role != "user" {
+				t.Errorf("expected role 'user', got '%s'", call.role)
+			}
+			if call.content != "Hello, Gemini!" {
+				t.Errorf("expected content 'Hello, Gemini!', got '%s'", call.content)
+			}
+		}
+	})
+
+	t.Run("does not auto-save when no conversation", func(t *testing.T) {
+		mockStore := &mockHistoryStoreForModel{}
+		mockSession := &mockChatSession{
+			sendMessageFunc: func(prompt string, files []*api.UploadedFile) (*models.ModelOutput, error) {
+				return &models.ModelOutput{
+					Candidates: []models.Candidate{{Text: "response"}},
+					Chosen:     0,
+				}, nil
+			},
+		}
+
+		ta := textarea.New()
+		ta.SetWidth(80)
+		ta.SetValue("Hello")
+
+		vp := viewport.New(80, 20)
+
+		m := Model{
+			ready:        true,
+			loading:      false,
+			messages:     []chatMessage{},
+			conversation: nil, // No conversation
+			historyStore: mockStore,
+			session:      mockSession,
+			textarea:     ta,
+			viewport:     vp,
+			width:        100,
+			height:       40,
+		}
+
+		// Simulate enter key to send message
+		msg := tea.KeyMsg{Type: tea.KeyEnter}
+		m.Update(msg)
+
+		// Auto-save should not be called
+		if len(mockStore.addMessageCalls) != 0 {
+			t.Errorf("expected 0 addMessage calls, got %d", len(mockStore.addMessageCalls))
+		}
+	})
+
+	t.Run("does not auto-save when no store", func(t *testing.T) {
+		conv := &history.Conversation{ID: "conv-123"}
+		mockSession := &mockChatSession{
+			sendMessageFunc: func(prompt string, files []*api.UploadedFile) (*models.ModelOutput, error) {
+				return &models.ModelOutput{
+					Candidates: []models.Candidate{{Text: "response"}},
+					Chosen:     0,
+				}, nil
+			},
+		}
+
+		ta := textarea.New()
+		ta.SetWidth(80)
+		ta.SetValue("Hello")
+
+		vp := viewport.New(80, 20)
+
+		m := Model{
+			ready:        true,
+			loading:      false,
+			messages:     []chatMessage{},
+			conversation: conv,
+			historyStore: nil, // No store
+			session:      mockSession,
+			textarea:     ta,
+			viewport:     vp,
+			width:        100,
+			height:       40,
+		}
+
+		// Simulate enter key to send message - should not panic
+		msg := tea.KeyMsg{Type: tea.KeyEnter}
+		updatedModel, _ := m.Update(msg)
+
+		typedModel := updatedModel.(Model)
+		// Message should still be added locally
+		if len(typedModel.messages) != 1 {
+			t.Errorf("expected 1 message, got %d", len(typedModel.messages))
+		}
+	})
+}
+
+func TestModel_AutoSaveWithStoreError(t *testing.T) {
+	t.Run("continues gracefully when store returns error", func(t *testing.T) {
+		mockStore := &mockHistoryStoreForModel{
+			addMessageErr: fmt.Errorf("storage error"),
+		}
+		conv := &history.Conversation{ID: "conv-123"}
+		mockSession := &mockChatSession{
+			sendMessageFunc: func(prompt string, files []*api.UploadedFile) (*models.ModelOutput, error) {
+				return &models.ModelOutput{
+					Candidates: []models.Candidate{{Text: "response"}},
+					Chosen:     0,
+				}, nil
+			},
+		}
+
+		ta := textarea.New()
+		ta.SetWidth(80)
+		ta.SetValue("Hello")
+
+		vp := viewport.New(80, 20)
+
+		m := Model{
+			ready:        true,
+			loading:      false,
+			messages:     []chatMessage{},
+			conversation: conv,
+			historyStore: mockStore,
+			session:      mockSession,
+			textarea:     ta,
+			viewport:     vp,
+			width:        100,
+			height:       40,
+		}
+
+		// Simulate enter key - should not panic even with store error
+		msg := tea.KeyMsg{Type: tea.KeyEnter}
+		updatedModel, _ := m.Update(msg)
+
+		typedModel := updatedModel.(Model)
+
+		// Message should still be added locally
+		if len(typedModel.messages) != 1 {
+			t.Errorf("expected 1 message, got %d", len(typedModel.messages))
+		}
+
+		// Model should still be in loading state
+		if !typedModel.loading {
+			t.Error("model should be loading")
+		}
+	})
+
+	t.Run("continues gracefully when metadata update returns error", func(t *testing.T) {
+		mockStore := &mockHistoryStoreForModel{
+			updateMetadataErr: fmt.Errorf("metadata error"),
+		}
+		conv := &history.Conversation{ID: "conv-123"}
+		mockSession := &mockChatSessionWithMetadata{
+			cid:  "cid-abc",
+			rid:  "rid-def",
+			rcid: "rcid-ghi",
+		}
+
+		ta := textarea.New()
+		ta.SetWidth(80)
+
+		m := Model{
+			ready:        true,
+			loading:      true,
+			messages:     []chatMessage{{role: "user", content: "test"}},
+			conversation: conv,
+			historyStore: mockStore,
+			session:      mockSession,
+			textarea:     ta,
+		}
+
+		// Simulate response - should not panic even with metadata error
+		output := &models.ModelOutput{
+			Candidates: []models.Candidate{{Text: "response text"}},
+			Chosen:     0,
+		}
+		msg := responseMsg{output: output}
+		updatedModel, _ := m.Update(msg)
+
+		typedModel := updatedModel.(Model)
+
+		// Message should still be added
+		if len(typedModel.messages) != 2 {
+			t.Errorf("expected 2 messages, got %d", len(typedModel.messages))
+		}
+
+		// Loading should be stopped
+		if typedModel.loading {
+			t.Error("model should not be loading")
+		}
+	})
+}
