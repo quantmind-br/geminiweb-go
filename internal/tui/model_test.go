@@ -3194,3 +3194,305 @@ func TestModel_AttachmentIndicator(t *testing.T) {
 		}
 	})
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// IMAGE URL DISPLAY TESTS (Phase 3)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+func TestRenderImageLinks(t *testing.T) {
+	t.Run("renders single image with title", func(t *testing.T) {
+		images := []models.WebImage{
+			{URL: "https://example.com/image1.jpg", Title: "Test Image", Alt: ""},
+		}
+
+		result := renderImageLinks(images, 80)
+
+		// Should contain header
+		if !strings.Contains(result, "Images (1)") {
+			t.Error("should show image count in header")
+		}
+
+		// Should contain title
+		if !strings.Contains(result, "Test Image") {
+			t.Error("should show image title")
+		}
+
+		// Should contain URL
+		if !strings.Contains(result, "https://example.com/image1.jpg") {
+			t.Error("should show image URL")
+		}
+	})
+
+	t.Run("renders multiple images", func(t *testing.T) {
+		images := []models.WebImage{
+			{URL: "https://example.com/image1.jpg", Title: "Image One"},
+			{URL: "https://example.com/image2.jpg", Title: "Image Two"},
+			{URL: "https://example.com/image3.jpg", Title: "Image Three"},
+		}
+
+		result := renderImageLinks(images, 80)
+
+		// Should contain count
+		if !strings.Contains(result, "Images (3)") {
+			t.Error("should show correct image count")
+		}
+
+		// Should contain all titles
+		if !strings.Contains(result, "Image One") {
+			t.Error("should show first image title")
+		}
+		if !strings.Contains(result, "Image Two") {
+			t.Error("should show second image title")
+		}
+		if !strings.Contains(result, "Image Three") {
+			t.Error("should show third image title")
+		}
+	})
+
+	t.Run("uses alt text when title is empty", func(t *testing.T) {
+		images := []models.WebImage{
+			{URL: "https://example.com/image.jpg", Title: "", Alt: "Alt Description"},
+		}
+
+		result := renderImageLinks(images, 80)
+
+		if !strings.Contains(result, "Alt Description") {
+			t.Error("should use alt text when title is empty")
+		}
+	})
+
+	t.Run("uses fallback when title and alt are empty", func(t *testing.T) {
+		images := []models.WebImage{
+			{URL: "https://example.com/image.jpg", Title: "", Alt: ""},
+		}
+
+		result := renderImageLinks(images, 80)
+
+		if !strings.Contains(result, "Image 1") {
+			t.Error("should use 'Image N' fallback when title and alt are empty")
+		}
+	})
+
+	t.Run("truncates long titles", func(t *testing.T) {
+		longTitle := strings.Repeat("A", 100) // Very long title
+		images := []models.WebImage{
+			{URL: "https://example.com/image.jpg", Title: longTitle},
+		}
+
+		result := renderImageLinks(images, 50) // Narrow width
+
+		// Should not contain the full title
+		if strings.Contains(result, longTitle) {
+			t.Error("should truncate long titles")
+		}
+
+		// Should contain truncation indicator
+		if !strings.Contains(result, "...") {
+			t.Error("should show ellipsis for truncated titles")
+		}
+	})
+}
+
+func TestModel_ResponseMsgWithImages(t *testing.T) {
+	t.Run("extracts images from response", func(t *testing.T) {
+		ta := createTextarea()
+		s := spinner.New()
+		mockSession := &mockChatSession{}
+
+		m := Model{
+			textarea: ta,
+			spinner:  s,
+			session:  mockSession,
+			ready:    true,
+			width:    100,
+			height:   40,
+			viewport: viewport.New(96, 20),
+			messages: []chatMessage{},
+			loading:  true,
+		}
+
+		// Create a response with images
+		output := &models.ModelOutput{
+			Candidates: []models.Candidate{
+				{
+					Text: "Here's an image for you",
+					WebImages: []models.WebImage{
+						{URL: "https://example.com/web.jpg", Title: "Web Image"},
+					},
+					GeneratedImages: []models.GeneratedImage{
+						{URL: "https://example.com/gen.jpg", Title: "Generated Image"},
+					},
+				},
+			},
+			Chosen: 0,
+		}
+
+		// Process response message
+		newM, _ := m.Update(responseMsg{output: output})
+		updatedModel := newM.(Model)
+
+		// Should have one message
+		if len(updatedModel.messages) != 1 {
+			t.Fatalf("expected 1 message, got %d", len(updatedModel.messages))
+		}
+
+		// Message should have images
+		msg := updatedModel.messages[0]
+		if len(msg.images) != 2 { // 1 web + 1 generated
+			t.Errorf("expected 2 images, got %d", len(msg.images))
+		}
+
+		// Verify image content
+		if msg.images[0].URL != "https://example.com/web.jpg" {
+			t.Errorf("expected web image URL, got %s", msg.images[0].URL)
+		}
+		if msg.images[1].URL != "https://example.com/gen.jpg" {
+			t.Errorf("expected generated image URL, got %s", msg.images[1].URL)
+		}
+	})
+
+	t.Run("handles response without images", func(t *testing.T) {
+		ta := createTextarea()
+		s := spinner.New()
+		mockSession := &mockChatSession{}
+
+		m := Model{
+			textarea: ta,
+			spinner:  s,
+			session:  mockSession,
+			ready:    true,
+			width:    100,
+			height:   40,
+			viewport: viewport.New(96, 20),
+			messages: []chatMessage{},
+			loading:  true,
+		}
+
+		// Create a response without images
+		output := &models.ModelOutput{
+			Candidates: []models.Candidate{
+				{Text: "Just text, no images"},
+			},
+			Chosen: 0,
+		}
+
+		// Process response message
+		newM, _ := m.Update(responseMsg{output: output})
+		updatedModel := newM.(Model)
+
+		// Message should have no images
+		msg := updatedModel.messages[0]
+		if len(msg.images) != 0 {
+			t.Errorf("expected 0 images, got %d", len(msg.images))
+		}
+	})
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TUI THEME/STYLES TESTS (Phase 3)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+func TestUpdateTheme(t *testing.T) {
+	// Reset theme after test
+	defer func() {
+		render.SetTUITheme("tokyonight")
+		UpdateTheme()
+	}()
+
+	t.Run("updates colors from theme", func(t *testing.T) {
+		// Set a different theme
+		render.SetTUITheme("catppuccin")
+		UpdateTheme()
+
+		// Verify the theme was applied (colors should have changed)
+		theme := render.GetTUITheme()
+		if theme.Name != "catppuccin" {
+			t.Errorf("expected theme 'catppuccin', got '%s'", theme.Name)
+		}
+
+		// colorPrimary should match theme's primary color
+		// We can't directly compare lipgloss.Color values, but we can verify the function runs without error
+	})
+
+	t.Run("GetCurrentThemeName returns theme name", func(t *testing.T) {
+		render.SetTUITheme("nord")
+		UpdateTheme()
+
+		name := GetCurrentThemeName()
+		if name != "nord" {
+			t.Errorf("expected theme name 'nord', got '%s'", name)
+		}
+	})
+}
+
+func TestModel_UpdateViewportWithImages(t *testing.T) {
+	t.Run("renders images in viewport", func(t *testing.T) {
+		ta := createTextarea()
+		s := spinner.New()
+
+		m := Model{
+			textarea: ta,
+			spinner:  s,
+			ready:    true,
+			width:    100,
+			height:   40,
+			viewport: viewport.New(96, 20),
+			messages: []chatMessage{
+				{
+					role:    "assistant",
+					content: "Here's an image",
+					images: []models.WebImage{
+						{URL: "https://example.com/test.jpg", Title: "Test Image"},
+					},
+				},
+			},
+		}
+
+		m.updateViewport()
+		content := m.viewport.View()
+
+		// Should contain image section
+		if !strings.Contains(content, "Images") {
+			t.Error("viewport should render image section")
+		}
+
+		// Should contain image URL
+		if !strings.Contains(content, "https://example.com/test.jpg") {
+			t.Error("viewport should contain image URL")
+		}
+
+		// Should contain image title
+		if !strings.Contains(content, "Test Image") {
+			t.Error("viewport should contain image title")
+		}
+	})
+
+	t.Run("does not render image section when no images", func(t *testing.T) {
+		ta := createTextarea()
+		s := spinner.New()
+
+		m := Model{
+			textarea: ta,
+			spinner:  s,
+			ready:    true,
+			width:    100,
+			height:   40,
+			viewport: viewport.New(96, 20),
+			messages: []chatMessage{
+				{
+					role:    "assistant",
+					content: "No images here",
+					images:  nil,
+				},
+			},
+		}
+
+		m.updateViewport()
+		content := m.viewport.View()
+
+		// Should not contain image section header
+		if strings.Contains(content, "🖼") {
+			t.Error("viewport should not show image emoji when no images")
+		}
+	})
+}

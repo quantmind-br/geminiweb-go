@@ -125,6 +125,7 @@ type chatMessage struct {
 	role     string // "user" or "assistant"
 	content  string
 	thoughts string
+	images   []models.WebImage // Images from ModelOutput (for assistant messages)
 }
 
 // createTextarea creates and configures a textarea for multi-line input
@@ -365,10 +366,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = false
 		responseText := msg.output.Text()
 		thoughts := msg.output.Thoughts()
+		images := msg.output.Images()
 		m.messages = append(m.messages, chatMessage{
 			role:     "assistant",
 			content:  responseText,
 			thoughts: thoughts,
+			images:   images,
 		})
 		m.updateViewport()
 		m.viewport.GotoBottom()
@@ -751,6 +754,12 @@ func (m *Model) updateViewport() {
 
 			bubble := assistantBubbleStyle.Width(bubbleWidth).Render(rendered)
 			content.WriteString(bubble)
+
+			// Render images if present
+			if len(msg.images) > 0 {
+				imagesContent := renderImageLinks(msg.images, bubbleWidth-4)
+				content.WriteString("\n" + imagesContent)
+			}
 		}
 		content.WriteString("\n")
 	}
@@ -758,6 +767,45 @@ func (m *Model) updateViewport() {
 	m.viewport.SetContent(content.String())
 }
 
+// renderImageLinks renders image URLs in a styled format
+func renderImageLinks(images []models.WebImage, width int) string {
+	var sb strings.Builder
+
+	// Header
+	header := imageSectionHeaderStyle.Render(fmt.Sprintf("🖼 Images (%d)", len(images)))
+	sb.WriteString(header)
+	sb.WriteString("\n")
+
+	// Render each image link
+	for i, img := range images {
+		// Use title if available, otherwise use "Image N"
+		title := img.Title
+		if title == "" {
+			if img.Alt != "" {
+				title = img.Alt
+			} else {
+				title = fmt.Sprintf("Image %d", i+1)
+			}
+		}
+
+		// Truncate title if too long
+		maxTitleLen := width - 10
+		if maxTitleLen < 20 {
+			maxTitleLen = 20
+		}
+		if len(title) > maxTitleLen {
+			title = title[:maxTitleLen-3] + "..."
+		}
+
+		// Format: [Title] URL
+		titlePart := imageTitleStyle.Render("[" + title + "]")
+		urlPart := imageLinkStyle.Render(img.URL)
+		sb.WriteString(fmt.Sprintf("  %s %s\n", titlePart, urlPart))
+	}
+
+	// Wrap in section style
+	return imageSectionStyle.Width(width).Render(sb.String())
+}
 
 // formatError formats an error with structured error details for display
 func (m Model) formatError(err error) string {

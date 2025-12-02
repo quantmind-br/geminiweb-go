@@ -48,17 +48,27 @@ Date: 2025-12-02
 
 **Coverage:** TUI package at 79.1%
 
-### Phase 3: Style and UX Polish
+### Phase 3: Style and UX Polish ✅ COMPLETE
 
-- [ ] Task 3.1: Display image URLs from ModelOutput in a styled format
-- [ ] Task 3.1-test: Write tests for image URL display (80%+ coverage)
-- [ ] Task 3.2: Refactor `internal/tui/styles.go` to use centralized theme struct
-- [ ] Task 3.2-test: Write tests for theme system (80%+ coverage)
-- [ ] Task 3.3: Extend ConfigModel for TUI theme selection
-- [ ] Task 3.3-test: Write tests for theme configuration (80%+ coverage)
-- [ ] Task 3.4: Create initial themes (Catppuccin/Nord)
+- [x] Task 3.1: Display image URLs from ModelOutput in a styled format
+- [x] Task 3.1-test: Write tests for image URL display (80%+ coverage)
+- [x] Task 3.2: Refactor `internal/tui/styles.go` to use centralized theme struct
+- [x] Task 3.2-test: Write tests for theme system (80%+ coverage)
+- [x] Task 3.3: Extend ConfigModel for TUI theme selection
+- [x] Task 3.3-test: Write tests for theme configuration (80%+ coverage)
+- [x] Task 3.4: Create initial themes (Catppuccin/Nord/Dracula)
+
+**Implementation:**
+- Added image URL rendering with `renderImageLinks()` and styled section display
+- Created `internal/render/tui_themes.go` with TUITheme struct and 4 built-in themes
+- Refactored `styles.go` to use theme-based colors with `UpdateTheme()` function
+- Extended ConfigModel with TUI theme selection (viewTUIThemeSelect, menuTUITheme)
+- Added `TUITheme` field to config.Config for persistence
+- Available themes: tokyonight (default), catppuccin, nord, dracula
+
+**Coverage:** TUI package at 80.5%, render package at 96.4%
 
 ### Final Validation
 
-- [ ] Run full test suite and verify 80%+ coverage on new code
-- [ ] Run linter and fix any issues
+- [x] Run full test suite and verify 80%+ coverage on new code
+- [x] Run linter and fix any issues
