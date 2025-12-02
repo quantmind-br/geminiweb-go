@@ -3,6 +3,7 @@ package api
 import (
 	"fmt"
 	"regexp"
+	"strings"
 
 	http "github.com/bogdanfinn/fhttp"
 	tls_client "github.com/bogdanfinn/tls-client"
@@ -44,6 +45,34 @@ func GetAccessToken(client tls_client.HttpClient, cookies *config.Cookies) (stri
 	}()
 
 	if resp.StatusCode != 200 {
+		// Check for redirect (302) - often indicates blocking or auth issues
+		if resp.StatusCode == 302 || resp.StatusCode == 301 {
+			location := resp.Header.Get("Location")
+			if location != "" {
+				// Check if it's a Google blocking page
+				if strings.Contains(location, "/sorry/") || strings.Contains(location, "sorry/index") {
+					authErr := apierrors.NewAuthErrorWithEndpoint(
+						"Google has temporarily blocked access (too many requests)",
+						models.EndpointInit,
+					)
+					authErr.GeminiError.HTTPStatus = resp.StatusCode
+					authErr.GeminiError.WithBody(fmt.Sprintf(
+						"Redirect to blocking page: %s\n\nTo resolve:\n1. Open your browser and visit: https://gemini.google.com/app\n2. Solve any CAPTCHA if presented\n3. Try again after a few minutes",
+						location,
+					))
+					return "", authErr
+				}
+				// Generic redirect
+				authErr := apierrors.NewAuthErrorWithEndpoint(
+					fmt.Sprintf("unexpected redirect (status: %d)", resp.StatusCode),
+					models.EndpointInit,
+				)
+				authErr.GeminiError.HTTPStatus = resp.StatusCode
+				authErr.GeminiError.WithBody(fmt.Sprintf("Redirect to: %s", location))
+				return "", authErr
+			}
+		}
+
 		// Read response body for diagnostics
 		errorBody := make([]byte, 0, 2048)
 		buf := make([]byte, 512)

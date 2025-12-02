@@ -177,13 +177,18 @@ func (e *GeminiError) IsModelError() bool {
 
 // WithBody adds the response body to the error (truncated for safety)
 func (e *GeminiError) WithBody(body string) *GeminiError {
-	const maxBodyLen = 500
+	const maxBodyLen = 1000
 	if len(body) > maxBodyLen {
 		e.Body = body[:maxBodyLen] + "...(truncated)"
 	} else {
 		e.Body = body
 	}
 	return e
+}
+
+// GetBody returns the response body stored in the error
+func (e *GeminiError) GetBody() string {
+	return e.Body
 }
 
 // NewGeminiError creates a new GeminiError with the given parameters
