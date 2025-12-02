@@ -12,6 +12,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/diogo/geminiweb/internal/api"
+	"github.com/diogo/geminiweb/internal/history"
 	"github.com/diogo/geminiweb/internal/models"
 	"github.com/diogo/geminiweb/internal/render"
 )
@@ -988,4 +989,101 @@ func TestModel_View_ShowsActiveGem(t *testing.T) {
 	if !strings.Contains(view, "Code Helper") {
 		t.Error("View should show active gem name in header")
 	}
+}
+
+// mockHistoryStoreForModel is a mock implementation of HistoryStoreInterface for testing
+type mockHistoryStoreForModel struct {
+	addMessageCalls    []struct{ id, role, content, thoughts string }
+	updateMetadataCalls []struct{ id, cid, rid, rcid string }
+	updateTitleCalls   []struct{ id, title string }
+	addMessageErr      error
+	updateMetadataErr  error
+	updateTitleErr     error
+}
+
+func (m *mockHistoryStoreForModel) AddMessage(id, role, content, thoughts string) error {
+	m.addMessageCalls = append(m.addMessageCalls, struct{ id, role, content, thoughts string }{id, role, content, thoughts})
+	return m.addMessageErr
+}
+
+func (m *mockHistoryStoreForModel) UpdateMetadata(id, cid, rid, rcid string) error {
+	m.updateMetadataCalls = append(m.updateMetadataCalls, struct{ id, cid, rid, rcid string }{id, cid, rid, rcid})
+	return m.updateMetadataErr
+}
+
+func (m *mockHistoryStoreForModel) UpdateTitle(id, title string) error {
+	m.updateTitleCalls = append(m.updateTitleCalls, struct{ id, title string }{id, title})
+	return m.updateTitleErr
+}
+
+func TestNewChatModelWithConversation(t *testing.T) {
+	mockSession := &mockChatSession{}
+	mockStore := &mockHistoryStoreForModel{}
+
+	t.Run("with nil conversation", func(t *testing.T) {
+		model := NewChatModelWithConversation(nil, mockSession, "test-model", nil, mockStore)
+
+		if model.conversation != nil {
+			t.Error("conversation should be nil")
+		}
+		if len(model.messages) != 0 {
+			t.Errorf("messages length = %d, want 0", len(model.messages))
+		}
+		if model.historyStore != mockStore {
+			t.Error("historyStore not set correctly")
+		}
+	})
+
+	t.Run("with empty conversation", func(t *testing.T) {
+		conv := &history.Conversation{
+			ID:       "test-conv",
+			Title:    "Test",
+			Model:    "test-model",
+			Messages: []history.Message{},
+		}
+		model := NewChatModelWithConversation(nil, mockSession, "test-model", conv, mockStore)
+
+		if model.conversation != conv {
+			t.Error("conversation not set correctly")
+		}
+		if len(model.messages) != 0 {
+			t.Errorf("messages length = %d, want 0", len(model.messages))
+		}
+	})
+
+	t.Run("with existing messages", func(t *testing.T) {
+		conv := &history.Conversation{
+			ID:    "test-conv",
+			Title: "Test",
+			Model: "test-model",
+			Messages: []history.Message{
+				{Role: "user", Content: "Hello", Thoughts: ""},
+				{Role: "assistant", Content: "Hi there!", Thoughts: "Thinking about greeting"},
+			},
+		}
+		model := NewChatModelWithConversation(nil, mockSession, "test-model", conv, mockStore)
+
+		if len(model.messages) != 2 {
+			t.Errorf("messages length = %d, want 2", len(model.messages))
+		}
+		if model.messages[0].role != "user" || model.messages[0].content != "Hello" {
+			t.Error("first message not loaded correctly")
+		}
+		if model.messages[1].role != "assistant" || model.messages[1].content != "Hi there!" {
+			t.Error("second message not loaded correctly")
+		}
+		if model.messages[1].thoughts != "Thinking about greeting" {
+			t.Error("thoughts not loaded correctly")
+		}
+	})
+}
+
+func TestRunChatWithConversation_FunctionExists(t *testing.T) {
+	// Just verify the function exists
+	_ = RunChatWithConversation
+}
+
+func TestHistoryStoreInterface(t *testing.T) {
+	// Verify the interface is implemented by mockHistoryStoreForModel
+	var _ HistoryStoreInterface = &mockHistoryStoreForModel{}
 }
