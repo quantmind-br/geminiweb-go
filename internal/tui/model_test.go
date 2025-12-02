@@ -1635,3 +1635,596 @@ func TestModel_AutoSaveWithStoreError(t *testing.T) {
 		}
 	})
 }
+
+// mockFullHistoryStore implements FullHistoryStore for testing
+type mockFullHistoryStore struct {
+	mockHistoryStoreForModel
+	conversations      []*history.Conversation
+	getConversation    *history.Conversation
+	createConversation *history.Conversation
+	listErr            error
+	getErr             error
+	createErr          error
+}
+
+func (m *mockFullHistoryStore) ListConversations() ([]*history.Conversation, error) {
+	return m.conversations, m.listErr
+}
+
+func (m *mockFullHistoryStore) GetConversation(id string) (*history.Conversation, error) {
+	return m.getConversation, m.getErr
+}
+
+func (m *mockFullHistoryStore) CreateConversation(model string) (*history.Conversation, error) {
+	return m.createConversation, m.createErr
+}
+
+func TestFullHistoryStoreInterface(t *testing.T) {
+	// Verify the interface is implemented by mockFullHistoryStore
+	var _ FullHistoryStore = &mockFullHistoryStore{}
+}
+
+func TestFormatTimeAgo(t *testing.T) {
+	now := time.Now()
+
+	tests := []struct {
+		name     string
+		time     time.Time
+		expected string
+	}{
+		{"zero time", time.Time{}, ""},
+		{"just now", now.Add(-30 * time.Second), "just now"},
+		{"1 minute ago", now.Add(-1 * time.Minute), "1m ago"},
+		{"5 minutes ago", now.Add(-5 * time.Minute), "5m ago"},
+		{"1 hour ago", now.Add(-1 * time.Hour), "1h ago"},
+		{"3 hours ago", now.Add(-3 * time.Hour), "3h ago"},
+		{"1 day ago", now.Add(-24 * time.Hour), "1d ago"},
+		{"3 days ago", now.Add(-72 * time.Hour), "3d ago"},
+		{"2 weeks ago", now.Add(-14 * 24 * time.Hour), now.Add(-14 * 24 * time.Hour).Format("Jan 2")},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := formatTimeAgo(tt.time)
+			if result != tt.expected {
+				t.Errorf("formatTimeAgo(%v) = %q, want %q", tt.time, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestModel_FilteredHistory(t *testing.T) {
+	convs := []*history.Conversation{
+		{ID: "1", Title: "Chat about Go", Model: "gemini-2.5-flash"},
+		{ID: "2", Title: "Python discussion", Model: "gemini-3.0-pro"},
+		{ID: "3", Title: "Go concurrency patterns", Model: "gemini-2.5-flash"},
+	}
+
+	t.Run("no filter returns all", func(t *testing.T) {
+		m := Model{historyList: convs, historyFilter: ""}
+		filtered := m.filteredHistory()
+		if len(filtered) != 3 {
+			t.Errorf("expected 3 conversations, got %d", len(filtered))
+		}
+	})
+
+	t.Run("filter by title", func(t *testing.T) {
+		m := Model{historyList: convs, historyFilter: "Go"}
+		filtered := m.filteredHistory()
+		if len(filtered) != 2 {
+			t.Errorf("expected 2 conversations matching 'Go', got %d", len(filtered))
+		}
+	})
+
+	t.Run("filter by model", func(t *testing.T) {
+		m := Model{historyList: convs, historyFilter: "flash"}
+		filtered := m.filteredHistory()
+		if len(filtered) != 2 {
+			t.Errorf("expected 2 conversations matching 'flash', got %d", len(filtered))
+		}
+	})
+
+	t.Run("case insensitive", func(t *testing.T) {
+		m := Model{historyList: convs, historyFilter: "PYTHON"}
+		filtered := m.filteredHistory()
+		if len(filtered) != 1 {
+			t.Errorf("expected 1 conversation matching 'PYTHON', got %d", len(filtered))
+		}
+	})
+
+	t.Run("no matches", func(t *testing.T) {
+		m := Model{historyList: convs, historyFilter: "xyz"}
+		filtered := m.filteredHistory()
+		if len(filtered) != 0 {
+			t.Errorf("expected 0 conversations matching 'xyz', got %d", len(filtered))
+		}
+	})
+}
+
+func TestModel_HistorySelection_Commands(t *testing.T) {
+	t.Run("/history command enters selection mode", func(t *testing.T) {
+		mockStore := &mockFullHistoryStore{
+			conversations: []*history.Conversation{
+				{ID: "1", Title: "Test Chat"},
+			},
+		}
+
+		ta := textarea.New()
+		ta.SetWidth(80)
+		ta.SetValue("/history")
+
+		vp := viewport.New(80, 20)
+
+		m := Model{
+			ready:            true,
+			loading:          false,
+			fullHistoryStore: mockStore,
+			textarea:         ta,
+			viewport:         vp,
+			width:            100,
+			height:           40,
+		}
+
+		msg := tea.KeyMsg{Type: tea.KeyEnter}
+		updatedModel, cmd := m.Update(msg)
+
+		typedModel := updatedModel.(Model)
+
+		if !typedModel.selectingHistory {
+			t.Error("model should be in history selection mode")
+		}
+		if !typedModel.historyLoading {
+			t.Error("model should be loading history")
+		}
+		if cmd == nil {
+			t.Error("should return a command to load history")
+		}
+	})
+
+	t.Run("/hist shortcut works", func(t *testing.T) {
+		mockStore := &mockFullHistoryStore{}
+
+		ta := textarea.New()
+		ta.SetWidth(80)
+		ta.SetValue("/hist")
+
+		vp := viewport.New(80, 20)
+
+		m := Model{
+			ready:            true,
+			loading:          false,
+			fullHistoryStore: mockStore,
+			textarea:         ta,
+			viewport:         vp,
+			width:            100,
+			height:           40,
+		}
+
+		msg := tea.KeyMsg{Type: tea.KeyEnter}
+		updatedModel, _ := m.Update(msg)
+
+		typedModel := updatedModel.(Model)
+		if !typedModel.selectingHistory {
+			t.Error("model should be in history selection mode with /hist")
+		}
+	})
+
+	t.Run("/history without store shows error", func(t *testing.T) {
+		ta := textarea.New()
+		ta.SetWidth(80)
+		ta.SetValue("/history")
+
+		vp := viewport.New(80, 20)
+
+		m := Model{
+			ready:            true,
+			loading:          false,
+			fullHistoryStore: nil, // No store
+			textarea:         ta,
+			viewport:         vp,
+			width:            100,
+			height:           40,
+		}
+
+		msg := tea.KeyMsg{Type: tea.KeyEnter}
+		updatedModel, _ := m.Update(msg)
+
+		typedModel := updatedModel.(Model)
+		if typedModel.selectingHistory {
+			t.Error("model should not be in history selection mode without store")
+		}
+		if typedModel.err == nil {
+			t.Error("model should have error set")
+		}
+	})
+}
+
+func TestModel_UpdateHistorySelection(t *testing.T) {
+	convs := []*history.Conversation{
+		{ID: "1", Title: "Chat 1"},
+		{ID: "2", Title: "Chat 2"},
+		{ID: "3", Title: "Chat 3"},
+	}
+
+	t.Run("navigation up/down", func(t *testing.T) {
+		m := Model{
+			selectingHistory: true,
+			historyList:      convs,
+			historyCursor:    0, // At "New Conversation"
+		}
+
+		// Move down
+		msg := tea.KeyMsg{Type: tea.KeyDown}
+		updatedModel, _ := m.updateHistorySelection(msg)
+		typedModel := updatedModel.(Model)
+		if typedModel.historyCursor != 1 {
+			t.Errorf("cursor should be 1 after down, got %d", typedModel.historyCursor)
+		}
+
+		// Move down again
+		updatedModel, _ = typedModel.updateHistorySelection(msg)
+		typedModel = updatedModel.(Model)
+		if typedModel.historyCursor != 2 {
+			t.Errorf("cursor should be 2 after second down, got %d", typedModel.historyCursor)
+		}
+
+		// Move up
+		msg = tea.KeyMsg{Type: tea.KeyUp}
+		updatedModel, _ = typedModel.updateHistorySelection(msg)
+		typedModel = updatedModel.(Model)
+		if typedModel.historyCursor != 1 {
+			t.Errorf("cursor should be 1 after up, got %d", typedModel.historyCursor)
+		}
+	})
+
+	t.Run("wrap around", func(t *testing.T) {
+		m := Model{
+			selectingHistory: true,
+			historyList:      convs,
+			historyCursor:    0, // At "New Conversation"
+		}
+
+		// Move up should wrap to last item (index 3 = 3 convs + 1 new conv - 1)
+		msg := tea.KeyMsg{Type: tea.KeyUp}
+		updatedModel, _ := m.updateHistorySelection(msg)
+		typedModel := updatedModel.(Model)
+		if typedModel.historyCursor != 3 {
+			t.Errorf("cursor should wrap to 3, got %d", typedModel.historyCursor)
+		}
+
+		// Move down should wrap to 0
+		msg = tea.KeyMsg{Type: tea.KeyDown}
+		updatedModel, _ = typedModel.updateHistorySelection(msg)
+		typedModel = updatedModel.(Model)
+		if typedModel.historyCursor != 0 {
+			t.Errorf("cursor should wrap to 0, got %d", typedModel.historyCursor)
+		}
+	})
+
+	t.Run("escape cancels selection", func(t *testing.T) {
+		m := Model{
+			selectingHistory: true,
+			historyList:      convs,
+			historyCursor:    2,
+			historyFilter:    "test",
+		}
+
+		msg := tea.KeyMsg{Type: tea.KeyEscape}
+		updatedModel, _ := m.updateHistorySelection(msg)
+		typedModel := updatedModel.(Model)
+
+		if typedModel.selectingHistory {
+			t.Error("should not be in selection mode after escape")
+		}
+		if typedModel.historyList != nil {
+			t.Error("history list should be cleared")
+		}
+		if typedModel.historyCursor != 0 {
+			t.Error("cursor should be reset")
+		}
+		if typedModel.historyFilter != "" {
+			t.Error("filter should be cleared")
+		}
+	})
+
+	t.Run("typing adds to filter", func(t *testing.T) {
+		m := Model{
+			selectingHistory: true,
+			historyList:      convs,
+			historyFilter:    "",
+		}
+
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}}
+		updatedModel, _ := m.updateHistorySelection(msg)
+		typedModel := updatedModel.(Model)
+
+		if typedModel.historyFilter != "g" {
+			t.Errorf("filter should be 'g', got '%s'", typedModel.historyFilter)
+		}
+	})
+
+	t.Run("backspace removes from filter", func(t *testing.T) {
+		m := Model{
+			selectingHistory: true,
+			historyList:      convs,
+			historyFilter:    "go",
+		}
+
+		msg := tea.KeyMsg{Type: tea.KeyBackspace}
+		updatedModel, _ := m.updateHistorySelection(msg)
+		typedModel := updatedModel.(Model)
+
+		if typedModel.historyFilter != "g" {
+			t.Errorf("filter should be 'g', got '%s'", typedModel.historyFilter)
+		}
+	})
+}
+
+func TestModel_SwitchConversation(t *testing.T) {
+	mockSession := &mockChatSession{}
+	conv := &history.Conversation{
+		ID:    "test-conv",
+		Title: "Test Conversation",
+		Model: "test-model",
+		CID:   "cid-123",
+		RID:   "rid-456",
+		RCID:  "rcid-789",
+		Messages: []history.Message{
+			{Role: "user", Content: "Hello"},
+			{Role: "assistant", Content: "Hi there!", Thoughts: "Greeting response"},
+		},
+	}
+
+	ta := textarea.New()
+	ta.SetWidth(80)
+
+	vp := viewport.New(80, 20)
+
+	m := Model{
+		selectingHistory: true,
+		historyList:      []*history.Conversation{conv},
+		historyCursor:    1,
+		session:          mockSession,
+		textarea:         ta,
+		viewport:         vp,
+		width:            100,
+		height:           40,
+	}
+
+	updatedModel, _ := m.switchConversation(conv)
+	typedModel := updatedModel.(Model)
+
+	// Check selection mode is cleared
+	if typedModel.selectingHistory {
+		t.Error("should not be in selection mode after switch")
+	}
+	if typedModel.historyList != nil {
+		t.Error("history list should be cleared")
+	}
+
+	// Check conversation is set
+	if typedModel.conversation != conv {
+		t.Error("conversation should be set to the selected one")
+	}
+
+	// Check messages are loaded
+	if len(typedModel.messages) != 2 {
+		t.Errorf("expected 2 messages, got %d", len(typedModel.messages))
+	}
+	if typedModel.messages[0].role != "user" {
+		t.Error("first message should be user role")
+	}
+	if typedModel.messages[1].thoughts != "Greeting response" {
+		t.Error("thoughts should be loaded")
+	}
+}
+
+func TestModel_StartNewConversation(t *testing.T) {
+	newConv := &history.Conversation{
+		ID:    "new-conv",
+		Title: "New Conversation",
+		Model: "test-model",
+	}
+
+	mockStore := &mockFullHistoryStore{
+		createConversation: newConv,
+	}
+
+	mockSession := &mockChatSession{}
+
+	ta := textarea.New()
+	ta.SetWidth(80)
+
+	vp := viewport.New(80, 20)
+
+	m := Model{
+		selectingHistory: true,
+		historyList:      []*history.Conversation{{ID: "old"}},
+		historyCursor:    0,
+		fullHistoryStore: mockStore,
+		session:          mockSession,
+		modelName:        "test-model",
+		messages:         []chatMessage{{role: "user", content: "old message"}},
+		textarea:         ta,
+		viewport:         vp,
+		width:            100,
+		height:           40,
+	}
+
+	updatedModel, _ := m.startNewConversation()
+	typedModel := updatedModel.(Model)
+
+	// Check selection mode is cleared
+	if typedModel.selectingHistory {
+		t.Error("should not be in selection mode")
+	}
+
+	// Check new conversation is set
+	if typedModel.conversation != newConv {
+		t.Error("should have new conversation")
+	}
+
+	// Check messages are cleared
+	if len(typedModel.messages) != 0 {
+		t.Errorf("expected 0 messages, got %d", len(typedModel.messages))
+	}
+}
+
+func TestModel_RenderHistorySelector(t *testing.T) {
+	convs := []*history.Conversation{
+		{ID: "1", Title: "Chat 1", Model: "gemini-2.5-flash", UpdatedAt: time.Now()},
+		{ID: "2", Title: "Chat 2", Model: "gemini-3.0-pro", UpdatedAt: time.Now().Add(-1 * time.Hour)},
+	}
+
+	t.Run("loading state", func(t *testing.T) {
+		m := Model{
+			selectingHistory: true,
+			historyLoading:   true,
+			width:            80,
+			height:           24,
+		}
+
+		view := m.renderHistorySelector()
+		if !strings.Contains(view, "Loading") {
+			t.Error("should show loading message")
+		}
+	})
+
+	t.Run("with conversations", func(t *testing.T) {
+		m := Model{
+			selectingHistory: true,
+			historyList:      convs,
+			historyCursor:    0,
+			width:            80,
+			height:           24,
+		}
+
+		view := m.renderHistorySelector()
+
+		if !strings.Contains(view, "Select Conversation") {
+			t.Error("should contain title")
+		}
+		if !strings.Contains(view, "New Conversation") {
+			t.Error("should contain new conversation option")
+		}
+		if !strings.Contains(view, "Chat 1") {
+			t.Error("should contain conversation title")
+		}
+	})
+
+	t.Run("empty list", func(t *testing.T) {
+		m := Model{
+			selectingHistory: true,
+			historyList:      []*history.Conversation{},
+			width:            80,
+			height:           24,
+		}
+
+		view := m.renderHistorySelector()
+		if !strings.Contains(view, "No saved conversations") {
+			t.Error("should show no conversations message")
+		}
+	})
+
+	t.Run("with filter", func(t *testing.T) {
+		m := Model{
+			selectingHistory: true,
+			historyList:      convs,
+			historyFilter:    "test",
+			width:            80,
+			height:           24,
+		}
+
+		view := m.renderHistorySelector()
+		if !strings.Contains(view, "🔍 test") {
+			t.Error("should show filter input")
+		}
+	})
+}
+
+func TestModel_LoadHistoryForChat(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		convs := []*history.Conversation{
+			{ID: "1", Title: "Test"},
+		}
+		mockStore := &mockFullHistoryStore{
+			conversations: convs,
+		}
+
+		m := Model{fullHistoryStore: mockStore}
+		cmd := m.loadHistoryForChat()
+		msg := cmd()
+
+		histMsg, ok := msg.(historyLoadedForChatMsg)
+		if !ok {
+			t.Errorf("expected historyLoadedForChatMsg, got %T", msg)
+			return
+		}
+		if histMsg.err != nil {
+			t.Errorf("unexpected error: %v", histMsg.err)
+		}
+		if len(histMsg.conversations) != 1 {
+			t.Errorf("expected 1 conversation, got %d", len(histMsg.conversations))
+		}
+	})
+
+	t.Run("error", func(t *testing.T) {
+		mockStore := &mockFullHistoryStore{
+			listErr: fmt.Errorf("list error"),
+		}
+
+		m := Model{fullHistoryStore: mockStore}
+		cmd := m.loadHistoryForChat()
+		msg := cmd()
+
+		histMsg, ok := msg.(historyLoadedForChatMsg)
+		if !ok {
+			t.Errorf("expected historyLoadedForChatMsg, got %T", msg)
+			return
+		}
+		if histMsg.err == nil {
+			t.Error("expected error")
+		}
+	})
+
+	t.Run("nil store", func(t *testing.T) {
+		m := Model{fullHistoryStore: nil}
+		cmd := m.loadHistoryForChat()
+		msg := cmd()
+
+		histMsg, ok := msg.(historyLoadedForChatMsg)
+		if !ok {
+			t.Errorf("expected historyLoadedForChatMsg, got %T", msg)
+			return
+		}
+		if histMsg.err == nil {
+			t.Error("expected error for nil store")
+		}
+	})
+}
+
+func TestHistoryLoadedForChatMsg(t *testing.T) {
+	t.Run("with conversations", func(t *testing.T) {
+		convs := []*history.Conversation{{ID: "1"}}
+		msg := historyLoadedForChatMsg{conversations: convs}
+
+		if len(msg.conversations) != 1 {
+			t.Error("should have conversations")
+		}
+		if msg.err != nil {
+			t.Error("should not have error")
+		}
+	})
+
+	t.Run("with error", func(t *testing.T) {
+		testErr := fmt.Errorf("test error")
+		msg := historyLoadedForChatMsg{err: testErr}
+
+		if msg.err == nil {
+			t.Error("should have error")
+		}
+		if msg.conversations != nil {
+			t.Error("should not have conversations")
+		}
+	})
+}
