@@ -84,13 +84,15 @@ func TestGeminiError(t *testing.T) {
 
 	t.Run("WithBody truncates long body", func(t *testing.T) {
 		err := NewGeminiError("op", "msg")
-		longBody := make([]byte, 1000)
+		// Create body longer than maxBodyLen (1000) to trigger truncation
+		longBody := make([]byte, 1500)
 		for i := range longBody {
 			longBody[i] = 'a'
 		}
 		err.WithBody(string(longBody))
-		if len(err.Body) <= 500 {
-			t.Errorf("Body should be truncated to ~500 chars, got %d", len(err.Body))
+		// maxBodyLen is 1000, so truncated body should be ~1000 + truncation marker
+		if len(err.Body) <= 1000 {
+			t.Errorf("Body should be truncated around 1000 chars, got %d", len(err.Body))
 		}
 		if !containsString(err.Body, "truncated") {
 			t.Error("Body should contain truncation marker")

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**geminiweb-go** is a CLI for interacting with Google Gemini via the web API. It uses cookie-based authentication (not API keys) and browser-like TLS fingerprinting (Chrome 120 profile) to communicate with Gemini's web interface.
+**geminiweb-go** is a CLI for interacting with Google Gemini via the web API. It uses cookie-based authentication (not API keys) and browser-like TLS fingerprinting (Chrome 133 profile) to communicate with Gemini's web interface.
 
 ## Build & Development Commands
 
@@ -68,7 +68,7 @@ client.Close()
 ### Key Patterns
 
 1. **Functional Options** - `ClientOption` functions configure GeminiClient (WithModel, WithAutoRefresh, WithRefreshInterval, WithBrowserRefresh)
-2. **TLS Fingerprinting** - Chrome 120 profile via `bogdanfinn/tls-client` to appear as real browser
+2. **TLS Fingerprinting** - Chrome 133 profile via `bogdanfinn/tls-client` to appear as real browser
 3. **Auto Cookie Rotation** - Background goroutine refreshes tokens at `/accounts.google.com/RotateCookies` (default 9 min interval)
 4. **Browser Cookie Refresh** - On auth failure (401), automatically extracts fresh cookies from browser and retries (rate-limited to 30s)
 5. **Bubble Tea Architecture** - TUI uses Model/Update/View pattern; messages flow through Update, never mutate state directly
@@ -90,8 +90,9 @@ client.Close()
 
 ## Models
 
-Default model is `models.Model30Pro` (gemini-3.0-pro).
+Default model is `models.DefaultModel` which points to `models.Model30Pro` (gemini-3.0-pro).
 
 - `models.Model25Flash` - Fast model (gemini-2.5-flash)
 - `models.Model25Pro` - Balanced model (gemini-2.5-pro)
-- `models.Model30Pro` - Advanced model (gemini-3.0-pro)
+- `models.Model30Pro` - Advanced model (gemini-3.0-pro) - **recommended default**
+- `models.ModelUnspecified` - Server's default model (no model header sent)

@@ -36,6 +36,7 @@ type Model struct {
 
 // Available models
 var (
+	// ModelUnspecified uses the server's default model (no model header sent)
 	ModelUnspecified = Model{
 		Name:   "unspecified",
 		Header: nil,
@@ -44,7 +45,7 @@ var (
 	Model25Flash = Model{
 		Name: "gemini-2.5-flash",
 		Header: map[string]string{
-			"x-goog-ext-525001261-jspb": `[1,null,null,null,"9ec249fc9ad08861",null,null,0,[4]]`,
+			"x-goog-ext-525001261-jspb": `[1,null,null,null,"71c2d248d3b102ff",null,null,0,[4],null,null,2]`,
 		},
 	}
 
@@ -58,9 +59,12 @@ var (
 	Model30Pro = Model{
 		Name: "gemini-3.0-pro",
 		Header: map[string]string{
-			"x-goog-ext-525001261-jspb": `[1,null,null,null,"9d8ca3786ebdfbea",null,null,0,[4]]`,
+			"x-goog-ext-525001261-jspb": `[1,null,null,null,"e6fa609c3fa255c0",null,null,0,[4],null,null,2]`,
 		},
 	}
+
+	// DefaultModel is the recommended default
+	DefaultModel = Model30Pro
 )
 
 // AllModels returns a list of all available models
@@ -101,7 +105,7 @@ func DefaultHeaders() map[string]string {
 		"Host":          "gemini.google.com",
 		"Origin":        "https://gemini.google.com",
 		"Referer":       "https://gemini.google.com/",
-		"User-Agent":    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+		"User-Agent":    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
 		"X-Same-Domain": "1",
 	}
 }

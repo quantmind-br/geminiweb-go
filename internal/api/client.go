@@ -152,9 +152,10 @@ func NewClient(cookies *config.Cookies, opts ...ClientOption) (*GeminiClient, er
 	}
 
 	// Create TLS client with Chrome profile for browser emulation
+	// Using Chrome_133 (latest available) for better fingerprint compatibility
 	options := []tls_client.HttpClientOption{
 		tls_client.WithTimeoutSeconds(300),
-		tls_client.WithClientProfile(profiles.Chrome_120),
+		tls_client.WithClientProfile(profiles.Chrome_133),
 		tls_client.WithNotFollowRedirects(),
 	}
 
@@ -166,7 +167,7 @@ func NewClient(cookies *config.Cookies, opts ...ClientOption) (*GeminiClient, er
 	client := &GeminiClient{
 		httpClient:            httpClient,
 		cookies:               cookies,
-		model:                 models.Model30Pro, // Default model: gemini-3.0-pro
+		model:                 models.DefaultModel, // Default: gemini-2.5-flash (widely available)
 		autoRefresh:           true,
 		refreshInterval:       9 * time.Minute,  // Default: 9 minutes
 		browserRefreshMinWait: 30 * time.Second, // Minimum wait between browser refreshes

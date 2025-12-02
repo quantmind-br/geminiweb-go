@@ -49,7 +49,7 @@ func TestNewClient(t *testing.T) {
 			name:        "valid cookies with defaults",
 			cookies:     validCookies,
 			wantErr:     false,
-			wantModel:   models.Model30Pro, // Default model is now gemini-3.0-pro
+			wantModel:   models.DefaultModel, // Default model is now gemini-2.5-flash
 			autoRefresh: true,
 			interval:    9 * time.Minute,
 		},
@@ -67,7 +67,7 @@ func TestNewClient(t *testing.T) {
 			cookies:     validCookies,
 			opts:        []ClientOption{WithAutoRefresh(false)},
 			wantErr:     false,
-			wantModel:   models.Model30Pro,
+			wantModel:   models.DefaultModel,
 			autoRefresh: false,
 			interval:    9 * time.Minute,
 		},
@@ -76,7 +76,7 @@ func TestNewClient(t *testing.T) {
 			cookies:     validCookies,
 			opts:        []ClientOption{WithRefreshInterval(5 * time.Minute)},
 			wantErr:     false,
-			wantModel:   models.Model30Pro,
+			wantModel:   models.DefaultModel,
 			autoRefresh: true,
 			interval:    5 * time.Minute,
 		},
@@ -84,7 +84,7 @@ func TestNewClient(t *testing.T) {
 			name:        "nil cookies (now allowed for silent auth)",
 			cookies:     nil,
 			wantErr:     false,
-			wantModel:   models.Model30Pro,
+			wantModel:   models.DefaultModel,
 			autoRefresh: true,
 			interval:    9 * time.Minute,
 		},
@@ -97,7 +97,7 @@ func TestNewClient(t *testing.T) {
 			name:        "cookies with only PSID (no PSIDTS)",
 			cookies:     &config.Cookies{Secure1PSID: "test_psid"},
 			wantErr:     false,
-			wantModel:   models.Model30Pro,
+			wantModel:   models.DefaultModel,
 			autoRefresh: true,
 			interval:    9 * time.Minute,
 		},
@@ -106,7 +106,7 @@ func TestNewClient(t *testing.T) {
 			cookies:     validCookies,
 			opts:        []ClientOption{WithBrowserCookieExtractor(&MockBrowserCookieExtractor{})},
 			wantErr:     false,
-			wantModel:   models.Model30Pro,
+			wantModel:   models.DefaultModel,
 			autoRefresh: true,
 			interval:    9 * time.Minute,
 		},
@@ -337,8 +337,8 @@ func TestGeminiClient_GetSetMethods(t *testing.T) {
 
 	// Test GetModel
 	model := client.GetModel()
-	if model.Name != models.Model30Pro.Name {
-		t.Errorf("GetModel() default = %v, want %v", model.Name, models.Model30Pro.Name)
+	if model.Name != models.DefaultModel.Name {
+		t.Errorf("GetModel() default = %v, want %v", model.Name, models.DefaultModel.Name)
 	}
 
 	// Test SetModel
