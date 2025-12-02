@@ -37,7 +37,7 @@ type (
 
 // ChatSessionInterface defines the interface for chat session operations needed by the TUI
 type ChatSessionInterface interface {
-	SendMessage(prompt string) (*models.ModelOutput, error)
+	SendMessage(prompt string, files []*api.UploadedFile) (*models.ModelOutput, error)
 	SetMetadata(cid, rid, rcid string)
 	GetMetadata() []string
 	CID() string
@@ -466,7 +466,7 @@ func (m Model) renderStatusBar(width int) string {
 // sendMessage creates a command to send a message to the API
 func (m Model) sendMessage(prompt string) tea.Cmd {
 	return func() tea.Msg {
-		output, err := m.session.SendMessage(prompt)
+		output, err := m.session.SendMessage(prompt, nil)
 		if err != nil {
 			return errMsg{err: err}
 		}

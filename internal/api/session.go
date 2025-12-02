@@ -14,11 +14,13 @@ type ChatSession struct {
 }
 
 // SendMessage sends a message in the chat session and updates context
-func (s *ChatSession) SendMessage(prompt string) (*models.ModelOutput, error) {
+// files is optional - pass nil when no files are attached
+func (s *ChatSession) SendMessage(prompt string, files []*UploadedFile) (*models.ModelOutput, error) {
 	opts := &GenerateOptions{
 		Model:    s.model,
 		Metadata: s.metadata,
 		GemID:    s.gemID,
+		Files:    files,
 	}
 
 	output, err := s.client.GenerateContent(prompt, opts)

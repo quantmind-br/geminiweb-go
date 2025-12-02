@@ -791,7 +791,7 @@ func TestGenerateContent_WithImages(t *testing.T) {
 
 		// Call GenerateContent with image
 		opts := &GenerateOptions{
-			Images: []*UploadedImage{
+			Files: []*UploadedFile{
 				{ResourceID: "img_123", FileName: "test.jpg", MIMEType: "image/jpeg"},
 			},
 		}
@@ -827,7 +827,7 @@ func TestGenerateContent_WithImages(t *testing.T) {
 
 		// Call GenerateContent with multiple images
 		opts := &GenerateOptions{
-			Images: []*UploadedImage{
+			Files: []*UploadedFile{
 				{ResourceID: "img_123", FileName: "test1.jpg", MIMEType: "image/jpeg"},
 				{ResourceID: "img_456", FileName: "test2.jpg", MIMEType: "image/jpeg"},
 			},
@@ -865,7 +865,7 @@ func TestGenerateContent_WithImages(t *testing.T) {
 		// Call GenerateContent with images and metadata
 		opts := &GenerateOptions{
 			Metadata: []string{"cid123", "rid456", "rcid789"},
-			Images: []*UploadedImage{
+			Files: []*UploadedFile{
 				{ResourceID: "img_123", FileName: "test.jpg", MIMEType: "image/jpeg"},
 			},
 		}

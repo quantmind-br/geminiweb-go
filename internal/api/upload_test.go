@@ -226,22 +226,22 @@ func TestBuildPayload_MatchesWithImages(t *testing.T) {
 	}
 }
 
-func TestGenerateOptions_WithImages(t *testing.T) {
-	images := []*UploadedImage{
+func TestGenerateOptions_WithFiles(t *testing.T) {
+	files := []*UploadedFile{
 		{ResourceID: "res-1", FileName: "test.png", MIMEType: "image/png", Size: 1024},
 	}
 
 	opts := GenerateOptions{
 		Metadata: []string{"cid", "rid"},
-		Images:   images,
+		Files:    files,
 	}
 
-	if len(opts.Images) != 1 {
-		t.Errorf("expected 1 image, got %d", len(opts.Images))
+	if len(opts.Files) != 1 {
+		t.Errorf("expected 1 file, got %d", len(opts.Files))
 	}
 
-	if opts.Images[0].ResourceID != "res-1" {
-		t.Error("image ResourceID mismatch")
+	if opts.Files[0].ResourceID != "res-1" {
+		t.Error("file ResourceID mismatch")
 	}
 }
 
