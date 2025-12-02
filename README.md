@@ -64,6 +64,29 @@ geminiweb import-cookies ~/cookies.json
 geminiweb chat
 ```
 
+### Using Gems (Server-side Personas)
+
+Gems are custom personas stored on Google's servers that sync across devices.
+
+```bash
+# Browse and manage gems interactively
+geminiweb gems list
+
+# Start chat with a specific gem
+geminiweb chat --gem "Code Helper"
+geminiweb chat -g code
+
+# In the gems list, press 'c' to start chat with the selected gem
+
+# During chat, type /gems to switch gems without leaving
+```
+
+Keyboard shortcuts in gems list:
+- `c` - Start chat with selected gem
+- `y` - Copy gem ID to clipboard
+- `/` - Search gems
+- `Enter` - View gem details
+
 ### Single Query
 
 ```bash

@@ -28,6 +28,11 @@ type (
 	errMsg struct {
 		err error
 	}
+	// gemsLoadedForChatMsg is sent when gems are loaded for the chat selector
+	gemsLoadedForChatMsg struct {
+		gems []*models.Gem
+		err  error
+	}
 )
 
 // ChatSessionInterface defines the interface for chat session operations needed by the TUI
@@ -42,6 +47,8 @@ type ChatSessionInterface interface {
 	SetModel(model models.Model)
 	LastOutput() *models.ModelOutput
 	ChooseCandidate(index int) error
+	SetGem(gemID string)
+	GetGemID() string
 }
 
 // Model represents the TUI state
@@ -61,6 +68,14 @@ type Model struct {
 	ready          bool
 	err            error
 	animationFrame int // Frame counter for loading animation
+
+	// Gem selection state
+	selectingGem  bool
+	gemsList      []*models.Gem
+	gemsCursor    int
+	gemsLoading   bool
+	gemsFilter    string
+	activeGemName string // Name of currently active gem
 
 	// Dimensions
 	width  int
@@ -125,6 +140,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 	var cmd tea.Cmd
 
+	// Handle gem selection mode
+	if m.selectingGem {
+		return m.updateGemSelection(msg)
+	}
+
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -175,6 +195,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, tea.Quit
 				}
 
+				// Check for /gems command
+				if input == "/gems" || input == "/gem" {
+					m.textarea.Reset()
+					m.selectingGem = true
+					m.gemsLoading = true
+					m.gemsCursor = 0
+					m.gemsFilter = ""
+					return m, m.loadGemsForChat()
+				}
+
 				// Add user message
 				m.messages = append(m.messages, chatMessage{
 					role:    "user",
@@ -198,6 +228,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					animationTick(),
 				)
 			}
+		}
+
+	case gemsLoadedForChatMsg:
+		m.gemsLoading = false
+		if msg.err != nil {
+			m.selectingGem = false
+			m.err = msg.err
+		} else {
+			m.gemsList = msg.gems
 		}
 
 	case responseMsg:
@@ -247,18 +286,30 @@ func (m Model) View() string {
 		return loadingStyle.Render("  Initializing...")
 	}
 
+	// If selecting gem, show the gem selector overlay
+	if m.selectingGem {
+		return m.renderGemSelector()
+	}
+
 	var sections []string
 	contentWidth := m.width - 4
 
 	// ═══════════════════════════════════════════════════════════════
 	// HEADER
 	// ═══════════════════════════════════════════════════════════════
-	headerContent := lipgloss.JoinHorizontal(
-		lipgloss.Center,
+	headerParts := []string{
 		titleStyle.Render("✦ Gemini Chat"),
 		hintStyle.Render("  •  "),
 		subtitleStyle.Render(m.modelName),
-	)
+	}
+	// Show active gem if set
+	if m.activeGemName != "" {
+		headerParts = append(headerParts,
+			hintStyle.Render("  •  "),
+			configValueStyle.Render("📦 "+m.activeGemName),
+		)
+	}
+	headerContent := lipgloss.JoinHorizontal(lipgloss.Center, headerParts...)
 	header := headerStyle.Width(contentWidth).Render(headerContent)
 	sections = append(sections, header)
 
@@ -525,4 +576,290 @@ func RunChat(client api.GeminiClientInterface, modelName string) error {
 
 	_, err := p.Run()
 	return err
+}
+
+// RunChatWithSession starts the chat TUI with a pre-configured session
+func RunChatWithSession(client api.GeminiClientInterface, session ChatSessionInterface, modelName string) error {
+	m := NewChatModelWithSession(client, session, modelName)
+
+	p := tea.NewProgram(
+		m,
+		tea.WithAltScreen(),
+	)
+
+	_, err := p.Run()
+	return err
+}
+
+// NewChatModelWithSession creates a new chat TUI model with a pre-configured session
+func NewChatModelWithSession(client api.GeminiClientInterface, session ChatSessionInterface, modelName string) Model {
+	// Create textarea for input
+	ta := textarea.New()
+	ta.Placeholder = "Type your message here..."
+	ta.CharLimit = 4000
+	ta.ShowLineNumbers = false
+	ta.SetHeight(2)
+	ta.Focus()
+
+	// Style the textarea
+	ta.FocusedStyle.CursorLine = lipgloss.NewStyle()
+	ta.FocusedStyle.Base = lipgloss.NewStyle().Foreground(colorText)
+	ta.FocusedStyle.Placeholder = lipgloss.NewStyle().Foreground(colorTextDim)
+	ta.BlurredStyle = ta.FocusedStyle
+
+	// Create spinner
+	s := spinner.New()
+	s.Spinner = spinner.Points
+	s.Style = loadingStyle
+
+	return Model{
+		client:    client,
+		session:   session,
+		modelName: modelName,
+		textarea:  ta,
+		spinner:   s,
+		messages:  []chatMessage{},
+	}
+}
+
+// loadGemsForChat returns a command that loads gems from the API
+func (m Model) loadGemsForChat() tea.Cmd {
+	return func() tea.Msg {
+		if m.client == nil {
+			return gemsLoadedForChatMsg{err: fmt.Errorf("client not available")}
+		}
+
+		jar, err := m.client.FetchGems(false) // Don't include hidden system gems
+		if err != nil {
+			return gemsLoadedForChatMsg{err: err}
+		}
+
+		// Sort gems: custom first, then by name
+		gems := jar.Values()
+		sortedGems := make([]*models.Gem, len(gems))
+		copy(sortedGems, gems)
+
+		// Sort: custom gems first, then alphabetically by name
+		for i := 0; i < len(sortedGems)-1; i++ {
+			for j := i + 1; j < len(sortedGems); j++ {
+				// Custom gems before system gems
+				if sortedGems[i].Predefined && !sortedGems[j].Predefined {
+					sortedGems[i], sortedGems[j] = sortedGems[j], sortedGems[i]
+				} else if sortedGems[i].Predefined == sortedGems[j].Predefined {
+					// Alphabetically by name
+					if strings.ToLower(sortedGems[i].Name) > strings.ToLower(sortedGems[j].Name) {
+						sortedGems[i], sortedGems[j] = sortedGems[j], sortedGems[i]
+					}
+				}
+			}
+		}
+
+		return gemsLoadedForChatMsg{gems: sortedGems}
+	}
+}
+
+// updateGemSelection handles updates when in gem selection mode
+func (m Model) updateGemSelection(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+
+	case gemsLoadedForChatMsg:
+		m.gemsLoading = false
+		if msg.err != nil {
+			m.selectingGem = false
+			m.err = msg.err
+		} else {
+			m.gemsList = msg.gems
+		}
+
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "ctrl+c":
+			return m, tea.Quit
+
+		case "esc":
+			// Cancel gem selection
+			m.selectingGem = false
+			m.gemsList = nil
+			m.gemsCursor = 0
+			m.gemsFilter = ""
+
+		case "up", "k":
+			if len(m.filteredGems()) > 0 {
+				m.gemsCursor--
+				if m.gemsCursor < 0 {
+					m.gemsCursor = len(m.filteredGems()) - 1
+				}
+			}
+
+		case "down", "j":
+			if len(m.filteredGems()) > 0 {
+				m.gemsCursor++
+				if m.gemsCursor >= len(m.filteredGems()) {
+					m.gemsCursor = 0
+				}
+			}
+
+		case "enter":
+			filtered := m.filteredGems()
+			if len(filtered) > 0 && m.gemsCursor < len(filtered) {
+				selectedGem := filtered[m.gemsCursor]
+				m.session.SetGem(selectedGem.ID)
+				m.activeGemName = selectedGem.Name
+				m.selectingGem = false
+				m.gemsList = nil
+				m.gemsCursor = 0
+				m.gemsFilter = ""
+			}
+
+		case "backspace":
+			if len(m.gemsFilter) > 0 {
+				m.gemsFilter = m.gemsFilter[:len(m.gemsFilter)-1]
+				m.gemsCursor = 0
+			}
+
+		default:
+			// Handle typing for filter (only printable characters)
+			if len(msg.String()) == 1 {
+				r := []rune(msg.String())[0]
+				if r >= ' ' && r <= '~' {
+					m.gemsFilter += msg.String()
+					m.gemsCursor = 0
+				}
+			}
+		}
+	}
+
+	return m, nil
+}
+
+// filteredGems returns the gems list filtered by gemsFilter
+func (m Model) filteredGems() []*models.Gem {
+	if m.gemsFilter == "" {
+		return m.gemsList
+	}
+
+	filter := strings.ToLower(m.gemsFilter)
+	var filtered []*models.Gem
+	for _, gem := range m.gemsList {
+		if strings.Contains(strings.ToLower(gem.Name), filter) ||
+			strings.Contains(strings.ToLower(gem.Description), filter) {
+			filtered = append(filtered, gem)
+		}
+	}
+	return filtered
+}
+
+// renderGemSelector renders the gem selection overlay
+func (m Model) renderGemSelector() string {
+	width := m.width - 8
+	if width < 40 {
+		width = 40
+	}
+
+	var content strings.Builder
+
+	// Header
+	title := configTitleStyle.Render("📦 Select a Gem")
+	if m.activeGemName != "" {
+		title += hintStyle.Render(fmt.Sprintf("  (current: %s)", m.activeGemName))
+	}
+	content.WriteString(title)
+	content.WriteString("\n\n")
+
+	// Filter input
+	if m.gemsFilter != "" {
+		filterLine := inputLabelStyle.Render("🔍 ") + m.gemsFilter + "_"
+		content.WriteString(filterLine)
+		content.WriteString("\n\n")
+	}
+
+	if m.gemsLoading {
+		content.WriteString(loadingStyle.Render("  Loading gems..."))
+	} else if len(m.gemsList) == 0 {
+		content.WriteString(hintStyle.Render("  No gems found"))
+	} else {
+		filtered := m.filteredGems()
+		if len(filtered) == 0 {
+			content.WriteString(hintStyle.Render("  No gems match filter"))
+		} else {
+			// Show up to 8 gems
+			maxItems := 8
+			startIdx := 0
+			if m.gemsCursor >= maxItems {
+				startIdx = m.gemsCursor - maxItems + 1
+			}
+			endIdx := startIdx + maxItems
+			if endIdx > len(filtered) {
+				endIdx = len(filtered)
+			}
+
+			// Scroll indicator
+			if startIdx > 0 {
+				content.WriteString(hintStyle.Render("  ↑ more above"))
+				content.WriteString("\n")
+			}
+
+			for i := startIdx; i < endIdx; i++ {
+				gem := filtered[i]
+				cursor := "  "
+				nameStyle := configMenuItemStyle
+				if i == m.gemsCursor {
+					cursor = configCursorStyle.Render("▸ ")
+					nameStyle = configMenuSelectedStyle
+				}
+
+				gemType := configValueStyle.Render("[custom]")
+				if gem.Predefined {
+					gemType = configDisabledStyle.Render("[system]")
+				}
+
+				name := nameStyle.Render(gem.Name)
+				line := fmt.Sprintf("%s%s %s", cursor, name, gemType)
+
+				// Add truncated description
+				if gem.Description != "" {
+					maxDesc := width - len(gem.Name) - 15
+					if maxDesc > 10 {
+						desc := gem.Description
+						if len(desc) > maxDesc {
+							desc = desc[:maxDesc-3] + "..."
+						}
+						line += hintStyle.Render(" - " + desc)
+					}
+				}
+
+				content.WriteString(line)
+				content.WriteString("\n")
+			}
+
+			// Scroll indicator
+			if endIdx < len(filtered) {
+				content.WriteString(hintStyle.Render("  ↓ more below"))
+				content.WriteString("\n")
+			}
+		}
+	}
+
+	content.WriteString("\n")
+
+	// Status bar
+	shortcuts := []string{
+		statusKeyStyle.Render("↑↓") + statusDescStyle.Render(" Navigate"),
+		statusKeyStyle.Render("Enter") + statusDescStyle.Render(" Select"),
+		statusKeyStyle.Render("Esc") + statusDescStyle.Render(" Cancel"),
+	}
+	statusBar := strings.Join(shortcuts, "  │  ")
+	content.WriteString(statusBar)
+
+	// Wrap in a box
+	boxStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(colorPrimary).
+		Padding(1, 2).
+		Width(width)
+
+	return boxStyle.Render(content.String())
 }
