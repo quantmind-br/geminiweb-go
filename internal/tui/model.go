@@ -13,6 +13,7 @@ import (
 
 	"github.com/diogo/geminiweb/internal/api"
 	apierrors "github.com/diogo/geminiweb/internal/errors"
+	"github.com/diogo/geminiweb/internal/history"
 	"github.com/diogo/geminiweb/internal/models"
 	"github.com/diogo/geminiweb/internal/render"
 )
@@ -51,6 +52,13 @@ type ChatSessionInterface interface {
 	GetGemID() string
 }
 
+// HistoryStoreInterface defines the interface for history operations needed by the TUI
+type HistoryStoreInterface interface {
+	AddMessage(id, role, content, thoughts string) error
+	UpdateMetadata(id, cid, rid, rcid string) error
+	UpdateTitle(id, title string) error
+}
+
 // Model represents the TUI state
 type Model struct {
 	client    api.GeminiClientInterface
@@ -76,6 +84,10 @@ type Model struct {
 	gemsLoading   bool
 	gemsFilter    string
 	activeGemName string // Name of currently active gem
+
+	// History/conversation state
+	conversation *history.Conversation   // Current conversation (nil for unsaved)
+	historyStore HistoryStoreInterface   // Store for persisting messages
 
 	// Dimensions
 	width  int
@@ -619,6 +631,64 @@ func NewChatModelWithSession(client api.GeminiClientInterface, session ChatSessi
 		textarea:  ta,
 		spinner:   s,
 		messages:  []chatMessage{},
+	}
+}
+
+// RunChatWithConversation starts the chat TUI with a pre-configured session and conversation
+func RunChatWithConversation(client api.GeminiClientInterface, session ChatSessionInterface, modelName string, conv *history.Conversation, store HistoryStoreInterface) error {
+	m := NewChatModelWithConversation(client, session, modelName, conv, store)
+
+	p := tea.NewProgram(
+		m,
+		tea.WithAltScreen(),
+	)
+
+	_, err := p.Run()
+	return err
+}
+
+// NewChatModelWithConversation creates a new chat TUI model with a conversation for persistence
+func NewChatModelWithConversation(client api.GeminiClientInterface, session ChatSessionInterface, modelName string, conv *history.Conversation, store HistoryStoreInterface) Model {
+	// Create textarea for input
+	ta := textarea.New()
+	ta.Placeholder = "Type your message here..."
+	ta.CharLimit = 4000
+	ta.ShowLineNumbers = false
+	ta.SetHeight(2)
+	ta.Focus()
+
+	// Style the textarea
+	ta.FocusedStyle.CursorLine = lipgloss.NewStyle()
+	ta.FocusedStyle.Base = lipgloss.NewStyle().Foreground(colorText)
+	ta.FocusedStyle.Placeholder = lipgloss.NewStyle().Foreground(colorTextDim)
+	ta.BlurredStyle = ta.FocusedStyle
+
+	// Create spinner
+	s := spinner.New()
+	s.Spinner = spinner.Points
+	s.Style = loadingStyle
+
+	// Load existing messages from conversation
+	var messages []chatMessage
+	if conv != nil {
+		for _, msg := range conv.Messages {
+			messages = append(messages, chatMessage{
+				role:     msg.Role,
+				content:  msg.Content,
+				thoughts: msg.Thoughts,
+			})
+		}
+	}
+
+	return Model{
+		client:       client,
+		session:      session,
+		modelName:    modelName,
+		textarea:     ta,
+		spinner:      s,
+		messages:     messages,
+		conversation: conv,
+		historyStore: store,
 	}
 }
 

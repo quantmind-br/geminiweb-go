@@ -6,12 +6,16 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/diogo/geminiweb/internal/api"
+	"github.com/diogo/geminiweb/internal/history"
 	"github.com/diogo/geminiweb/internal/models"
 	"github.com/diogo/geminiweb/internal/tui"
 )
 
 // chatGemFlag is the --gem flag for the chat command
 var chatGemFlag string
+
+// chatNewFlag bypasses history selector and starts a new conversation
+var chatNewFlag bool
 
 var chatCmd = &cobra.Command{
 	Use:   "chat",
@@ -20,6 +24,11 @@ var chatCmd = &cobra.Command{
 
 The chat maintains conversation context across messages.
 Type 'exit', 'quit', or press Ctrl+C to end the session.
+
+HISTORY:
+  By default, a history selector lets you resume previous conversations
+  or start a new one. Use --new to skip the selector and start fresh.
+  Conversations are automatically saved to ~/.geminiweb/history/
 
 GEMS (Server-side Personas):
   Use --gem to start the chat with a specific gem:
@@ -35,11 +44,34 @@ GEMS (Server-side Personas):
 
 func init() {
 	chatCmd.Flags().StringVarP(&chatGemFlag, "gem", "g", "", "Use a gem (by ID or name) - server-side persona")
+	chatCmd.Flags().BoolVarP(&chatNewFlag, "new", "n", false, "Start a new conversation (skip history selector)")
 }
 
 func runChat() error {
 	modelName := getModel()
 	model := models.ModelFromName(modelName)
+
+	// Initialize history store
+	store, err := history.DefaultStore()
+	if err != nil {
+		return fmt.Errorf("failed to initialize history: %w", err)
+	}
+
+	// Select conversation (new or existing)
+	var selectedConv *history.Conversation
+	if !chatNewFlag {
+		result, err := tui.RunHistorySelector(store, modelName)
+		if err != nil {
+			return fmt.Errorf("history selector error: %w", err)
+		}
+
+		// User quit without selecting
+		if !result.Confirmed {
+			return nil
+		}
+
+		selectedConv = result.Conversation
+	}
 
 	// Build client options
 	clientOpts := []api.ClientOption{
@@ -75,12 +107,36 @@ func runChat() error {
 		return err
 	}
 
-	// If gem is specified, create session with gem and use RunChatWithSession
-	if gemID != "" {
-		session := createChatSession(client, gemID, model)
-		return tui.RunChatWithSession(client, session, modelName)
+	// Create or resume conversation
+	if selectedConv == nil {
+		// New conversation - create in store
+		selectedConv, err = store.CreateConversation(modelName)
+		if err != nil {
+			return fmt.Errorf("failed to create conversation: %w", err)
+		}
 	}
 
-	// Run chat TUI (without gem)
-	return tui.RunChat(client, modelName)
+	// Create session with conversation context
+	session := createChatSessionWithConversation(client, gemID, model, selectedConv)
+
+	// Run chat TUI with conversation
+	return tui.RunChatWithConversation(client, session, modelName, selectedConv, store)
+}
+
+// createChatSessionWithConversation creates a chat session, optionally resuming from a conversation
+func createChatSessionWithConversation(client api.GeminiClientInterface, gemID string, model models.Model, conv *history.Conversation) tui.ChatSessionInterface {
+	session := client.StartChat()
+	session.SetModel(model)
+
+	// Set gem if specified
+	if gemID != "" {
+		session.SetGem(gemID)
+	}
+
+	// Resume conversation context if we have metadata
+	if conv != nil && conv.CID != "" {
+		session.SetMetadata(conv.CID, conv.RID, conv.RCID)
+	}
+
+	return session
 }
