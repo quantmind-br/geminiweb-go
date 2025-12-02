@@ -33,6 +33,12 @@ type gemsLoadedMsg struct {
 // gemsFeedbackClearMsg is sent to clear feedback messages
 type gemsFeedbackClearMsg struct{}
 
+// StartChatMsg signals that a chat should be started with the selected gem
+type StartChatMsg struct {
+	GemID   string
+	GemName string
+}
+
 // GemsModel represents the gems TUI state
 type GemsModel struct {
 	client api.GeminiClientInterface
@@ -65,6 +71,10 @@ type GemsModel struct {
 
 	// Include hidden gems
 	includeHidden bool
+
+	// Chat transition
+	startChatGemID   string // Set when user presses 'c' to start chat
+	startChatGemName string // Name of the gem to start chat with
 }
 
 // NewGemsModel creates a new gems TUI model
@@ -196,7 +206,20 @@ func (m GemsModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.view = gemsViewDetails
 		}
 
-	case "c", "y":
+	case "c":
+		// Start chat with selected gem
+		if m.view == gemsViewList && len(m.filteredGems) > 0 {
+			gem := m.filteredGems[m.cursor]
+			m.startChatGemID = gem.ID
+			m.startChatGemName = gem.Name
+			return m, tea.Quit
+		} else if m.view == gemsViewDetails && m.selectedGem != nil {
+			m.startChatGemID = m.selectedGem.ID
+			m.startChatGemName = m.selectedGem.Name
+			return m, tea.Quit
+		}
+
+	case "y":
 		// Copy ID to clipboard
 		if m.view == gemsViewDetails && m.selectedGem != nil {
 			return m.copyIDToClipboard()
@@ -516,7 +539,8 @@ func (m GemsModel) renderStatusBar(width int) string {
 			{"↑↓", "Navigate"},
 			{"/", "Search"},
 			{"Enter", "Details"},
-			{"c", "Copy ID"},
+			{"c", "Chat"},
+			{"y", "Copy ID"},
 			{"q", "Quit"},
 		}
 	} else {
@@ -524,7 +548,8 @@ func (m GemsModel) renderStatusBar(width int) string {
 			key  string
 			desc string
 		}{
-			{"c", "Copy ID"},
+			{"c", "Chat"},
+			{"y", "Copy ID"},
 			{"Esc", "Back"},
 			{"q", "Quit"},
 		}
@@ -574,8 +599,14 @@ func truncate(s string, maxLen int) string {
 	return s[:maxLen-3] + "..."
 }
 
-// RunGemsTUI starts the gems TUI
-func RunGemsTUI(client api.GeminiClientInterface, includeHidden bool) error {
+// GemsTUIResult contains the result of running the gems TUI
+type GemsTUIResult struct {
+	GemID   string // Set if user pressed 'c' to start chat
+	GemName string // Name of the gem if chat was initiated
+}
+
+// RunGemsTUI starts the gems TUI and returns the result
+func RunGemsTUI(client api.GeminiClientInterface, includeHidden bool) (GemsTUIResult, error) {
 	m := NewGemsModel(client, includeHidden)
 
 	p := tea.NewProgram(
@@ -583,6 +614,20 @@ func RunGemsTUI(client api.GeminiClientInterface, includeHidden bool) error {
 		tea.WithAltScreen(),
 	)
 
-	_, err := p.Run()
-	return err
+	finalModel, err := p.Run()
+	if err != nil {
+		return GemsTUIResult{}, err
+	}
+
+	// Check if chat was initiated
+	if gm, ok := finalModel.(GemsModel); ok {
+		if gm.startChatGemID != "" {
+			return GemsTUIResult{
+				GemID:   gm.startChatGemID,
+				GemName: gm.startChatGemName,
+			}, nil
+		}
+	}
+
+	return GemsTUIResult{}, nil
 }

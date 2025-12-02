@@ -896,6 +896,59 @@ func TestGemsModel_renderDetailsView_NoSelection(t *testing.T) {
 	}
 }
 
+func TestGemsModel_ChatFromListView(t *testing.T) {
+	client := createMockClient()
+	m := NewGemsModel(client, false)
+	gems := createTestGems()
+	m.allGems = sortGems(gems.Values())
+	m.filteredGems = m.allGems
+	m.view = gemsViewList
+	m.cursor = 0
+
+	// Test 'c' key - should start chat
+	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}}
+	updatedModel, cmd := m.Update(msg)
+
+	if typedModel, ok := updatedModel.(GemsModel); ok {
+		// Should set startChatGemID
+		if typedModel.startChatGemID == "" {
+			t.Error("startChatGemID should be set after pressing 'c'")
+		}
+		if typedModel.startChatGemName == "" {
+			t.Error("startChatGemName should be set after pressing 'c'")
+		}
+	}
+
+	// Should return quit command
+	if cmd == nil {
+		t.Error("Should return quit command to start chat")
+	}
+}
+
+func TestGemsModel_ChatFromDetailsView(t *testing.T) {
+	client := createMockClient()
+	m := NewGemsModel(client, false)
+	gems := createTestGems()
+	m.allGems = sortGems(gems.Values())
+	m.filteredGems = m.allGems
+	m.view = gemsViewDetails
+	m.selectedGem = m.filteredGems[0]
+
+	// Test 'c' key - should start chat
+	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}}
+	updatedModel, cmd := m.Update(msg)
+
+	if typedModel, ok := updatedModel.(GemsModel); ok {
+		if typedModel.startChatGemID == "" {
+			t.Error("startChatGemID should be set after pressing 'c' in details view")
+		}
+	}
+
+	if cmd == nil {
+		t.Error("Should return quit command to start chat")
+	}
+}
+
 func TestGemsModel_CopyID_ListViewShortcut(t *testing.T) {
 	client := createMockClient()
 	m := NewGemsModel(client, false)
@@ -905,8 +958,8 @@ func TestGemsModel_CopyID_ListViewShortcut(t *testing.T) {
 	m.view = gemsViewList
 	m.cursor = 0
 
-	// Test 'c' key
-	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}}
+	// Test 'y' key for copy (now separate from 'c' for chat)
+	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}}
 	updatedModel, cmd := m.Update(msg)
 
 	if typedModel, ok := updatedModel.(GemsModel); ok {

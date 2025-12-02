@@ -10,16 +10,31 @@ import (
 	"github.com/diogo/geminiweb/internal/tui"
 )
 
+// chatGemFlag is the --gem flag for the chat command
+var chatGemFlag string
+
 var chatCmd = &cobra.Command{
 	Use:   "chat",
 	Short: "Start an interactive chat session",
 	Long: `Start an interactive chat session with Gemini.
 
 The chat maintains conversation context across messages.
-Type 'exit', 'quit', or press Ctrl+C to end the session.`,
+Type 'exit', 'quit', or press Ctrl+C to end the session.
+
+GEMS (Server-side Personas):
+  Use --gem to start the chat with a specific gem:
+    geminiweb chat --gem "Code Helper"
+    geminiweb chat -g code
+
+  During chat, type /gems to switch gems without leaving the chat.
+  The active gem is shown in the header.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runChat()
 	},
+}
+
+func init() {
+	chatCmd.Flags().StringVarP(&chatGemFlag, "gem", "g", "", "Use a gem (by ID or name) - server-side persona")
 }
 
 func runChat() error {
@@ -54,6 +69,18 @@ func runChat() error {
 	}
 	spin.stopWithSuccess("Connected")
 
-	// Run chat TUI
+	// Resolve gem if specified
+	gemID, err := resolveGemFlag(client, chatGemFlag)
+	if err != nil {
+		return err
+	}
+
+	// If gem is specified, create session with gem and use RunChatWithSession
+	if gemID != "" {
+		session := createChatSession(client, gemID, model)
+		return tui.RunChatWithSession(client, session, modelName)
+	}
+
+	// Run chat TUI (without gem)
 	return tui.RunChat(client, modelName)
 }

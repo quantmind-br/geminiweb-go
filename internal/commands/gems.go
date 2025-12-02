@@ -42,14 +42,30 @@ var gemsCmd = &cobra.Command{
 	Long: `Gems are custom personas stored on Google's servers.
 Unlike local personas, gems sync across devices with your Google account.
 
-Use 'geminiweb gems list' to see available gems.
-Use 'geminiweb gems create' to create a new gem.`,
+COMMANDS:
+  list     Browse gems interactively (press 'c' to start chat)
+  create   Create a new gem
+  update   Update an existing gem
+  delete   Delete a gem
+  show     Show gem details
+
+QUICK START:
+  geminiweb gems list        # Browse and chat with gems
+  geminiweb chat --gem code  # Start chat with a gem directly`,
 }
 
 var gemsListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List all gems",
-	RunE:  runGemsList,
+	Long: `Browse all gems in an interactive TUI.
+
+KEYBOARD SHORTCUTS:
+  c        Start chat with selected gem
+  y        Copy gem ID to clipboard
+  Enter    View gem details
+  /        Search gems
+  q        Quit`,
+	RunE: runGemsList,
 }
 
 var gemsCreateCmd = &cobra.Command{
@@ -114,10 +130,28 @@ func runGemsList(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	defer client.Close()
 
 	// Launch the interactive TUI for gems
-	return tui.RunGemsTUI(client, gemsIncludeHidden)
+	result, err := tui.RunGemsTUI(client, gemsIncludeHidden)
+	if err != nil {
+		client.Close()
+		return err
+	}
+
+	// Check if user wants to start chat with a gem
+	if result.GemID != "" {
+		// Create session with the selected gem
+		modelName := getModel()
+		model := models.ModelFromName(modelName)
+		session := createChatSession(client, result.GemID, model)
+
+		// Run chat TUI (don't close client - it's used by the session)
+		defer client.Close()
+		return tui.RunChatWithSession(client, session, modelName)
+	}
+
+	client.Close()
+	return nil
 }
 
 func runGemsCreate(cmd *cobra.Command, args []string) error {

@@ -566,6 +566,12 @@ func (m *mockChatSession) ChooseCandidate(index int) error {
 	return nil
 }
 
+func (m *mockChatSession) SetGem(gemID string) {}
+
+func (m *mockChatSession) GetGemID() string {
+	return ""
+}
+
 func TestNewChatModel(t *testing.T) {
 	// Just test that the function exists and doesn't panic
 	defer func() {
@@ -705,4 +711,279 @@ func TestRunChat(t *testing.T) {
 	// We can't actually run the tea program in a test
 	// So we'll just test function signature
 	_ = RunChat
+}
+
+func TestRunChatWithSession(t *testing.T) {
+	// Just test that the function exists and doesn't panic
+	defer func() {
+		if r := recover(); r != nil {
+			t.Errorf("RunChatWithSession panicked: %v", r)
+		}
+	}()
+
+	// We can't actually run the tea program in a test
+	// So we'll just test function signature
+	_ = RunChatWithSession
+}
+
+func TestNewChatModelWithSession(t *testing.T) {
+	// Test that NewChatModelWithSession creates a model with the provided session
+	mockSession := &mockChatSession{
+		sendMessageFunc: func(prompt string) (*models.ModelOutput, error) {
+			return &models.ModelOutput{
+				Candidates: []models.Candidate{{Text: "test response"}},
+				Chosen:     0,
+			}, nil
+		},
+	}
+
+	// Create model with session
+	model := NewChatModelWithSession(nil, mockSession, "test-model")
+
+	// Verify model properties
+	if model.session == nil {
+		t.Error("Model should have a session")
+	}
+
+	if model.modelName != "test-model" {
+		t.Errorf("Expected modelName 'test-model', got %s", model.modelName)
+	}
+
+	// Verify session is the one we provided
+	if model.session != mockSession {
+		t.Error("Model should use the provided session")
+	}
+}
+
+func TestNewChatModelWithSession_SendsMessages(t *testing.T) {
+	// Test that the model uses the provided session for sending messages
+	var receivedPrompt string
+	mockSession := &mockChatSession{
+		sendMessageFunc: func(prompt string) (*models.ModelOutput, error) {
+			receivedPrompt = prompt
+			return &models.ModelOutput{
+				Candidates: []models.Candidate{{Text: "response"}},
+				Chosen:     0,
+			}, nil
+		},
+	}
+
+	model := NewChatModelWithSession(nil, mockSession, "test-model")
+
+	// Test sendMessage
+	cmd := model.sendMessage("hello world")
+	if cmd == nil {
+		t.Error("sendMessage should return a command")
+		return
+	}
+
+	// Execute the command
+	msg := cmd()
+	if msg == nil {
+		t.Error("Command should return a message")
+		return
+	}
+
+	// Verify the session received the message
+	if receivedPrompt != "hello world" {
+		t.Errorf("Expected prompt 'hello world', got '%s'", receivedPrompt)
+	}
+
+	// Verify response message type
+	if _, ok := msg.(responseMsg); !ok {
+		t.Errorf("Expected responseMsg, got %T", msg)
+	}
+}
+
+func TestNewChatModelWithSession_Initialization(t *testing.T) {
+	mockSession := &mockChatSession{}
+	model := NewChatModelWithSession(nil, mockSession, "gemini-2.5-flash")
+
+	// Test Init returns commands
+	cmd := model.Init()
+	if cmd == nil {
+		t.Error("Init should return a command batch")
+	}
+
+	// Verify textarea is initialized
+	if model.textarea.CharLimit == 0 {
+		t.Error("Textarea should have char limit set")
+	}
+
+	// Verify messages is empty
+	if len(model.messages) != 0 {
+		t.Error("Messages should be empty initially")
+	}
+}
+
+func TestModel_GemSelection_State(t *testing.T) {
+	model := Model{
+		selectingGem: false,
+		gemsCursor:   0,
+		gemsFilter:   "",
+	}
+
+	// Initially not selecting gem
+	if model.selectingGem {
+		t.Error("Model should not be selecting gem initially")
+	}
+
+	// Set to selecting gem mode
+	model.selectingGem = true
+	model.gemsList = []*models.Gem{
+		{ID: "1", Name: "Test Gem 1", Predefined: false},
+		{ID: "2", Name: "Test Gem 2", Predefined: true},
+	}
+
+	if !model.selectingGem {
+		t.Error("Model should be in gem selection mode")
+	}
+
+	if len(model.gemsList) != 2 {
+		t.Errorf("Expected 2 gems, got %d", len(model.gemsList))
+	}
+}
+
+func TestModel_FilteredGems(t *testing.T) {
+	model := Model{
+		gemsList: []*models.Gem{
+			{ID: "1", Name: "Code Helper", Description: "Helps with coding"},
+			{ID: "2", Name: "Writer", Description: "Writing assistant"},
+			{ID: "3", Name: "Coder Pro", Description: "Advanced coding"},
+		},
+	}
+
+	t.Run("no filter returns all gems", func(t *testing.T) {
+		model.gemsFilter = ""
+		filtered := model.filteredGems()
+		if len(filtered) != 3 {
+			t.Errorf("Expected 3 gems, got %d", len(filtered))
+		}
+	})
+
+	t.Run("filter by name", func(t *testing.T) {
+		model.gemsFilter = "code"
+		filtered := model.filteredGems()
+		if len(filtered) != 2 {
+			t.Errorf("Expected 2 gems matching 'code', got %d", len(filtered))
+		}
+	})
+
+	t.Run("filter by description", func(t *testing.T) {
+		model.gemsFilter = "writing"
+		filtered := model.filteredGems()
+		if len(filtered) != 1 {
+			t.Errorf("Expected 1 gem matching 'writing', got %d", len(filtered))
+		}
+	})
+
+	t.Run("no matches", func(t *testing.T) {
+		model.gemsFilter = "xyz"
+		filtered := model.filteredGems()
+		if len(filtered) != 0 {
+			t.Errorf("Expected 0 gems matching 'xyz', got %d", len(filtered))
+		}
+	})
+}
+
+func TestModel_GemsLoadedForChatMsg(t *testing.T) {
+	gems := []*models.Gem{
+		{ID: "1", Name: "Test Gem"},
+	}
+
+	msg := gemsLoadedForChatMsg{gems: gems}
+
+	if msg.gems == nil {
+		t.Error("Message should contain gems")
+	}
+
+	if len(msg.gems) != 1 {
+		t.Errorf("Expected 1 gem, got %d", len(msg.gems))
+	}
+
+	if msg.err != nil {
+		t.Error("Message should not have an error")
+	}
+}
+
+func TestModel_GemsLoadedForChatMsg_Error(t *testing.T) {
+	testErr := fmt.Errorf("test error")
+	msg := gemsLoadedForChatMsg{err: testErr}
+
+	if msg.err == nil {
+		t.Error("Message should contain error")
+	}
+
+	if msg.gems != nil {
+		t.Error("Message should not contain gems when there's an error")
+	}
+}
+
+func TestModel_RenderGemSelector_Empty(t *testing.T) {
+	model := Model{
+		width:        80,
+		height:       24,
+		selectingGem: true,
+		gemsList:     []*models.Gem{},
+	}
+
+	view := model.renderGemSelector()
+
+	if view == "" {
+		t.Error("View should not be empty")
+	}
+
+	if !strings.Contains(view, "Select a Gem") {
+		t.Error("View should contain title")
+	}
+}
+
+func TestModel_RenderGemSelector_WithGems(t *testing.T) {
+	model := Model{
+		width:        80,
+		height:       24,
+		selectingGem: true,
+		gemsList: []*models.Gem{
+			{ID: "1", Name: "Code Helper", Description: "Helps with coding", Predefined: false},
+			{ID: "2", Name: "System Gem", Description: "Built-in", Predefined: true},
+		},
+		gemsCursor: 0,
+	}
+
+	view := model.renderGemSelector()
+
+	if !strings.Contains(view, "Code Helper") {
+		t.Error("View should contain gem name")
+	}
+
+	if !strings.Contains(view, "[custom]") {
+		t.Error("View should show custom gem indicator")
+	}
+
+	if !strings.Contains(view, "[system]") {
+		t.Error("View should show system gem indicator")
+	}
+}
+
+func TestModel_View_ShowsActiveGem(t *testing.T) {
+	ta := textarea.New()
+	ta.SetWidth(80)
+
+	vp := viewport.New(80, 20)
+
+	model := Model{
+		ready:         true,
+		textarea:      ta,
+		viewport:      vp,
+		width:         80,
+		height:        24,
+		modelName:     "gemini-2.5-flash",
+		activeGemName: "Code Helper",
+	}
+
+	view := model.View()
+
+	if !strings.Contains(view, "Code Helper") {
+		t.Error("View should show active gem name in header")
+	}
 }
