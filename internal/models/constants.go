@@ -49,13 +49,6 @@ var (
 		},
 	}
 
-	Model25Pro = Model{
-		Name: "gemini-2.5-pro",
-		Header: map[string]string{
-			"x-goog-ext-525001261-jspb": `[1,null,null,null,"4af6c7f5da75d65d",null,null,0,[4]]`,
-		},
-	}
-
 	Model30Pro = Model{
 		Name: "gemini-3.0-pro",
 		Header: map[string]string{
@@ -69,7 +62,7 @@ var (
 
 // AllModels returns a list of all available models
 func AllModels() []Model {
-	return []Model{Model25Flash, Model25Pro, Model30Pro}
+	return []Model{Model25Flash, Model30Pro}
 }
 
 // ModelFromName returns a Model by its name
@@ -77,8 +70,6 @@ func ModelFromName(name string) Model {
 	switch name {
 	case "gemini-2.5-flash":
 		return Model25Flash
-	case "gemini-2.5-pro":
-		return Model25Pro
 	case "gemini-3.0-pro":
 		return Model30Pro
 	default:

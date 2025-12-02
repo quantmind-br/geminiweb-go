@@ -1008,7 +1008,7 @@ func TestGenerateContent_WithCustomModel(t *testing.T) {
 
 		// Call GenerateContent with custom model
 		opts := &GenerateOptions{
-			Model: models.Model25Pro,
+			Model: models.Model30Pro,
 		}
 		got, err := client.GenerateContent("test prompt", opts)
 

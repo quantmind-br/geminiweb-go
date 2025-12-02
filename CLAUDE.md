@@ -93,6 +93,5 @@ client.Close()
 Default model is `models.DefaultModel` which points to `models.Model30Pro` (gemini-3.0-pro).
 
 - `models.Model25Flash` - Fast model (gemini-2.5-flash)
-- `models.Model25Pro` - Balanced model (gemini-2.5-pro)
 - `models.Model30Pro` - Advanced model (gemini-3.0-pro) - **recommended default**
 - `models.ModelUnspecified` - Server's default model (no model header sent)

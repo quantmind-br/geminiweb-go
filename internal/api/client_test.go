@@ -387,8 +387,8 @@ func TestGeminiClient_StartChat(t *testing.T) {
 	}{
 		{
 			name:          "default model",
-			opts:          []ClientOption{WithModel(models.Model25Pro)},
-			expectedModel: models.Model25Pro,
+			opts:          []ClientOption{WithModel(models.Model30Pro)},
+			expectedModel: models.Model30Pro,
 		},
 		{
 			name:          "custom model via argument",
@@ -577,7 +577,6 @@ func TestGeminiClient_WithModel(t *testing.T) {
 		wantModel models.Model
 	}{
 		{"G_2_5_FLASH", models.Model25Flash, models.Model25Flash},
-		{"G_2_5_PRO", models.Model25Pro, models.Model25Pro},
 		{"G_3_0_PRO", models.Model30Pro, models.Model30Pro},
 	}
 
