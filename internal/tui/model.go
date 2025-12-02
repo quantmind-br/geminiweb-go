@@ -34,6 +34,11 @@ type (
 		gems []*models.Gem
 		err  error
 	}
+	// historyLoadedForChatMsg is sent when history is loaded for the /history command
+	historyLoadedForChatMsg struct {
+		conversations []*history.Conversation
+		err           error
+	}
 )
 
 // ChatSessionInterface defines the interface for chat session operations needed by the TUI
@@ -57,6 +62,14 @@ type HistoryStoreInterface interface {
 	AddMessage(id, role, content, thoughts string) error
 	UpdateMetadata(id, cid, rid, rcid string) error
 	UpdateTitle(id, title string) error
+}
+
+// FullHistoryStore extends HistoryStoreInterface with read operations for /history command
+type FullHistoryStore interface {
+	HistoryStoreInterface
+	ListConversations() ([]*history.Conversation, error)
+	GetConversation(id string) (*history.Conversation, error)
+	CreateConversation(model string) (*history.Conversation, error)
 }
 
 // Model represents the TUI state
@@ -88,6 +101,14 @@ type Model struct {
 	// History/conversation state
 	conversation *history.Conversation   // Current conversation (nil for unsaved)
 	historyStore HistoryStoreInterface   // Store for persisting messages
+
+	// History selection state (for /history command)
+	selectingHistory  bool
+	historyList       []*history.Conversation
+	historyCursor     int
+	historyLoading    bool
+	historyFilter     string
+	fullHistoryStore  FullHistoryStore  // Full store interface for /history command
 
 	// Dimensions
 	width  int
@@ -157,6 +178,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateGemSelection(msg)
 	}
 
+	// Handle history selection mode
+	if m.selectingHistory {
+		return m.updateHistorySelection(msg)
+	}
+
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -217,6 +243,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, m.loadGemsForChat()
 				}
 
+				// Check for /history command
+				if input == "/history" || input == "/hist" {
+					if m.fullHistoryStore == nil {
+						m.err = fmt.Errorf("history not available")
+						return m, nil
+					}
+					m.textarea.Reset()
+					m.selectingHistory = true
+					m.historyLoading = true
+					m.historyCursor = 0
+					m.historyFilter = ""
+					return m, m.loadHistoryForChat()
+				}
+
 				// Add user message
 				m.messages = append(m.messages, chatMessage{
 					role:    "user",
@@ -252,6 +292,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.err = msg.err
 		} else {
 			m.gemsList = msg.gems
+		}
+
+	case historyLoadedForChatMsg:
+		m.historyLoading = false
+		if msg.err != nil {
+			m.selectingHistory = false
+			m.err = msg.err
+		} else {
+			m.historyList = msg.conversations
 		}
 
 	case responseMsg:
@@ -312,6 +361,11 @@ func (m Model) View() string {
 	// If selecting gem, show the gem selector overlay
 	if m.selectingGem {
 		return m.renderGemSelector()
+	}
+
+	// If selecting history, show the history selector overlay
+	if m.selectingHistory {
+		return m.renderHistorySelector()
 	}
 
 	var sections []string
@@ -713,7 +767,7 @@ func NewChatModelWithConversation(client api.GeminiClientInterface, session Chat
 		}
 	}
 
-	return Model{
+	m := Model{
 		client:       client,
 		session:      session,
 		modelName:    modelName,
@@ -723,6 +777,13 @@ func NewChatModelWithConversation(client api.GeminiClientInterface, session Chat
 		conversation: conv,
 		historyStore: store,
 	}
+
+	// Check if store implements FullHistoryStore for /history command
+	if fullStore, ok := store.(FullHistoryStore); ok {
+		m.fullHistoryStore = fullStore
+	}
+
+	return m
 }
 
 // loadGemsForChat returns a command that loads gems from the API
@@ -965,4 +1026,336 @@ func (m Model) renderGemSelector() string {
 		Width(width)
 
 	return boxStyle.Render(content.String())
+}
+
+// loadHistoryForChat returns a command that loads conversations from the history store
+func (m Model) loadHistoryForChat() tea.Cmd {
+	return func() tea.Msg {
+		if m.fullHistoryStore == nil {
+			return historyLoadedForChatMsg{err: fmt.Errorf("history store not available")}
+		}
+
+		conversations, err := m.fullHistoryStore.ListConversations()
+		if err != nil {
+			return historyLoadedForChatMsg{err: err}
+		}
+
+		return historyLoadedForChatMsg{conversations: conversations}
+	}
+}
+
+// updateHistorySelection handles updates when in history selection mode
+func (m Model) updateHistorySelection(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+
+	case historyLoadedForChatMsg:
+		m.historyLoading = false
+		if msg.err != nil {
+			m.selectingHistory = false
+			m.err = msg.err
+		} else {
+			m.historyList = msg.conversations
+		}
+
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "ctrl+c":
+			return m, tea.Quit
+
+		case "esc":
+			// Cancel history selection
+			m.selectingHistory = false
+			m.historyList = nil
+			m.historyCursor = 0
+			m.historyFilter = ""
+
+		case "up", "k":
+			totalItems := len(m.filteredHistory()) + 1 // +1 for "New Conversation"
+			if totalItems > 0 {
+				m.historyCursor--
+				if m.historyCursor < 0 {
+					m.historyCursor = totalItems - 1
+				}
+			}
+
+		case "down", "j":
+			totalItems := len(m.filteredHistory()) + 1 // +1 for "New Conversation"
+			if totalItems > 0 {
+				m.historyCursor++
+				if m.historyCursor >= totalItems {
+					m.historyCursor = 0
+				}
+			}
+
+		case "enter":
+			if m.historyCursor == 0 {
+				// "New Conversation" selected
+				return m.startNewConversation()
+			}
+
+			// Existing conversation selected
+			filtered := m.filteredHistory()
+			convIdx := m.historyCursor - 1
+			if convIdx >= 0 && convIdx < len(filtered) {
+				return m.switchConversation(filtered[convIdx])
+			}
+
+		case "backspace":
+			if len(m.historyFilter) > 0 {
+				m.historyFilter = m.historyFilter[:len(m.historyFilter)-1]
+				m.historyCursor = 0
+			}
+
+		default:
+			// Handle typing for filter (only printable characters)
+			if len(msg.String()) == 1 {
+				r := []rune(msg.String())[0]
+				if r >= ' ' && r <= '~' {
+					m.historyFilter += msg.String()
+					m.historyCursor = 0
+				}
+			}
+		}
+	}
+
+	return m, nil
+}
+
+// filteredHistory returns the history list filtered by historyFilter
+func (m Model) filteredHistory() []*history.Conversation {
+	if m.historyFilter == "" {
+		return m.historyList
+	}
+
+	filter := strings.ToLower(m.historyFilter)
+	var filtered []*history.Conversation
+	for _, conv := range m.historyList {
+		if strings.Contains(strings.ToLower(conv.Title), filter) ||
+			strings.Contains(strings.ToLower(conv.Model), filter) {
+			filtered = append(filtered, conv)
+		}
+	}
+	return filtered
+}
+
+// renderHistorySelector renders the history selection overlay
+func (m Model) renderHistorySelector() string {
+	width := m.width - 8
+	if width < 40 {
+		width = 40
+	}
+
+	var content strings.Builder
+
+	// Header
+	title := configTitleStyle.Render("📚 Select Conversation")
+	if m.conversation != nil {
+		title += hintStyle.Render(fmt.Sprintf("  (current: %s)", m.conversation.Title))
+	}
+	content.WriteString(title)
+	content.WriteString("\n\n")
+
+	// Filter input
+	if m.historyFilter != "" {
+		filterLine := inputLabelStyle.Render("🔍 ") + m.historyFilter + "_"
+		content.WriteString(filterLine)
+		content.WriteString("\n\n")
+	}
+
+	if m.historyLoading {
+		content.WriteString(loadingStyle.Render("  Loading conversations..."))
+	} else {
+		filtered := m.filteredHistory()
+
+		// Show "New Conversation" option first (index 0)
+		newConvCursor := "  "
+		newConvStyle := configMenuItemStyle
+		if m.historyCursor == 0 {
+			newConvCursor = configCursorStyle.Render("▸ ")
+			newConvStyle = configMenuSelectedStyle
+		}
+		content.WriteString(fmt.Sprintf("%s%s\n", newConvCursor, newConvStyle.Render("+ New Conversation")))
+		content.WriteString("\n")
+
+		if len(filtered) == 0 && len(m.historyList) == 0 {
+			content.WriteString(hintStyle.Render("  No saved conversations"))
+		} else if len(filtered) == 0 {
+			content.WriteString(hintStyle.Render("  No conversations match filter"))
+		} else {
+			// Show up to 7 conversations (8 - 1 for "New Conversation")
+			maxItems := 7
+			startIdx := 0
+			// Adjust for cursor position relative to filtered list (cursor 0 is "New Conversation")
+			effectiveCursor := m.historyCursor - 1
+			if effectiveCursor >= maxItems {
+				startIdx = effectiveCursor - maxItems + 1
+			}
+			endIdx := startIdx + maxItems
+			if endIdx > len(filtered) {
+				endIdx = len(filtered)
+			}
+
+			// Scroll indicator
+			if startIdx > 0 {
+				content.WriteString(hintStyle.Render("  ↑ more above"))
+				content.WriteString("\n")
+			}
+
+			for i := startIdx; i < endIdx; i++ {
+				conv := filtered[i]
+				cursor := "  "
+				titleStyle := configMenuItemStyle
+				// Cursor index in the full list (accounting for "New Conversation" at 0)
+				if i+1 == m.historyCursor {
+					cursor = configCursorStyle.Render("▸ ")
+					titleStyle = configMenuSelectedStyle
+				}
+
+				// Format time
+				timeStr := formatTimeAgo(conv.UpdatedAt)
+
+				// Show model
+				modelInfo := configDisabledStyle.Render(fmt.Sprintf("[%s]", conv.Model))
+
+				line := fmt.Sprintf("%s%s %s %s",
+					cursor,
+					titleStyle.Render(conv.Title),
+					modelInfo,
+					hintStyle.Render(" - "+timeStr),
+				)
+
+				content.WriteString(line)
+				content.WriteString("\n")
+			}
+
+			// Scroll indicator
+			if endIdx < len(filtered) {
+				content.WriteString(hintStyle.Render("  ↓ more below"))
+				content.WriteString("\n")
+			}
+		}
+	}
+
+	content.WriteString("\n")
+
+	// Status bar
+	shortcuts := []string{
+		statusKeyStyle.Render("↑↓") + statusDescStyle.Render(" Navigate"),
+		statusKeyStyle.Render("Enter") + statusDescStyle.Render(" Select"),
+		statusKeyStyle.Render("Esc") + statusDescStyle.Render(" Cancel"),
+	}
+	statusBar := strings.Join(shortcuts, "  │  ")
+	content.WriteString(statusBar)
+
+	// Wrap in a box
+	boxStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(colorPrimary).
+		Padding(1, 2).
+		Width(width)
+
+	return boxStyle.Render(content.String())
+}
+
+// formatTimeAgo formats a time as a relative string
+func formatTimeAgo(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+
+	now := time.Now()
+	diff := now.Sub(t)
+
+	switch {
+	case diff < time.Minute:
+		return "just now"
+	case diff < time.Hour:
+		mins := int(diff.Minutes())
+		if mins == 1 {
+			return "1m ago"
+		}
+		return fmt.Sprintf("%dm ago", mins)
+	case diff < 24*time.Hour:
+		hours := int(diff.Hours())
+		if hours == 1 {
+			return "1h ago"
+		}
+		return fmt.Sprintf("%dh ago", hours)
+	case diff < 7*24*time.Hour:
+		days := int(diff.Hours() / 24)
+		if days == 1 {
+			return "1d ago"
+		}
+		return fmt.Sprintf("%dd ago", days)
+	default:
+		return t.Format("Jan 2")
+	}
+}
+
+// switchConversation switches to a different conversation
+func (m Model) switchConversation(conv *history.Conversation) (tea.Model, tea.Cmd) {
+	// Clear current state
+	m.selectingHistory = false
+	m.historyList = nil
+	m.historyCursor = 0
+	m.historyFilter = ""
+
+	// Set the new conversation
+	m.conversation = conv
+
+	// Load messages from the conversation
+	m.messages = make([]chatMessage, 0, len(conv.Messages))
+	for _, msg := range conv.Messages {
+		m.messages = append(m.messages, chatMessage{
+			role:     msg.Role,
+			content:  msg.Content,
+			thoughts: msg.Thoughts,
+		})
+	}
+
+	// Update session metadata for resumption
+	if m.session != nil && (conv.CID != "" || conv.RID != "" || conv.RCID != "") {
+		m.session.SetMetadata(conv.CID, conv.RID, conv.RCID)
+	}
+
+	// Update viewport with new messages
+	m.updateViewport()
+	m.viewport.GotoBottom()
+
+	return m, nil
+}
+
+// startNewConversation starts a fresh conversation
+func (m Model) startNewConversation() (tea.Model, tea.Cmd) {
+	// Clear current state
+	m.selectingHistory = false
+	m.historyList = nil
+	m.historyCursor = 0
+	m.historyFilter = ""
+
+	// Create new conversation if store is available
+	if m.fullHistoryStore != nil {
+		newConv, err := m.fullHistoryStore.CreateConversation(m.modelName)
+		if err == nil {
+			m.conversation = newConv
+		} else {
+			m.err = fmt.Errorf("failed to create conversation: %w", err)
+		}
+	}
+
+	// Clear messages
+	m.messages = []chatMessage{}
+
+	// Reset session metadata
+	if m.session != nil {
+		m.session.SetMetadata("", "", "")
+	}
+
+	// Update viewport
+	m.updateViewport()
+
+	return m, nil
 }
