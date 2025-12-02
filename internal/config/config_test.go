@@ -89,7 +89,7 @@ func TestAvailableModels(t *testing.T) {
 	}
 
 	// Check for expected models
-	expected := []string{"gemini-2.5-flash", "gemini-2.5-pro", "gemini-3.0-pro", "unspecified"}
+	expected := []string{"gemini-2.5-flash", "gemini-3.0-pro", "unspecified"}
 	for _, expectedModel := range expected {
 		found := false
 		for _, model := range models {

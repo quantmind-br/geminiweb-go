@@ -28,7 +28,6 @@ func TestModelFromName(t *testing.T) {
 		expected Model
 	}{
 		{"gemini-2.5-flash", Model25Flash},
-		{"gemini-2.5-pro", Model25Pro},
 		{"gemini-3.0-pro", Model30Pro},
 		{"invalid-model", ModelUnspecified},
 		{"", ModelUnspecified},

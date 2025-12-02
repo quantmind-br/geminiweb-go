@@ -140,7 +140,6 @@ func SaveConfig(cfg Config) error {
 func AvailableModels() []string {
 	return []string{
 		"gemini-2.5-flash",
-		"gemini-2.5-pro",
 		"gemini-3.0-pro",
 		"unspecified",
 	}
