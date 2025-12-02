@@ -3,113 +3,109 @@ package tui
 
 import (
 	"github.com/charmbracelet/lipgloss"
+
+	"github.com/diogo/geminiweb/internal/render"
 )
 
-// Modern color palette
+// Color variables (updated from theme)
 var (
 	// Base colors
-	colorBackground = lipgloss.Color("#1a1b26") // Dark background
-	colorSurface    = lipgloss.Color("#24283b") // Slightly lighter surface
-	colorBorder     = lipgloss.Color("#414868") // Subtle border
+	colorBackground lipgloss.Color
+	colorSurface    lipgloss.Color
+	colorBorder     lipgloss.Color
 
 	// Accent colors
-	colorPrimary   = lipgloss.Color("#7aa2f7") // Soft blue
-	colorSecondary = lipgloss.Color("#9ece6a") // Soft green
-	colorAccent    = lipgloss.Color("#bb9af7") // Purple accent
-	colorWarning   = lipgloss.Color("#e0af68") // Warm yellow
-	colorError     = lipgloss.Color("#f7768e") // Soft red
+	colorPrimary   lipgloss.Color
+	colorSecondary lipgloss.Color
+	colorAccent    lipgloss.Color
+	colorWarning   lipgloss.Color
+	colorError     lipgloss.Color
 
 	// Text colors
-	colorText     = lipgloss.Color("#c0caf5") // Main text
-	colorTextDim  = lipgloss.Color("#565f89") // Dimmed text
-	colorTextMute = lipgloss.Color("#3b4261") // Very dim text
+	colorText     lipgloss.Color
+	colorTextDim  lipgloss.Color
+	colorTextMute lipgloss.Color
 )
 
-// Header panel style
-var headerStyle = lipgloss.NewStyle().
-	BorderStyle(lipgloss.RoundedBorder()).
-	BorderForeground(colorBorder).
-	Padding(0, 2).
-	MarginBottom(1)
+// Style variables (rebuilt when theme changes)
+var (
+	// Header panel style
+	headerStyle lipgloss.Style
 
-// Title style for header
-var titleStyle = lipgloss.NewStyle().
-	Foreground(colorPrimary).
-	Bold(true)
+	// Title style for header
+	titleStyle lipgloss.Style
 
-// Subtitle/model name style
-var subtitleStyle = lipgloss.NewStyle().
-	Foreground(colorAccent)
+	// Subtitle/model name style
+	subtitleStyle lipgloss.Style
 
-// Hint text style
-var hintStyle = lipgloss.NewStyle().
-	Foreground(colorTextDim).
-	Italic(true)
+	// Hint text style
+	hintStyle lipgloss.Style
 
-// Messages area panel
-var messagesAreaStyle = lipgloss.NewStyle().
-	BorderStyle(lipgloss.RoundedBorder()).
-	BorderForeground(colorBorder).
-	Padding(1, 1)
+	// Messages area panel
+	messagesAreaStyle lipgloss.Style
 
-// User message bubble
-var userBubbleStyle = lipgloss.NewStyle().
-	BorderStyle(lipgloss.RoundedBorder()).
-	BorderForeground(colorSecondary).
-	Foreground(colorText).
-	Padding(0, 1).
-	MarginTop(1).
-	MarginBottom(1)
+	// User message bubble
+	userBubbleStyle lipgloss.Style
 
-// User label style
-var userLabelStyle = lipgloss.NewStyle().
-	Foreground(colorSecondary).
-	Bold(true).
-	MarginBottom(0)
+	// User label style
+	userLabelStyle lipgloss.Style
 
-// Assistant message bubble
-var assistantBubbleStyle = lipgloss.NewStyle().
-	BorderStyle(lipgloss.RoundedBorder()).
-	BorderForeground(colorPrimary).
-	Foreground(colorText).
-	Padding(0, 1).
-	MarginTop(1).
-	MarginBottom(1)
+	// Assistant message bubble
+	assistantBubbleStyle lipgloss.Style
 
-// Assistant label style
-var assistantLabelStyle = lipgloss.NewStyle().
-	Foreground(colorPrimary).
-	Bold(true).
-	MarginBottom(0)
+	// Assistant label style
+	assistantLabelStyle lipgloss.Style
 
-// Thoughts panel style
-var thoughtsStyle = lipgloss.NewStyle().
-	BorderStyle(lipgloss.NormalBorder()).
-	BorderForeground(colorTextDim).
-	BorderLeft(true).
-	Foreground(colorTextDim).
-	PaddingLeft(1).
-	MarginLeft(1).
-	Italic(true)
+	// Thoughts panel style
+	thoughtsStyle lipgloss.Style
 
-// Input area panel
-var inputPanelStyle = lipgloss.NewStyle().
-	BorderStyle(lipgloss.RoundedBorder()).
-	BorderForeground(colorSecondary).
-	Padding(0, 1).
-	MarginTop(1)
+	// Image section styles
+	imageSectionStyle       lipgloss.Style
+	imageSectionHeaderStyle lipgloss.Style
+	imageLinkStyle          lipgloss.Style
+	imageTitleStyle         lipgloss.Style
 
-// Input label style
-var inputLabelStyle = lipgloss.NewStyle().
-	Foreground(colorSecondary).
-	Bold(true)
+	// Input area panel
+	inputPanelStyle lipgloss.Style
 
-// Loading/spinner style
-var loadingStyle = lipgloss.NewStyle().
-	Foreground(colorAccent).
-	Bold(true)
+	// Input label style
+	inputLabelStyle lipgloss.Style
 
-// Gradient colors for animated spinner
+	// Loading/spinner style
+	loadingStyle lipgloss.Style
+
+	// Status bar styles
+	statusBarStyle  lipgloss.Style
+	statusKeyStyle  lipgloss.Style
+	statusDescStyle lipgloss.Style
+
+	// Error style
+	errorStyle lipgloss.Style
+
+	// Welcome styles
+	welcomeStyle      lipgloss.Style
+	welcomeTitleStyle lipgloss.Style
+	welcomeIconStyle  lipgloss.Style
+
+	// Config menu styles
+	configHeaderStyle       lipgloss.Style
+	configTitleStyle        lipgloss.Style
+	configPanelStyle        lipgloss.Style
+	configSectionTitleStyle lipgloss.Style
+	configMenuItemStyle     lipgloss.Style
+	configMenuSelectedStyle lipgloss.Style
+	configCursorStyle       lipgloss.Style
+	configValueStyle        lipgloss.Style
+	configEnabledStyle      lipgloss.Style
+	configDisabledStyle     lipgloss.Style
+	configPathStyle         lipgloss.Style
+	configStatusOkStyle     lipgloss.Style
+	configStatusErrorStyle  lipgloss.Style
+	configFeedbackStyle     lipgloss.Style
+	configStatusBarStyle    lipgloss.Style
+)
+
+// Gradient colors for animated spinner (fixed colors)
 var gradientColors = []lipgloss.Color{
 	lipgloss.Color("#ff6b6b"), // Red
 	lipgloss.Color("#feca57"), // Yellow
@@ -121,117 +117,255 @@ var gradientColors = []lipgloss.Color{
 	lipgloss.Color("#1dd1a1"), // Green
 }
 
-// Status bar style
-var statusBarStyle = lipgloss.NewStyle().
-	Foreground(colorTextDim).
-	MarginTop(1)
+// init loads the default theme on package initialization
+func init() {
+	UpdateTheme()
+}
 
-// Status bar key style
-var statusKeyStyle = lipgloss.NewStyle().
-	Foreground(colorText).
-	Background(colorSurface).
-	Padding(0, 1)
+// UpdateTheme refreshes all styles based on the current TUI theme
+func UpdateTheme() {
+	theme := render.GetTUITheme()
 
-// Status bar description style
-var statusDescStyle = lipgloss.NewStyle().
-	Foreground(colorTextDim)
+	// Update color variables
+	colorBackground = theme.Background
+	colorSurface = theme.Surface
+	colorBorder = theme.Border
+	colorPrimary = theme.Primary
+	colorSecondary = theme.Secondary
+	colorAccent = theme.Accent
+	colorWarning = theme.Warning
+	colorError = theme.Error
+	colorText = theme.Text
+	colorTextDim = theme.TextDim
+	colorTextMute = theme.TextMute
 
-// Error style
-var errorStyle = lipgloss.NewStyle().
-	Foreground(colorError).
-	Bold(true)
+	// Rebuild all styles with new colors
+	rebuildStyles()
+}
 
-// Welcome message style
-var welcomeStyle = lipgloss.NewStyle().
-	Foreground(colorTextDim).
-	Align(lipgloss.Center)
+// rebuildStyles creates all lipgloss styles with current color values
+func rebuildStyles() {
+	// Header panel style
+	headerStyle = lipgloss.NewStyle().
+		BorderStyle(lipgloss.RoundedBorder()).
+		BorderForeground(colorBorder).
+		Padding(0, 2).
+		MarginBottom(1)
 
-// Welcome title style
-var welcomeTitleStyle = lipgloss.NewStyle().
-	Foreground(colorPrimary).
-	Bold(true).
-	Align(lipgloss.Center)
+	// Title style for header
+	titleStyle = lipgloss.NewStyle().
+		Foreground(colorPrimary).
+		Bold(true)
 
-// Welcome icon style
-var welcomeIconStyle = lipgloss.NewStyle().
-	Foreground(colorAccent).
-	Align(lipgloss.Center)
+	// Subtitle/model name style
+	subtitleStyle = lipgloss.NewStyle().
+		Foreground(colorAccent)
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// CONFIG MENU STYLES
-// ═══════════════════════════════════════════════════════════════════════════════
+	// Hint text style
+	hintStyle = lipgloss.NewStyle().
+		Foreground(colorTextDim).
+		Italic(true)
 
-// Config header style
-var configHeaderStyle = lipgloss.NewStyle().
-	BorderStyle(lipgloss.RoundedBorder()).
-	BorderForeground(colorBorder).
-	Padding(0, 2).
-	MarginBottom(1)
+	// Messages area panel
+	messagesAreaStyle = lipgloss.NewStyle().
+		BorderStyle(lipgloss.RoundedBorder()).
+		BorderForeground(colorBorder).
+		Padding(1, 1)
 
-// Config title style
-var configTitleStyle = lipgloss.NewStyle().
-	Foreground(colorPrimary).
-	Bold(true)
+	// User message bubble
+	userBubbleStyle = lipgloss.NewStyle().
+		BorderStyle(lipgloss.RoundedBorder()).
+		BorderForeground(colorSecondary).
+		Foreground(colorText).
+		Padding(0, 1).
+		MarginTop(1).
+		MarginBottom(1)
 
-// Config panel style (for paths and settings)
-var configPanelStyle = lipgloss.NewStyle().
-	BorderStyle(lipgloss.RoundedBorder()).
-	BorderForeground(colorBorder).
-	Padding(1, 2).
-	MarginBottom(1)
+	// User label style
+	userLabelStyle = lipgloss.NewStyle().
+		Foreground(colorSecondary).
+		Bold(true).
+		MarginBottom(0)
 
-// Config section title style
-var configSectionTitleStyle = lipgloss.NewStyle().
-	Foreground(colorAccent).
-	Bold(true).
-	MarginBottom(1)
+	// Assistant message bubble
+	assistantBubbleStyle = lipgloss.NewStyle().
+		BorderStyle(lipgloss.RoundedBorder()).
+		BorderForeground(colorPrimary).
+		Foreground(colorText).
+		Padding(0, 1).
+		MarginTop(1).
+		MarginBottom(1)
 
-// Config menu item style (not selected)
-var configMenuItemStyle = lipgloss.NewStyle().
-	Foreground(colorText).
-	PaddingLeft(2)
+	// Assistant label style
+	assistantLabelStyle = lipgloss.NewStyle().
+		Foreground(colorPrimary).
+		Bold(true).
+		MarginBottom(0)
 
-// Config menu item style (selected/highlighted)
-var configMenuSelectedStyle = lipgloss.NewStyle().
-	Foreground(colorPrimary).
-	Bold(true)
+	// Thoughts panel style
+	thoughtsStyle = lipgloss.NewStyle().
+		BorderStyle(lipgloss.NormalBorder()).
+		BorderForeground(colorTextDim).
+		BorderLeft(true).
+		Foreground(colorTextDim).
+		PaddingLeft(1).
+		MarginLeft(1).
+		Italic(true)
 
-// Config cursor style
-var configCursorStyle = lipgloss.NewStyle().
-	Foreground(colorPrimary).
-	Bold(true)
+	// Image section styles
+	imageSectionStyle = lipgloss.NewStyle().
+		BorderStyle(lipgloss.NormalBorder()).
+		BorderForeground(colorWarning).
+		BorderLeft(true).
+		PaddingLeft(1).
+		MarginLeft(1).
+		MarginTop(1)
 
-// Config value style (for settings values)
-var configValueStyle = lipgloss.NewStyle().
-	Foreground(colorAccent)
+	imageSectionHeaderStyle = lipgloss.NewStyle().
+		Foreground(colorWarning).
+		Bold(true)
 
-// Config enabled value style
-var configEnabledStyle = lipgloss.NewStyle().
-	Foreground(colorSecondary)
+	imageLinkStyle = lipgloss.NewStyle().
+		Foreground(colorPrimary).
+		Underline(true)
 
-// Config disabled value style
-var configDisabledStyle = lipgloss.NewStyle().
-	Foreground(colorTextDim)
+	imageTitleStyle = lipgloss.NewStyle().
+		Foreground(colorText)
 
-// Config path style
-var configPathStyle = lipgloss.NewStyle().
-	Foreground(colorTextDim)
+	// Input area panel
+	inputPanelStyle = lipgloss.NewStyle().
+		BorderStyle(lipgloss.RoundedBorder()).
+		BorderForeground(colorSecondary).
+		Padding(0, 1).
+		MarginTop(1)
 
-// Config status ok style
-var configStatusOkStyle = lipgloss.NewStyle().
-	Foreground(colorSecondary)
+	// Input label style
+	inputLabelStyle = lipgloss.NewStyle().
+		Foreground(colorSecondary).
+		Bold(true)
 
-// Config status error style
-var configStatusErrorStyle = lipgloss.NewStyle().
-	Foreground(colorError)
+	// Loading/spinner style
+	loadingStyle = lipgloss.NewStyle().
+		Foreground(colorAccent).
+		Bold(true)
 
-// Config feedback message style
-var configFeedbackStyle = lipgloss.NewStyle().
-	Foreground(colorSecondary).
-	Bold(true).
-	MarginTop(1)
+	// Status bar style
+	statusBarStyle = lipgloss.NewStyle().
+		Foreground(colorTextDim).
+		MarginTop(1)
 
-// Config status bar style
-var configStatusBarStyle = lipgloss.NewStyle().
-	Foreground(colorTextDim).
-	MarginTop(1)
+	// Status bar key style
+	statusKeyStyle = lipgloss.NewStyle().
+		Foreground(colorText).
+		Background(colorSurface).
+		Padding(0, 1)
+
+	// Status bar description style
+	statusDescStyle = lipgloss.NewStyle().
+		Foreground(colorTextDim)
+
+	// Error style
+	errorStyle = lipgloss.NewStyle().
+		Foreground(colorError).
+		Bold(true)
+
+	// Welcome message style
+	welcomeStyle = lipgloss.NewStyle().
+		Foreground(colorTextDim).
+		Align(lipgloss.Center)
+
+	// Welcome title style
+	welcomeTitleStyle = lipgloss.NewStyle().
+		Foreground(colorPrimary).
+		Bold(true).
+		Align(lipgloss.Center)
+
+	// Welcome icon style
+	welcomeIconStyle = lipgloss.NewStyle().
+		Foreground(colorAccent).
+		Align(lipgloss.Center)
+
+	// ═══════════════════════════════════════════════════════════════════════════════
+	// CONFIG MENU STYLES
+	// ═══════════════════════════════════════════════════════════════════════════════
+
+	// Config header style
+	configHeaderStyle = lipgloss.NewStyle().
+		BorderStyle(lipgloss.RoundedBorder()).
+		BorderForeground(colorBorder).
+		Padding(0, 2).
+		MarginBottom(1)
+
+	// Config title style
+	configTitleStyle = lipgloss.NewStyle().
+		Foreground(colorPrimary).
+		Bold(true)
+
+	// Config panel style (for paths and settings)
+	configPanelStyle = lipgloss.NewStyle().
+		BorderStyle(lipgloss.RoundedBorder()).
+		BorderForeground(colorBorder).
+		Padding(1, 2).
+		MarginBottom(1)
+
+	// Config section title style
+	configSectionTitleStyle = lipgloss.NewStyle().
+		Foreground(colorAccent).
+		Bold(true).
+		MarginBottom(1)
+
+	// Config menu item style (not selected)
+	configMenuItemStyle = lipgloss.NewStyle().
+		Foreground(colorText).
+		PaddingLeft(2)
+
+	// Config menu item style (selected/highlighted)
+	configMenuSelectedStyle = lipgloss.NewStyle().
+		Foreground(colorPrimary).
+		Bold(true)
+
+	// Config cursor style
+	configCursorStyle = lipgloss.NewStyle().
+		Foreground(colorPrimary).
+		Bold(true)
+
+	// Config value style (for settings values)
+	configValueStyle = lipgloss.NewStyle().
+		Foreground(colorAccent)
+
+	// Config enabled value style
+	configEnabledStyle = lipgloss.NewStyle().
+		Foreground(colorSecondary)
+
+	// Config disabled value style
+	configDisabledStyle = lipgloss.NewStyle().
+		Foreground(colorTextDim)
+
+	// Config path style
+	configPathStyle = lipgloss.NewStyle().
+		Foreground(colorTextDim)
+
+	// Config status ok style
+	configStatusOkStyle = lipgloss.NewStyle().
+		Foreground(colorSecondary)
+
+	// Config status error style
+	configStatusErrorStyle = lipgloss.NewStyle().
+		Foreground(colorError)
+
+	// Config feedback message style
+	configFeedbackStyle = lipgloss.NewStyle().
+		Foreground(colorSecondary).
+		Bold(true).
+		MarginTop(1)
+
+	// Config status bar style
+	configStatusBarStyle = lipgloss.NewStyle().
+		Foreground(colorTextDim).
+		MarginTop(1)
+}
+
+// GetCurrentThemeName returns the name of the current TUI theme
+func GetCurrentThemeName() string {
+	return render.GetTUITheme().Name
+}

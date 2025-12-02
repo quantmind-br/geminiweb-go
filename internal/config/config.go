@@ -23,6 +23,7 @@ type Config struct {
 	AutoClose       bool           `json:"auto_close"`
 	Verbose         bool           `json:"verbose"`
 	CopyToClipboard bool           `json:"copy_to_clipboard"`
+	TUITheme        string         `json:"tui_theme,omitempty"` // TUI color theme
 	Markdown        MarkdownConfig `json:"markdown,omitempty"`
 }
 
@@ -44,6 +45,7 @@ func DefaultConfig() Config {
 		AutoClose:       true,
 		Verbose:         false,
 		CopyToClipboard: false,
+		TUITheme:        "tokyonight",
 		Markdown:        DefaultMarkdownConfig(),
 	}
 }

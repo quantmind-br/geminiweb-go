@@ -615,9 +615,9 @@ func TestConfigModel_renderThemeSelect(t *testing.T) {
 		t.Error("renderThemeSelect should not return empty string")
 	}
 
-	// Should contain theme title
-	if !contains(menu, "Select Theme") {
-		t.Error("Menu should contain 'Select Theme' title")
+	// Should contain markdown theme title
+	if !contains(menu, "Select Markdown Theme") {
+		t.Error("Menu should contain 'Select Markdown Theme' title")
 	}
 
 	// Should contain at least dark theme
@@ -678,11 +678,14 @@ func TestConfigModel_MenuConstants(t *testing.T) {
 	if menuTheme != 4 {
 		t.Errorf("Expected menuTheme to be 4, got %d", menuTheme)
 	}
-	if menuExit != 5 {
-		t.Errorf("Expected menuExit to be 5, got %d", menuExit)
+	if menuTUITheme != 5 {
+		t.Errorf("Expected menuTUITheme to be 5, got %d", menuTUITheme)
 	}
-	if menuItemCount != 6 {
-		t.Errorf("Expected menuItemCount to be 6, got %d", menuItemCount)
+	if menuExit != 6 {
+		t.Errorf("Expected menuExit to be 6, got %d", menuExit)
+	}
+	if menuItemCount != 7 {
+		t.Errorf("Expected menuItemCount to be 7, got %d", menuItemCount)
 	}
 }
 
@@ -748,4 +751,135 @@ func findSubstring(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TUI THEME CONFIGURATION TESTS (Phase 3)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+func TestConfigModel_TUIThemeCursorInit(t *testing.T) {
+	m := NewConfigModel()
+
+	// Should have non-negative TUI theme cursor
+	if m.tuiThemeCursor < 0 {
+		t.Error("tuiThemeCursor should be non-negative")
+	}
+}
+
+func TestConfigModel_TUIThemeSelection(t *testing.T) {
+	t.Run("escape from TUI theme select view", func(t *testing.T) {
+		m := NewConfigModel()
+		m.view = viewTUIThemeSelect
+
+		newM, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+		updatedM := newM.(ConfigModel)
+
+		if updatedM.view != viewMain {
+			t.Errorf("Expected view to be viewMain after Esc, got %d", updatedM.view)
+		}
+	})
+
+	t.Run("navigate up in TUI theme select view", func(t *testing.T) {
+		m := NewConfigModel()
+		m.view = viewTUIThemeSelect
+		m.tuiThemeCursor = 1
+
+		newM, _ := m.Update(tea.KeyMsg{Type: tea.KeyUp})
+		updatedM := newM.(ConfigModel)
+
+		if updatedM.tuiThemeCursor != 0 {
+			t.Errorf("Expected tuiThemeCursor to be 0, got %d", updatedM.tuiThemeCursor)
+		}
+	})
+
+	t.Run("navigate down in TUI theme select view", func(t *testing.T) {
+		m := NewConfigModel()
+		m.view = viewTUIThemeSelect
+		m.tuiThemeCursor = 0
+
+		newM, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
+		updatedM := newM.(ConfigModel)
+
+		if updatedM.tuiThemeCursor != 1 {
+			t.Errorf("Expected tuiThemeCursor to be 1, got %d", updatedM.tuiThemeCursor)
+		}
+	})
+
+	t.Run("enter on TUI theme menu item", func(t *testing.T) {
+		m := NewConfigModel()
+		m.view = viewMain
+		m.cursor = menuTUITheme
+
+		newM, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		updatedM := newM.(ConfigModel)
+
+		if updatedM.view != viewTUIThemeSelect {
+			t.Errorf("Expected view to be viewTUIThemeSelect, got %d", updatedM.view)
+		}
+	})
+
+	t.Run("select TUI theme", func(t *testing.T) {
+		m := NewConfigModel()
+		m.view = viewTUIThemeSelect
+		m.tuiThemeCursor = 1 // Select second theme (catppuccin)
+
+		newM, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		updatedM := newM.(ConfigModel)
+
+		if updatedM.view != viewMain {
+			t.Errorf("Expected view to return to viewMain after selection")
+		}
+
+		if cmd == nil {
+			t.Error("Should return clear feedback command")
+		}
+	})
+}
+
+func TestConfigModel_renderTUIThemeSelect(t *testing.T) {
+	m := NewConfigModel()
+
+	menu := m.renderTUIThemeSelect(80)
+
+	if menu == "" {
+		t.Error("renderTUIThemeSelect should not return empty string")
+	}
+
+	// Should contain TUI theme title
+	if !contains(menu, "Select TUI Theme") {
+		t.Error("Menu should contain 'Select TUI Theme' title")
+	}
+
+	// Should contain tokyonight theme
+	if !contains(menu, "tokyonight") {
+		t.Error("Menu should contain 'tokyonight' theme")
+	}
+
+	// Should contain catppuccin theme
+	if !contains(menu, "catppuccin") {
+		t.Error("Menu should contain 'catppuccin' theme")
+	}
+
+	// Should contain nord theme
+	if !contains(menu, "nord") {
+		t.Error("Menu should contain 'nord' theme")
+	}
+}
+
+func TestConfigModel_renderMainMenu_TUITheme(t *testing.T) {
+	m := NewConfigModel()
+
+	menu := m.renderMainMenu(80)
+
+	// Should contain TUI Theme item
+	if !contains(menu, "TUI Theme") {
+		t.Error("Menu should contain TUI Theme item")
+	}
+}
+
+func TestConfigModel_viewTUIThemeSelect_Constant(t *testing.T) {
+	// Test that viewTUIThemeSelect is properly defined
+	if viewTUIThemeSelect != 3 {
+		t.Errorf("Expected viewTUIThemeSelect to be 3, got %d", viewTUIThemeSelect)
+	}
 }

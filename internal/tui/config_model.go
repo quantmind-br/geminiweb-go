@@ -19,7 +19,8 @@ type configView int
 const (
 	viewMain configView = iota
 	viewModelSelect
-	viewThemeSelect
+	viewThemeSelect    // Markdown theme
+	viewTUIThemeSelect // TUI color theme
 )
 
 // Menu item indices for main view
@@ -28,7 +29,8 @@ const (
 	menuVerbose
 	menuAutoClose
 	menuCopyToClipboard
-	menuTheme
+	menuTheme    // Markdown theme
+	menuTUITheme // TUI color theme
 	menuExit
 	menuItemCount
 )
@@ -44,10 +46,11 @@ type ConfigModel struct {
 	cookiesExist bool
 
 	// Navigation
-	view        configView
-	cursor      int
-	modelCursor int
-	themeCursor int
+	view           configView
+	cursor         int
+	modelCursor    int
+	themeCursor    int // Markdown theme cursor
+	tuiThemeCursor int // TUI theme cursor
 
 	// Feedback
 	feedback        string
@@ -84,7 +87,7 @@ func NewConfigModel() ConfigModel {
 		}
 	}
 
-	// Find current theme index
+	// Find current markdown theme index
 	themeCursor := 0
 	themes := render.ThemeNames()
 	currentTheme := cfg.Markdown.Style
@@ -98,6 +101,26 @@ func NewConfigModel() ConfigModel {
 		}
 	}
 
+	// Find current TUI theme index
+	tuiThemeCursor := 0
+	tuiThemes := render.TUIThemeNames()
+	currentTUITheme := cfg.TUITheme
+	if currentTUITheme == "" {
+		currentTUITheme = "tokyonight"
+	}
+	for i, t := range tuiThemes {
+		if t == currentTUITheme {
+			tuiThemeCursor = i
+			break
+		}
+	}
+
+	// Apply the configured TUI theme at startup
+	if currentTUITheme != "" {
+		render.SetTUITheme(currentTUITheme)
+		UpdateTheme()
+	}
+
 	return ConfigModel{
 		config:          cfg,
 		configDir:       configDir,
@@ -107,6 +130,7 @@ func NewConfigModel() ConfigModel {
 		cursor:          0,
 		modelCursor:     modelCursor,
 		themeCursor:     themeCursor,
+		tuiThemeCursor:  tuiThemeCursor,
 		feedbackTimeout: 2 * time.Second,
 	}
 }
@@ -140,7 +164,7 @@ func (m ConfigModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 
 		case "esc":
-			if m.view == viewModelSelect || m.view == viewThemeSelect {
+			if m.view == viewModelSelect || m.view == viewThemeSelect || m.view == viewTUIThemeSelect {
 				m.view = viewMain
 			} else {
 				return m, tea.Quit
@@ -162,6 +186,11 @@ func (m ConfigModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.themeCursor < 0 {
 					m.themeCursor = len(render.ThemeNames()) - 1
 				}
+			} else if m.view == viewTUIThemeSelect {
+				m.tuiThemeCursor--
+				if m.tuiThemeCursor < 0 {
+					m.tuiThemeCursor = len(render.TUIThemeNames()) - 1
+				}
 			}
 
 		case "down", "j":
@@ -179,6 +208,11 @@ func (m ConfigModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.themeCursor++
 				if m.themeCursor >= len(render.ThemeNames()) {
 					m.themeCursor = 0
+				}
+			} else if m.view == viewTUIThemeSelect {
+				m.tuiThemeCursor++
+				if m.tuiThemeCursor >= len(render.TUIThemeNames()) {
+					m.tuiThemeCursor = 0
 				}
 			}
 
@@ -241,6 +275,10 @@ func (m ConfigModel) handleSelect() (tea.Model, tea.Cmd) {
 			m.view = viewThemeSelect
 			return m, nil
 
+		case menuTUITheme:
+			m.view = viewTUIThemeSelect
+			return m, nil
+
 		case menuExit:
 			return m, tea.Quit
 		}
@@ -260,7 +298,23 @@ func (m ConfigModel) handleSelect() (tea.Model, tea.Cmd) {
 		if err := config.SaveConfig(m.config); err != nil {
 			m.feedback = fmt.Sprintf("Error: %v", err)
 		} else {
-			m.feedback = fmt.Sprintf("Theme set to %s", m.config.Markdown.Style)
+			m.feedback = fmt.Sprintf("Markdown theme set to %s", m.config.Markdown.Style)
+		}
+		m.view = viewMain
+		return m, clearFeedback(m.feedbackTimeout)
+	} else if m.view == viewTUIThemeSelect {
+		tuiThemes := render.TUIThemeNames()
+		selectedTheme := tuiThemes[m.tuiThemeCursor]
+		m.config.TUITheme = selectedTheme
+
+		// Apply the new TUI theme immediately
+		render.SetTUITheme(selectedTheme)
+		UpdateTheme()
+
+		if err := config.SaveConfig(m.config); err != nil {
+			m.feedback = fmt.Sprintf("Error: %v", err)
+		} else {
+			m.feedback = fmt.Sprintf("TUI theme set to %s", selectedTheme)
 		}
 		m.view = viewMain
 		return m, clearFeedback(m.feedbackTimeout)
@@ -322,6 +376,8 @@ func (m ConfigModel) View() string {
 		settingsContent = m.renderModelSelect(contentWidth)
 	case viewThemeSelect:
 		settingsContent = m.renderThemeSelect(contentWidth)
+	case viewTUIThemeSelect:
+		settingsContent = m.renderTUIThemeSelect(contentWidth)
 	}
 
 	settingsPanel := configPanelStyle.Width(contentWidth).Render(settingsContent)
@@ -410,7 +466,7 @@ func (m ConfigModel) renderMainMenu(width int) string {
 		clipboardValue,
 	))
 
-	// Theme
+	// Markdown Theme
 	cursor = "  "
 	style = configMenuItemStyle
 	if m.cursor == menuTheme {
@@ -424,9 +480,28 @@ func (m ConfigModel) renderMainMenu(width int) string {
 	themeValue := configValueStyle.Render(currentTheme)
 	items = append(items, fmt.Sprintf("%s%s%s%s",
 		cursor,
-		style.Render("Theme"),
-		strings.Repeat(" ", 15),
+		style.Render("Markdown Theme"),
+		strings.Repeat(" ", 6),
 		themeValue,
+	))
+
+	// TUI Theme
+	cursor = "  "
+	style = configMenuItemStyle
+	if m.cursor == menuTUITheme {
+		cursor = configCursorStyle.Render("▸ ")
+		style = configMenuSelectedStyle
+	}
+	currentTUITheme := m.config.TUITheme
+	if currentTUITheme == "" {
+		currentTUITheme = "tokyonight"
+	}
+	tuiThemeValue := configValueStyle.Render(currentTUITheme)
+	items = append(items, fmt.Sprintf("%s%s%s%s",
+		cursor,
+		style.Render("TUI Theme"),
+		strings.Repeat(" ", 11),
+		tuiThemeValue,
 	))
 
 	// Separator
@@ -475,9 +550,9 @@ func (m ConfigModel) renderModelSelect(width int) string {
 }
 
 
-// renderThemeSelect renders the theme selection sub-menu
+// renderThemeSelect renders the markdown theme selection sub-menu
 func (m ConfigModel) renderThemeSelect(width int) string {
-	title := configSectionTitleStyle.Render("🎨 Select Theme")
+	title := configSectionTitleStyle.Render("🎨 Select Markdown Theme")
 
 	themes := render.AvailableThemes()
 	var items []string
@@ -497,6 +572,41 @@ func (m ConfigModel) renderThemeSelect(width int) string {
 
 		current := ""
 		if theme.Name == currentTheme {
+			current = configStatusOkStyle.Render(" (current)")
+		}
+
+		// Format: "theme-name - description"
+		themeText := fmt.Sprintf("%s - %s", theme.Name, theme.Description)
+		items = append(items, cursor+style.Render(themeText)+current)
+	}
+
+	return lipgloss.JoinVertical(lipgloss.Left,
+		append([]string{title, ""}, items...)...,
+	)
+}
+
+// renderTUIThemeSelect renders the TUI color theme selection sub-menu
+func (m ConfigModel) renderTUIThemeSelect(width int) string {
+	title := configSectionTitleStyle.Render("🎨 Select TUI Theme")
+
+	themes := render.AvailableTUIThemes()
+	var items []string
+
+	currentTUITheme := m.config.TUITheme
+	if currentTUITheme == "" {
+		currentTUITheme = "tokyonight"
+	}
+
+	for i, theme := range themes {
+		cursor := "  "
+		style := configMenuItemStyle
+		if m.tuiThemeCursor == i {
+			cursor = configCursorStyle.Render("▸ ")
+			style = configMenuSelectedStyle
+		}
+
+		current := ""
+		if theme.Name == currentTUITheme {
 			current = configStatusOkStyle.Render(" (current)")
 		}
 
