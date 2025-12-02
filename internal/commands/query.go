@@ -277,8 +277,8 @@ func runQuery(prompt string, rawOutput bool) error {
 		// Add as an "image" (the API treats uploaded files similarly)
 		images = append(images, uploadedFile)
 
-		// Use a minimal prompt that references the uploaded file
-		actualPrompt = "Please process and respond to the content in the uploaded file."
+		// Use minimal prompt - the uploaded file already contains the user's instructions
+		actualPrompt = "."
 		if !rawOutput {
 			spin.stopWithSuccess(fmt.Sprintf("Prompt uploaded (%d KB)", len(prompt)/1024))
 		}
