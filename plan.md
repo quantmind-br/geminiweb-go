@@ -1,162 +1,208 @@
+# Refactoring/Design Plan: Integração de Gems com Modo Chat Interativo (TUI)
+
 ## 1\. Executive Summary & Goals
 
-Este plano tem como objetivo modernizar e aprimorar a interface de usuário (TUI - Terminal User Interface) para a listagem e gestão de **Gemini Gems** (personas customizadas) no aplicativo `geminiweb-go`. A nova TUI deve oferecer uma experiência de usuário rica, alinhada com o padrão `charmbracelet/bubbletea` já adotado, incluindo funcionalidades críticas de **filtragem fuzzy** em tempo real e um **atalho de teclado para cópia do Gem ID**.
-
-### Key Goals
-
-1.  **Usabilidade Aprimorada:** Substituir a listagem atual baseada em `tabwriter` no comando `gems list` por uma TUI interativa (`bubbletea`) para navegação, filtragem e seleção.
-2.  **Filtragem Rápida e Fuzzy:** Implementar um mecanismo de busca fuzzy (aproximada) que filtre a lista de Gems em tempo real por nome e/ou descrição.
-3.  **Visualização Detalhada e Ação Rápida:** Permitir a seleção de um Gem para exibir seus detalhes completos e um atalho de teclado (`ctrl+c` ou similar) para copiar o seu ID.
-4.  **Integração Coesa:** Reutilizar os estilos e componentes TUI existentes (`internal/tui/styles.go`, `charmbracelet/lipgloss`) para manter o padrão visual do aplicativo.
+O objetivo primário deste plano é integrar a funcionalidade de "Gems" (personas customizadas do lado do servidor) ao modo de **chat interativo (TUI)** da aplicação `geminiweb`, permitindo que o usuário inicie uma sessão de chat com uma Gem específica selecionada a partir do comando `geminiweb gems list`.
 
 -----
 
+### Key Goals & Outcomes
+
+1.  **Habilitar Chat com Gem na TUI:** Modificar o TUI de Gems (`internal/tui/gems_model.go`) para permitir que o usuário selecione uma Gem e inicie um chat com ela.
+2.  **Passagem de GemID para Sessão:** Propagar o ID da Gem selecionada do TUI de Gems para a função de inicialização do TUI de Chat, garantindo que o `ChatSession` seja criado com o `GemID` correto.
+3.  **Atualização do Comando `gems list`:** Modificar o comando `geminiweb gems list` para que, em vez de apenas listar, ele inicie o TUI de Gems, onde a seleção do chat é feita.
+
 ## 2\. Current Situation Analysis
 
-O projeto `geminiweb-go` é uma aplicação CLI em Go que utiliza o framework `cobra` para comandos e `charmbracelet/bubbletea` para interfaces interativas (TUI), como o chat e o menu de configuração.
+A aplicação `geminiweb-go` possui uma arquitetura bem definida baseada em Cobra para comandos, uma camada `api` com a lógica de cliente/sessão, e uma camada `tui` para interfaces interativas.
 
-| Componente | Status Atual | Problema/Limitação |
-| :--- | :--- | :--- |
-| **Comando `gems`** | Implementado em `internal/commands/gems.go`. | A sub-rotina `runGemsList` utiliza `text/tabwriter` para saída estática. Não permite interação, filtro ou seleção. |
-| **Lógica de Gems** | `internal/api/gems.go`, `internal/api/client.go` e `internal/models/gems.go` estão bem definidos com lógica de busca, criação e cache. | A API de backend e o modelo de dados estão prontos. A limitação é puramente na camada de **apresentação** (`TUI`). |
-| **TUI Base** | Implementada em `internal/tui/model.go` e `internal/tui/styles.go` usando `bubbletea`, `bubbles`, e `lipgloss`. | A TUI de configuração (`internal/tui/config_model.go`) e a de chat (`internal/tui/model.go`) servem como bom ponto de partida, mas é necessário um novo modelo TUI (`Model`) específico para a gestão de Gems. |
-| **Busca Fuzzy** | Não implementada. | Nenhuma biblioteca de busca fuzzy está sendo utilizada ou exposta para uso interativo no TUI. |
+  * **Gems Management (`internal/api/gems.go`, `internal/commands/gems.go`, `internal/tui/gems_model.go`):** Existe um modelo TUI dedicado (`GemsModel`) para listar Gems e a lógica de API (`FetchGems`, `GetGem`) está implementada. O `GemsModel` atual permite apenas visualização e cópia de ID.
+  * **Chat Session (`internal/api/session.go`, `internal/api/client.go`):** O `ChatSession` já suporta o campo `gemID` e a função `StartChatWithOptions` pode receber `WithGemID` ou `WithGem`. O `GenerateContent` (`internal/api/generate.go`) já inclui o `gemID` no payload, o que é crucial.
+  * **Chat TUI (`internal/tui/model.go`, `internal/commands/chat.go`):** O TUI de Chat é iniciado pelo comando `geminiweb chat` (`internal/commands/chat.go`) usando `tui.RunChat(client, modelName)`. Não há um mecanismo para injetar um `GemID` nesse fluxo.
+
+### Key Pain Points / Areas for Improvement
+
+1.  **Desacoplamento de TUI de Chat:** O `tui.RunChat` e `commands.runChat` precisam ser modificados ou um novo ponto de entrada precisa ser criado para aceitar um `GemID` opcional e passá-lo para a sessão.
+2.  **Lógica de Início de Chat:** A lógica para iniciar o chat, que atualmente reside em `commands/chat.go` e `commands/gems.go` (para o cliente), precisa ser reutilizada e adaptada para a integração Gem.
 
 -----
 
 ## 3\. Proposed Solution / Refactoring Strategy
 
-O plano é criar um novo modelo TUI (`GemsModel`) para substituir a saída estática do `gems list` e adicionar a lógica de filtragem, seleção e cópia.
+A estratégia será utilizar a infraestrutura existente de TUI e API, introduzindo um novo "comando" (mensagem) no `GemsModel` para iniciar o chat e um novo parâmetro em `tui.RunChat` para injetar o `GemID`.
 
 ### 3.1. High-Level Design / Architectural Overview
 
-O novo fluxo envolverá a migração do comando `gems list` para um novo subcomando que invocará um novo TUI Model.
-
-1.  **Nova Estrutura TUI:** Criar `internal/tui/gems_model.go` para a lógica de estado do TUI.
-2.  **Injeção de Dependência:** O `GemsModel` receberá o `api.GeminiClientInterface` para carregar a lista de Gems.
-3.  **Componente de Busca:** Utilizar `charmbracelet/bubbles/textinput` para a busca fuzzy e `charmbracelet/bubbles/list` (ou implementar uma lista customizada) para exibir os resultados.
-4.  **Cópia de ID:** Utilizar o pacote `github.com/atotto/clipboard` que já está em uso (`go.mod`, `internal/commands/query.go`) para implementar a cópia do ID.
-
-**Fluxo de Interação Proposto:**
-
-```mermaid
-graph TD
-    A[geminiweb gems list] --> B(internal/commands/gems.go);
-    B --> C{internal/tui/gems_model.go};
-    C -- Load Gems --> D(internal/api/client.go:FetchGems);
-    D -- Return GemJar --> C;
-    C -- Render List + Input --> E[TUI Screen: List & Search];
-    E -- User Types/Filters --> C;
-    E -- User Selects Gem --> F[TUI Screen: Gem Details];
-    F -- Ctrl+C/Shortcut --> G(internal/tui/gems_model.go:CopyID);
-    G --> H(atotto/clipboard);
-    F -- Esc/Back --> E;
-    E -- Esc/Quit --> I(Exit TUI);
-```
-
------
+  * **Camada de Comando (`internal/commands`):** O `runGemsList` será mantido para iniciar o `GemsTUI`. O `GemsTUI` passará a ser o ponto de partida do chat com Gem.
+  * **Camada TUI (`internal/tui`):**
+      * `GemsModel`: Adicionar uma nova ação (e.g., tecla `s` ou `chat`) para iniciar o chat. Definir uma nova `tea.Msg` para a transição.
+      * `Model`: O `RunChat` precisa ser modificado para aceitar um `GemID` inicial, ou uma nova função de inicialização de chat TUI será criada.
+  * **Camada API (`internal/api`):** O `StartChatWithOptions` será o método chave para criar a sessão com o `GemID` injetado.
 
 ### 3.2. Key Components / Modules
 
-| Componente | Responsabilidade | Status |
+| Componente | Modificação Principal | Responsabilidade |
 | :--- | :--- | :--- |
-| `internal/tui/gems_model.go` | **Novo** - Lógica principal do TUI de Gems. Gerencia estados (listagem, detalhes), cursor, busca, e a interação do usuário. | Novo |
-| `internal/commands/gems.go` | **Modificado** - Atualizar `runGemsList` para invocar o novo `gems_model.go` em vez de usar `tabwriter`. | Modificação |
-| `internal/tui/styles.go` | **Reutilizado/Ajustado** - Definir estilos `lipgloss` específicos para a lista e a visualização detalhada de Gems. | Reutilização |
-| `GemsFuzzyFilter` | **Nova Lógica** - Módulo ou função dentro de `gems_model.go` que utiliza `strings.Contains` ou uma biblioteca mais robusta (ex: `junegunn/fzf` ou custom fuzzy match) para filtrar a lista de `models.Gem` baseada no input. | Novo |
-
------
+| **`internal/tui/gems_model.go`** | Adicionar `tea.Msg` `startChatMsg`, lógica de seleção de chat (tecla). | Interagir com o usuário para selecionar a Gem e emitir o comando de início de chat. |
+| **`internal/tui/model.go`** | Adicionar `GemID` opcional ao `RunChat` ou criar `RunGemChat`. | Gerenciar a nova sessão de chat, inicializando-a com o `GemID` da Gem selecionada. |
+| **`internal/commands/gems.go`** | Implementar a lógica de `RunE` para tratar a `tea.Msg` de `GemsModel` (se a arquitetura Bubble Tea for mantida no ponto de entrada). | Iniciar o TUI de Gems. Se o TUI retornar um `GemID`, iniciar o TUI de Chat com esse ID. |
+| **`internal/api/client.go`** | Nenhuma alteração essencial é necessária, mas o uso de `StartChatWithOptions` será enfatizado. | Prover o método `StartChatWithOptions` que aceita o `WithGemID`. |
 
 ### 3.3. Detailed Action Plan / Phases
 
-#### Phase 1: Substituição da Listagem Estática pelo TUI Base (M/L)
+#### Phase 1: Modificação do TUI de Gems e Definição da Transição
 
-**Objective(s):** Substituir o `tabwriter` por uma interface interativa `bubbletea` que exibe a lista de Gems.
+**Objective(s):** Permitir a seleção de uma Gem e a emissão de uma mensagem para iniciar o chat com o ID da Gem.
 **Priority:** High
 
-| Task | Rationale/Goal | Effort | Deliverable/Criteria for Completion |
+| Task | Rationale/Goal | Estimated Effort (Optional) | Deliverable/Criteria for Completion |
 | :--- | :--- | :--- | :--- |
-| **1.1** Criar `internal/tui/gems_model.go` e `RunGemsTUI`. | Inicializar a estrutura `tea.Model` para o TUI de Gems. | M | Arquivo `gems_model.go` com estrutura `Model`, `Init`, `Update`, `View`. |
-| **1.2** Implementar a busca e o carregamento inicial de Gems. | Chamar `client.FetchGems(true)` na inicialização e armazenar no estado do Model. | S | `gems_model.go` carrega a lista de Gems e exibe os nomes na `View`. |
-| **1.3** Modificar `internal/commands/gems.go`. | Substituir a lógica `tabwriter` em `runGemsList` pela invocação de `tui.RunGemsTUI(client)`. | S | `runGemsList` invoca a nova TUI. |
-| **1.4** Implementar navegação básica na lista. | Usar o componente `list` (ou custom `cursor`/`viewport`) para permitir navegação com `j/k` ou `up/down`. | M | Lista de Gems navegável, com item selecionado visualmente destacado. |
+| **1.1: Criar Mensagem de Início de Chat** | Permitir que o `GemsModel` retorne o ID da Gem selecionada para a função chamadora. | S | `startChatMsg` (struct com `gemID string`) definida em `internal/tui/gems_model.go`. |
+| **1.2: Implementar Ação de Chat no `GemsModel`** | No `GemsModel.Update`, adicionar lógica para a tecla, e.g., `c` (para chat) ou `s` (select). Se uma Gem estiver selecionada, retornar `startChatMsg` e `tea.Quit`. | S | Lógica de tecla implementada, retornando a nova `startChatMsg` e encerrando o TUI de Gems. |
+| **1.3: Atualizar `GemsModel.View`** | Adicionar uma dica de atalho (`[c]hat` ou similar) na barra de status para a nova funcionalidade. | S | Barra de status do `GemsModel` atualizada com o atalho `[c]hat` ou similar na `gemsViewList`. |
 
-#### Phase 2: Implementação da Busca Fuzzy e Detalhes (L)
+#### Phase 2: Refatoração do Início do Chat e Implementação da Conexão
 
-**Objective(s):** Adicionar a caixa de busca fuzzy e a tela de detalhes do Gem.
+**Objective(s):** Fazer o `commands/gems.go` receber o ID da Gem e iniciar o `ChatTUI` corretamente.
 **Priority:** High
 
-| Task | Rationale/Goal | Effort | Deliverable/Criteria for Completion |
+| Task | Rationale/Goal | Estimated Effort (Optional) | Deliverable/Criteria for Completion |
 | :--- | :--- | :--- | :--- |
-| **2.1** Integrar `textinput` para a busca. | Adicionar `textinput.Model` ao `GemsModel` para capturar a entrada do usuário. | S | Input de busca visível no topo do TUI. |
-| **2.2** Implementar a lógica de Filtro Fuzzy. | Filtrar o `GemJar` pelo `Name` e `Description` usando o valor do `textinput` a cada `tea.KeyMsg`. Uma busca **case-insensitive** simples com `strings.Contains` é suficiente para ser "fuzzy o bastante" no contexto CLI. | M | A lista de Gems é filtrada em tempo real enquanto o usuário digita. |
-| **2.3** Implementar a visualização de Detalhes. | Criar um novo estado (`viewDetails`) no `GemsModel` para exibir `ID`, `Name`, `Description` e `Prompt` do Gem selecionado (Markdown renderizado). | L | Tela de detalhes exibida ao pressionar `Enter` na lista. |
-| **2.4** Reutilizar estilos TUI. | Aplicar os estilos de `internal/tui/styles.go` para a lista e detalhes (cores, bordas, etc.) para manter a coerência visual. | S | Nova TUI alinhada visualmente com o TUI de Chat/Config. |
+| **2.1: Refatorar `tui.RunChat`** | O TUI de chat precisa de um ponto de entrada para um `ChatSession` já configurado com um `GemID`. | M | Modificar a assinatura de `tui.RunChat(client, modelName)` para `tui.RunChat(client, modelName, initialGemID string)` ou criar `tui.RunGemChat`. Optar por `RunChatWithOptions` para simplificar. |
+| **2.2: Criar Opção de Chat com Gem na TUI** | Criar um novo tipo no `internal/tui/model.go` ou adaptar o `NewChatModel` para aceitar um `GemID` e usá-lo na inicialização da sessão. | S | `NewChatModel` atualizado para receber `initialGemID string`. |
+| **2.3: Atualizar `internal/commands/gems.go` (runGemsList)** | O `runGemsList` agora precisa executar o `GemsTUI` e inspecionar o resultado (se for `startChatMsg`), então iniciar o `ChatTUI`. | M | `runGemsList` passa a ser um *wrapper* que executa `tui.RunGemsTUI` e, se um `startChatMsg` for retornado, inicia o `ChatTUI` (Task 2.4). |
+| **2.4: Lógica de Inicialização do `ChatSession` com GemID** | Implementar a lógica de inicialização do `ChatSession` dentro do `RunChat` para usar o `initialGemID` via `client.StartChatWithOptions(api.WithGemID(gemID))`. | S | `tui.RunChat` (ou similar) chama `client.StartChatWithOptions(api.WithGemID(gemID))` se `gemID` não for vazio. |
 
-#### Phase 3: Implementação do Atalho de Cópia e Finalização (S)
+#### Phase 3: Teste e Finalização
 
-**Objective(s):** Adicionar o atalho de cópia do ID e refinar a usabilidade.
-**Priority:** High
+**Objective(s):** Verificar o fluxo de trabalho completo e garantir a estabilidade.
+**Priority:** Medium
 
-| Task | Rationale/Goal | Effort | Deliverable/Criteria for Completion |
+| Task | Rationale/Goal | Estimated Effort (Optional) | Deliverable/Criteria for Completion |
 | :--- | :--- | :--- | :--- |
-| **3.1** Implementar o atalho de Cópia do ID. | Mapear uma combinação de teclas (e.g., `c` ou `ctrl+c`) na tela de **Detalhes** para copiar o `Gem.ID` para o clipboard usando `clipboard.WriteAll`. | S | Pressionar o atalho copia o ID e exibe um feedback visual (ex: "ID copiado"). |
-| **3.2** Refinamento da barra de status. | Adicionar informações de atalhos (`/` para buscar, `Enter` para detalhes, `Esc` para sair/voltar, atalho de cópia) na barra de status. | S | Barra de status do `GemsModel` com atalhos claros. |
-| **3.3** Testes Manuais e Refatoração de Código. | Garantir que a lógica de estado e as transições de visão funcionem corretamente sem vazamentos de memória ou falhas de renderização. | S | TUI estável e funcional, sem erros visuais. |
+| **3.1: Teste de Integração (Manual/E2E)** | Garantir que o fluxo `geminiweb gems list` -\> Seleção de Gem -\> Chat com Gem funciona e que o prompt da Gem está sendo enviado ao `GenerateContent`. | L | Um chat é iniciado com a Gem, e a primeira resposta demonstra a ativação do prompt da Gem. |
+| **3.2: Refatoração de Código de Inicialização** | Unificar a lógica de criação do cliente e inicialização (`createGemsClient` e `runChat` cliente logic) em uma função reutilizável, se possível, para evitar duplicação. | S | Seções de criação/inicialização de cliente em `commands/chat.go` e `commands/gems.go` simplificadas ou unificadas. |
 
------
+### 3.4. API Design / Interface Changes
 
-### 3.4. Data Model Changes
+**Interface Modificada:**
 
-**Nenhuma alteração necessária** no modelo de dados (`internal/models/gems.go`) ou na API de acesso (`internal/api/gems.go`), pois o cache (`models.GemJar`) já contém todas as informações necessárias.
+  * **`internal/tui/gems_model.go`**:
 
-### 3.5. API Design / Interface Changes
+      * Definir um novo tipo de mensagem para a transição:
+        ```go
+        type startChatMsg struct {
+        	gemID string
+        }
+        ```
 
-**Nenhuma alteração necessária** nas interfaces ou endpoints da API. A nova funcionalidade é puramente uma modificação da camada de apresentação (TUI).
+  * **`internal/tui/model.go`**:
 
------
+      * **Atualização de `RunChat`:** A função TUI que inicia o chat precisa de um ponto de injeção para o Gem ID.
+        ```go
+        // Exemplo:
+        // func RunChat(client api.GeminiClientInterface, modelName string, initialGemID string) error { ... }
+        //
+        // Ou, para manter a modularidade do TUI:
+        func RunChatWithOptions(client api.GeminiClientInterface, opts ...api.ChatOption) error {
+            m := NewChatModelWithOptions(client, opts...)
+            // ... (rest of TUI setup)
+        }
+        ```
+        *Decisão:* Modificaremos `tui.RunChat` para aceitar um `*api.ChatSession` pré-configurado, transferindo a responsabilidade da criação do `ChatSession` para `commands/gems.go`.
+
+  * **`internal/tui/model.go`**:
+
+      * **Atualização de `NewChatModel`:**
+        ```go
+        // Modificar NewChatModel para aceitar a sessão, não apenas o client
+        func NewChatModel(session api.ChatSessionInterface) Model { ... }
+        // ... E atualizar tui.RunChat (e tui.RunGemChat) para usar esta nova assinatura.
+        ```
+
+  * **`internal/commands/gems.go`**:
+
+      * **Atualização de `runGemsList`**:
+        ```go
+        func runGemsList(cmd *cobra.Command, args []string) error {
+            client, err := createGemsClient()
+            // ...
+            
+            // Rodar TUI de Gems e obter o GemID (se um chat for iniciado)
+            gemID, err := tui.RunGemsTUI(client, gemsIncludeHidden) // Retornar string/erro
+            
+            if gemID == "" {
+                return nil // Saiu do TUI sem iniciar chat
+            }
+            
+            // Iniciar o chat TUI
+            modelName := getModel()
+            model := models.ModelFromName(modelName)
+            
+            session := client.StartChatWithOptions(
+                api.WithChatModel(model),
+                api.WithGemID(gemID),
+            )
+            
+            return tui.RunChat(session) // Novo RunChat aceita a sessão
+        }
+        ```
+
+  * **`internal/tui/model.go` (final):**
+
+      * **Assinatura de `RunChat` (nova)**:
+        ```go
+        func RunChat(session api.ChatSessionInterface) error {
+            m := NewChatModel(session)
+            // ... (restante da inicialização do BubbleTea)
+        }
+        ```
 
 ## 4\. Key Considerations & Risk Mitigation
 
 ### 4.1. Technical Risks & Challenges
 
-| Risco | Descrição | Estratégia de Mitigação |
-| :--- | :--- | :--- |
-| **Dependência de Biblioteca Fuzzy** | A adição de uma biblioteca de terceiros para busca fuzzy (`github.com/junegunn/fzf/src/matcher`) pode aumentar o tamanho do binário e complexidade. | **Mitigação:** Começar com uma busca "fuzzy o bastante" simples usando `strings.Contains` (case-insensitive) na `Model.Update`. Se a performance for um problema, considerar um TUI toolkit como `bubbles/list` que já tem capacidades de filtragem. |
-| **Performance de Renderização** | Em listas muito grandes de Gems, a renderização de Markdown na tela de detalhes (Task 2.3) e a atualização de lista a cada tecla digitada (Task 2.2) podem causar lentidão (lag). | **Mitigação:** Implementar um **debouncing** na função de filtro (se a lista for muito grande) e usar o `glamour` com **pooling** de renderizadores (`internal/render/cache.go`) para a renderização de Markdown, que já é prática do projeto. |
-| **Atalho `Ctrl+C`** | `Ctrl+C` é usado por `bubbletea` como sinal de saída. | **Mitigação:** Usar uma tecla alternativa para cópia, como `c` (simples) ou `ctrl+y` (yank), e reservar `ctrl+c` para sair. Na tela de detalhes, a tecla `c` será preferível para não gerar conflito. |
+| Risco | Mitigação |
+| :--- | :--- |
+| **Acoplamento de TUI:** O TUI de Gems precisa iniciar o TUI de Chat, o que pode quebrar a separação de preocupações. | O `RunGemsTUI` retornará o `GemID` selecionado (se houver), permitindo que a camada de comando (`commands/gems.go`) orquestre a transição, mantendo o TUI de Gems e o TUI de Chat desacoplados. |
+| **Inicialização Dupla de Cliente:** O `createGemsClient` em `gems.go` já inicializa o cliente. Se for usado em `runGemsList` seguido por um `ChatTUI`, o cliente pode ser fechado prematuramente. | Garantir que o `createGemsClient` não feche o cliente se um chat TUI for iniciado. A responsabilidade de fechar o cliente deve ser transferida para a função de comando de nível superior (`runGemsList`). |
+| **Modelos Inconsistentes:** Se a Gem exigir um modelo específico, mas o usuário tiver configurado outro. | Usar `api.WithChatModel` no `StartChatWithOptions` para priorizar o modelo padrão do usuário, a menos que a lógica de Gem no futuro force um modelo. O chat TUI pode ser iniciado com o modelo preferencial (lido via `getModel()`). |
 
 ### 4.2. Dependencies
 
-  * **Internas:** `internal/api/client.go` (para `FetchGems`), `internal/tui/styles.go` (para estilos), `internal/render` (para renderizar `Prompt` em detalhes).
-  * **Externas:** `github.com/charmbracelet/bubbletea`, `github.com/charmbracelet/bubbles`, `github.com/charmbracelet/lipgloss`, `github.com/atotto/clipboard`.
+  * **Interna:** Dependência do `commands/gems.go` na nova interface de `tui.RunGemsTUI` e na nova função de `tui.RunChat`.
+  * **API:** Dependência do `api.GeminiClient.StartChatWithOptions` e `api.WithGemID`. (Já estão implementados, apenas o uso muda).
 
 ### 4.3. Non-Functional Requirements (NFRs) Addressed
 
-  * **Usabilidade (NFR Principal):** O novo TUI interativo e a busca em tempo real melhoram drasticamente a usabilidade em relação à listagem estática. A navegação por teclado e a visualização detalhada são padrão ouro em UX de CLI moderna.
-  * **Performance:** A reutilização do `internal/render` com caching de renderizadores minimiza o impacto da renderização do Markdown. A busca baseada em strings simples é inerentemente rápida para listas de tamanho moderado.
-  * **Manutenibilidade:** A nova funcionalidade é isolada em um novo TUI Model (`gems_model.go`), seguindo o padrão M-U-V (Model-Update-View) do `bubbletea`, o que a torna modular e fácil de manter/testar.
+| NFR | Contribuição do Plano |
+| :--- | :--- |
+| **Usabilidade:** | Adiciona um fluxo de trabalho intuitivo no TUI para iniciar um chat com Gem, em vez de exigir que o usuário copie e cole IDs de Gem. |
+| **Manutenibilidade:** | Centraliza a lógica de inicialização de sessão de chat com opções (incluindo Gem ID) no `api.Client`, e a orquestração na camada `commands`, promovendo a separação de preocupações. |
+| **Extensibilidade:** | O novo `tui.RunChat(session)` permite que o `ChatTUI` seja iniciado por qualquer parte do código com uma sessão pré-configurada (histórico, gem, modelo), facilitando futuras extensões. |
 
 -----
 
 ## 5\. Success Metrics / Validation Criteria
 
-  * **Funcionalidade:** O comando `geminiweb gems list` abre a interface TUI interativa.
-  * **Busca:** Digitar uma substring de nome/descrição de um Gem deve filtrar a lista de forma correta e rápida (sub-50ms por tecla).
-  * **Cópia:** Pressionar o atalho de cópia na tela de detalhes deve colocar o `Gem.ID` no clipboard e exibir uma notificação visual temporária.
-  * **Coerência Visual:** A aparência do TUI de Gems deve ser consistente com a TUI de Chat/Configuração, utilizando os mesmos estilos (`internal/tui/styles.go`).
+  * O comando `geminiweb gems list` abre o TUI de Gems.
+  * Dentro do TUI de Gems, uma nova opção de atalho (e.g., `c`) é visível para a Gem selecionada.
+  * Ao pressionar o atalho, o TUI de Gems fecha e o TUI de Chat é iniciado automaticamente.
+  * O campo `gemID` da sessão de chat resultante (`internal/api/session.go`) é preenchido com o ID da Gem selecionada.
+  * A primeira resposta no chat reflete as instruções da Gem (se ela tiver um System Prompt).
 
 -----
 
 ## 6\. Assumptions Made
 
-1.  **Compatibilidade com Clipboard:** Assume-se que o pacote `github.com/atotto/clipboard` funciona corretamente no ambiente de execução do usuário (o que geralmente requer ferramentas de sistema operacional como `xclip` ou `pbcopy`).
-2.  **Tamanho da Lista de Gems:** Assume-se que a lista de Gems do usuário não excederá algumas centenas, tornando a busca linear (`strings.Contains`) aceitável em termos de performance.
-3.  **Requisitos de Infraestrutura:** O `api.GeminiClient` está inicializado e autenticado ao entrar no TUI (conforme já é feito no `gems.go` atual).
+  * O comando `geminiweb chat` será refatorado para usar a nova assinatura `tui.RunChat(session)` (onde a sessão é criada sem um GemID).
+  * A inicialização do `GeminiClient` em `commands/gems.go` (`createGemsClient`) é suficiente para autenticação antes de iniciar o TUI de Gems.
+  * O retorno de `tui.RunGemsTUI` pode ser uma struct/string contendo o GemID, se a arquitetura Bubble Tea for usada fora do `tea.Run()` para orquestração. **Assumindo que `tea.Run()` pode retornar a `tea.Model` final, que pode ser inspecionada para obter o `GemID` via uma interface.**
 
 -----
 
 ## 7\. Open Questions / Areas for Further Investigation
 
-  * **Biblioteca Fuzzy:** Devo usar uma biblioteca de busca fuzzy mais sofisticada (e.g., para busca por caracteres não adjacentes) ou a busca por substring simples será considerada "fuzzy o bastante" para a primeira versão?
-  * **UX do Atalho de Cópia:** Qual atalho será mais intuitivo para "copiar ID" na tela de detalhes, minimizando conflitos com atalhos globais do terminal e com o TUI? (Recomendação: `c` ou `ctrl+y`).
+  * **Implementação de Retorno do TUI:** Como o `tui.RunGemsTUI` (que usa `tea.NewProgram().Run()`) pode retornar o `GemID` selecionado?
+      * *Plano de Resposta:* Modificar `RunGemsTUI` para retornar uma string (`GemID`) e um erro, e inspecionar o `tea.Model` resultante no `runGemsList`.
+  * **Transição de Sessão:** O `ChatSession` pode ser criado com o `client` e o `GemID` antes de iniciar o TUI. O TUI de Chat precisa ser atualizado para aceitar o `ChatSession` completo, em vez de apenas o `client` e o `modelName`. **(Abordado no Task 2.4 - nova assinatura `tui.RunChat(session)`).**

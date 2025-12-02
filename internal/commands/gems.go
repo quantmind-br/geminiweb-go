@@ -6,12 +6,12 @@ import (
 	"io"
 	"os"
 	"strings"
-	"text/tabwriter"
 
 	"github.com/spf13/cobra"
 
 	"github.com/diogo/geminiweb/internal/api"
 	"github.com/diogo/geminiweb/internal/models"
+	"github.com/diogo/geminiweb/internal/tui"
 )
 
 // GemReaderInterface defines the interface for reading gem input
@@ -116,32 +116,8 @@ func runGemsList(cmd *cobra.Command, args []string) error {
 	}
 	defer client.Close()
 
-	gems, err := client.FetchGems(gemsIncludeHidden)
-	if err != nil {
-		return fmt.Errorf("failed to fetch gems: %w", err)
-	}
-
-	if gems.Len() == 0 {
-		fmt.Println("No gems found.")
-		return nil
-	}
-
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(w, "ID\tNAME\tTYPE\tDESCRIPTION")
-	_, _ = fmt.Fprintln(w, "--\t----\t----\t-----------")
-
-	for _, gem := range gems.Values() {
-		gemType := "custom"
-		if gem.Predefined {
-			gemType = "system"
-		}
-		desc := gem.Description
-		if len(desc) > 50 {
-			desc = desc[:47] + "..."
-		}
-		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", gem.ID, gem.Name, gemType, desc)
-	}
-	return w.Flush()
+	// Launch the interactive TUI for gems
+	return tui.RunGemsTUI(client, gemsIncludeHidden)
 }
 
 func runGemsCreate(cmd *cobra.Command, args []string) error {
