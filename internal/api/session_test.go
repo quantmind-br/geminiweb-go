@@ -54,7 +54,7 @@ func TestChatSession_SendMessage(t *testing.T) {
 				model:  models.Model25Flash,
 			}
 
-			got, err := session.SendMessage(tt.prompt)
+			got, err := session.SendMessage(tt.prompt, nil)
 
 			if tt.expectedErr {
 				if err == nil {

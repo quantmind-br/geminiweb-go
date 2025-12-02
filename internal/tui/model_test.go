@@ -10,6 +10,8 @@ import (
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/diogo/geminiweb/internal/api"
 	"github.com/diogo/geminiweb/internal/models"
 	"github.com/diogo/geminiweb/internal/render"
 )
@@ -522,14 +524,14 @@ func (m *mockSpinner) View() string {
 
 // mockChatSession is a mock of *api.ChatSession for testing
 type mockChatSession struct {
-	sendMessageFunc    func(prompt string) (*models.ModelOutput, error)
+	sendMessageFunc    func(prompt string, files []*api.UploadedFile) (*models.ModelOutput, error)
 	sendMessageCalled  bool
 }
 
-func (m *mockChatSession) SendMessage(prompt string) (*models.ModelOutput, error) {
+func (m *mockChatSession) SendMessage(prompt string, files []*api.UploadedFile) (*models.ModelOutput, error) {
 	m.sendMessageCalled = true
 	if m.sendMessageFunc != nil {
-		return m.sendMessageFunc(prompt)
+		return m.sendMessageFunc(prompt, files)
 	}
 	return nil, nil
 }
@@ -620,7 +622,7 @@ func TestModel_sendMessage(t *testing.T) {
 	t.Run("success response", func(t *testing.T) {
 		// Create a mock session that returns success
 		mockSession := &mockChatSession{
-			sendMessageFunc: func(prompt string) (*models.ModelOutput, error) {
+			sendMessageFunc: func(prompt string, files []*api.UploadedFile) (*models.ModelOutput, error) {
 				return &models.ModelOutput{
 					Candidates: []models.Candidate{{Text: "success response"}},
 					Chosen:     0,
@@ -665,7 +667,7 @@ func TestModel_sendMessage(t *testing.T) {
 	t.Run("error response", func(t *testing.T) {
 		// Create a mock session that returns error
 		mockSession := &mockChatSession{
-			sendMessageFunc: func(prompt string) (*models.ModelOutput, error) {
+			sendMessageFunc: func(prompt string, files []*api.UploadedFile) (*models.ModelOutput, error) {
 				return nil, fmt.Errorf("test error")
 			},
 		}
@@ -729,7 +731,7 @@ func TestRunChatWithSession(t *testing.T) {
 func TestNewChatModelWithSession(t *testing.T) {
 	// Test that NewChatModelWithSession creates a model with the provided session
 	mockSession := &mockChatSession{
-		sendMessageFunc: func(prompt string) (*models.ModelOutput, error) {
+		sendMessageFunc: func(prompt string, files []*api.UploadedFile) (*models.ModelOutput, error) {
 			return &models.ModelOutput{
 				Candidates: []models.Candidate{{Text: "test response"}},
 				Chosen:     0,
@@ -759,7 +761,7 @@ func TestNewChatModelWithSession_SendsMessages(t *testing.T) {
 	// Test that the model uses the provided session for sending messages
 	var receivedPrompt string
 	mockSession := &mockChatSession{
-		sendMessageFunc: func(prompt string) (*models.ModelOutput, error) {
+		sendMessageFunc: func(prompt string, files []*api.UploadedFile) (*models.ModelOutput, error) {
 			receivedPrompt = prompt
 			return &models.ModelOutput{
 				Candidates: []models.Candidate{{Text: "response"}},

@@ -293,8 +293,8 @@ func runQuery(prompt string, rawOutput bool) error {
 	}
 
 	opts := &api.GenerateOptions{
-		Images: images,
-		GemID:  gemID,
+		Files: images,
+		GemID: gemID,
 	}
 
 	output, err := client.GenerateContent(actualPrompt, opts)

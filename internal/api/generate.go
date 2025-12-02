@@ -17,9 +17,9 @@ import (
 // GenerateOptions contains options for content generation
 type GenerateOptions struct {
 	Model    models.Model
-	Metadata []string         // [cid, rid, rcid] for chat context
-	Images   []*UploadedImage // Images to include in the prompt
-	GemID    string           // ID do gem a usar (server-side persona)
+	Metadata []string        // [cid, rid, rcid] for chat context
+	Files    []*UploadedFile // Files to include in the prompt (images, text, etc.)
+	GemID    string          // ID do gem a usar (server-side persona)
 }
 
 // GenerateContent sends a prompt to Gemini and returns the response
@@ -67,7 +67,7 @@ func (c *GeminiClient) doGenerateContent(prompt string, opts *GenerateOptions) (
 
 	model := c.GetModel()
 	var metadata []string
-	var images []*UploadedImage
+	var files []*UploadedFile
 	var gemID string
 
 	if opts != nil {
@@ -75,12 +75,12 @@ func (c *GeminiClient) doGenerateContent(prompt string, opts *GenerateOptions) (
 			model = opts.Model
 		}
 		metadata = opts.Metadata
-		images = opts.Images
+		files = opts.Files
 		gemID = opts.GemID
 	}
 
 	// Build the request payload
-	payload, err := buildPayloadWithGem(prompt, metadata, images, gemID)
+	payload, err := buildPayloadWithGem(prompt, metadata, files, gemID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build payload: %w", err)
 	}
@@ -169,23 +169,24 @@ func buildPayload(prompt string, metadata []string) (string, error) {
 
 // buildPayloadWithImages creates the f.req payload including file references
 // Based on the Python Gemini-API implementation
-func buildPayloadWithImages(prompt string, metadata []string, images []*UploadedImage) (string, error) {
+// Deprecated: Use buildPayloadWithGem directly with files parameter
+func buildPayloadWithImages(prompt string, metadata []string, images []*UploadedFile) (string, error) {
 	return buildPayloadWithGem(prompt, metadata, images, "")
 }
 
 // buildPayloadWithGem creates the f.req payload including file references and gem
 // Based on the Python Gemini-API implementation
-func buildPayloadWithGem(prompt string, metadata []string, images []*UploadedImage, gemID string) (string, error) {
+func buildPayloadWithGem(prompt string, metadata []string, files []*UploadedFile, gemID string) (string, error) {
 	// Inner payload structure depends on whether files are included
 	var inner []interface{}
 
-	if len(images) > 0 {
+	if len(files) > 0 {
 		// Build file parts: [[file_id], filename] for each file
 		var fileParts []interface{}
-		for _, img := range images {
+		for _, f := range files {
 			fileParts = append(fileParts, []interface{}{
-				[]interface{}{img.ResourceID}, // File ID wrapped in array
-				img.FileName,                  // Original filename
+				[]interface{}{f.ResourceID}, // File ID wrapped in array
+				f.FileName,                  // Original filename
 			})
 		}
 
