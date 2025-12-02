@@ -432,18 +432,23 @@ func formatErrorMessage(err error, context string) string {
 		sb.WriteString(dimStyle.Render(fmt.Sprintf("\n  Endpoint: %s", endpoint)))
 	}
 
-	// Provide helpful hints based on error type
-	switch {
-	case apierrors.IsAuthError(err):
-		sb.WriteString(dimStyle.Render("\n  Hint: Try running 'geminiweb auto-login' to refresh your session"))
-	case apierrors.IsRateLimitError(err):
-		sb.WriteString(dimStyle.Render("\n  Hint: You've hit the usage limit. Try again later or use a different model"))
-	case apierrors.IsNetworkError(err):
-		sb.WriteString(dimStyle.Render("\n  Hint: Check your internet connection and try again"))
-	case apierrors.IsTimeoutError(err):
-		sb.WriteString(dimStyle.Render("\n  Hint: Request timed out. Try again or check your connection"))
-	case apierrors.IsUploadError(err):
-		sb.WriteString(dimStyle.Render("\n  Hint: File upload failed. Check the file exists and is accessible"))
+	// Show response body if available (contains detailed error info like blocking URLs)
+	if body := apierrors.GetResponseBody(err); body != "" {
+		sb.WriteString(dimStyle.Render(fmt.Sprintf("\n\n  %s", strings.ReplaceAll(body, "\n", "\n  "))))
+	} else {
+		// Provide helpful hints based on error type only if no body
+		switch {
+		case apierrors.IsAuthError(err):
+			sb.WriteString(dimStyle.Render("\n  Hint: Try running 'geminiweb auto-login' to refresh your session"))
+		case apierrors.IsRateLimitError(err):
+			sb.WriteString(dimStyle.Render("\n  Hint: You've hit the usage limit. Try again later or use a different model"))
+		case apierrors.IsNetworkError(err):
+			sb.WriteString(dimStyle.Render("\n  Hint: Check your internet connection and try again"))
+		case apierrors.IsTimeoutError(err):
+			sb.WriteString(dimStyle.Render("\n  Hint: Request timed out. Try again or check your connection"))
+		case apierrors.IsUploadError(err):
+			sb.WriteString(dimStyle.Render("\n  Hint: File upload failed. Check the file exists and is accessible"))
+		}
 	}
 
 	return sb.String()
