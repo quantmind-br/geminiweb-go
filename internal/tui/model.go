@@ -225,6 +225,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.updateViewport()
 				m.viewport.GotoBottom()
 
+				// Auto-save user message to history
+				m.saveMessageToHistory("user", input, "")
+
 				// Start loading
 				m.loading = true
 				m.err = nil
@@ -253,13 +256,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case responseMsg:
 		m.loading = false
+		responseText := msg.output.Text()
+		thoughts := msg.output.Thoughts()
 		m.messages = append(m.messages, chatMessage{
 			role:     "assistant",
-			content:  msg.output.Text(),
-			thoughts: msg.output.Thoughts(),
+			content:  responseText,
+			thoughts: thoughts,
 		})
 		m.updateViewport()
 		m.viewport.GotoBottom()
+
+		// Auto-save assistant message to history
+		m.saveMessageToHistory("assistant", responseText, thoughts)
+
+		// Update conversation metadata for session resumption
+		m.saveMetadataToHistory()
 
 	case errMsg:
 		m.loading = false
@@ -483,6 +494,28 @@ func (m Model) sendMessage(prompt string) tea.Cmd {
 			return errMsg{err: err}
 		}
 		return responseMsg{output: output}
+	}
+}
+
+// saveMessageToHistory saves a message to the history store if available
+func (m *Model) saveMessageToHistory(role, content, thoughts string) {
+	if m.historyStore == nil || m.conversation == nil {
+		return
+	}
+	// Errors are logged but not exposed to user (best-effort persistence)
+	_ = m.historyStore.AddMessage(m.conversation.ID, role, content, thoughts)
+}
+
+// saveMetadataToHistory saves session metadata for conversation resumption
+func (m *Model) saveMetadataToHistory() {
+	if m.historyStore == nil || m.conversation == nil || m.session == nil {
+		return
+	}
+	cid := m.session.CID()
+	rid := m.session.RID()
+	rcid := m.session.RCID()
+	if cid != "" || rid != "" || rcid != "" {
+		_ = m.historyStore.UpdateMetadata(m.conversation.ID, cid, rid, rcid)
 	}
 }
 
