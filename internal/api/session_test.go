@@ -274,6 +274,152 @@ func TestChatSession_ChooseCandidate(t *testing.T) {
 	})
 }
 
+// TestChatSession_SendMessageWithFiles tests SendMessage with file attachments
+func TestChatSession_SendMessageWithFiles(t *testing.T) {
+	validCookies := &config.Cookies{
+		Secure1PSID:   "test_psid",
+		Secure1PSIDTS: "test_psidts",
+	}
+
+	t.Run("SendMessage with nil files", func(t *testing.T) {
+		mockClient := &MockHttpClient{}
+		mockClient.Err = errors.New("simulated error")
+
+		geminiClient, err := NewClient(validCookies)
+		if err != nil {
+			t.Fatalf("Failed to create client: %v", err)
+		}
+		geminiClient.httpClient = mockClient
+
+		session := &ChatSession{
+			client: geminiClient,
+			model:  models.Model25Flash,
+		}
+
+		// Call with nil files - should work the same as before
+		_, err = session.SendMessage("test prompt", nil)
+		// We expect an error from the mock, but it should be called
+		if err == nil {
+			t.Error("Expected error from mock client")
+		}
+	})
+
+	t.Run("SendMessage with empty files slice", func(t *testing.T) {
+		mockClient := &MockHttpClient{}
+		mockClient.Err = errors.New("simulated error")
+
+		geminiClient, err := NewClient(validCookies)
+		if err != nil {
+			t.Fatalf("Failed to create client: %v", err)
+		}
+		geminiClient.httpClient = mockClient
+
+		session := &ChatSession{
+			client: geminiClient,
+			model:  models.Model25Flash,
+		}
+
+		// Call with empty files slice
+		files := []*UploadedFile{}
+		_, err = session.SendMessage("test prompt", files)
+		if err == nil {
+			t.Error("Expected error from mock client")
+		}
+	})
+
+	t.Run("SendMessage with files slice", func(t *testing.T) {
+		mockClient := &MockHttpClient{}
+		mockClient.Err = errors.New("simulated error")
+
+		geminiClient, err := NewClient(validCookies)
+		if err != nil {
+			t.Fatalf("Failed to create client: %v", err)
+		}
+		geminiClient.httpClient = mockClient
+
+		session := &ChatSession{
+			client: geminiClient,
+			model:  models.Model25Flash,
+		}
+
+		// Call with files
+		files := []*UploadedFile{
+			{ResourceID: "res-1", FileName: "test.jpg", MIMEType: "image/jpeg", Size: 1024},
+			{ResourceID: "res-2", FileName: "test2.png", MIMEType: "image/png", Size: 2048},
+		}
+		_, err = session.SendMessage("describe these images", files)
+		if err == nil {
+			t.Error("Expected error from mock client")
+		}
+	})
+
+	t.Run("SendMessage preserves gemID with files", func(t *testing.T) {
+		mockClient := &MockHttpClient{}
+		mockClient.Err = errors.New("simulated error")
+
+		geminiClient, err := NewClient(validCookies)
+		if err != nil {
+			t.Fatalf("Failed to create client: %v", err)
+		}
+		geminiClient.httpClient = mockClient
+
+		session := &ChatSession{
+			client: geminiClient,
+			model:  models.Model25Flash,
+			gemID:  "test-gem-id",
+		}
+
+		files := []*UploadedFile{
+			{ResourceID: "res-1", FileName: "test.jpg", MIMEType: "image/jpeg", Size: 1024},
+		}
+
+		// SetGem should be preserved
+		if session.GetGemID() != "test-gem-id" {
+			t.Errorf("GetGemID() = %s, want test-gem-id", session.GetGemID())
+		}
+
+		// Call with files - gem ID should still be set
+		_, _ = session.SendMessage("test", files)
+
+		if session.GetGemID() != "test-gem-id" {
+			t.Errorf("GetGemID() after SendMessage = %s, want test-gem-id", session.GetGemID())
+		}
+	})
+
+	t.Run("SendMessage preserves metadata with files", func(t *testing.T) {
+		mockClient := &MockHttpClient{}
+		mockClient.Err = errors.New("simulated error")
+
+		geminiClient, err := NewClient(validCookies)
+		if err != nil {
+			t.Fatalf("Failed to create client: %v", err)
+		}
+		geminiClient.httpClient = mockClient
+
+		session := &ChatSession{
+			client:   geminiClient,
+			model:    models.Model25Flash,
+			metadata: []string{"cid1", "rid1", "rcid1"},
+		}
+
+		files := []*UploadedFile{
+			{ResourceID: "res-1", FileName: "test.jpg", MIMEType: "image/jpeg", Size: 1024},
+		}
+
+		// Verify metadata before call
+		if session.CID() != "cid1" {
+			t.Errorf("CID() = %s, want cid1", session.CID())
+		}
+
+		// Call with files - metadata should still be preserved (since we're mocking an error)
+		_, _ = session.SendMessage("test", files)
+
+		if session.CID() != "cid1" {
+			t.Errorf("CID() after SendMessage = %s, want cid1", session.CID())
+		}
+	})
+}
+
 // TestChatSession_updateMetadata tests the updateMetadata function
 func TestChatSession_updateMetadata(t *testing.T) {
 	validCookies := &config.Cookies{
