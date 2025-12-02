@@ -137,6 +137,14 @@ func WithCookieLoader(fn CookieLoader) ClientOption {
 	}
 }
 
+// WithHTTPClient sets a custom HTTP client (for testing)
+// This allows injecting a mock HTTP client to test HTTP interactions
+func WithHTTPClient(client tls_client.HttpClient) ClientOption {
+	return func(c *GeminiClient) {
+		c.httpClient = client
+	}
+}
+
 // CookieLoader is a function type for loading cookies (for dependency injection)
 type CookieLoader func() (*config.Cookies, error)
 
@@ -151,21 +159,7 @@ func NewClient(cookies *config.Cookies, opts ...ClientOption) (*GeminiClient, er
 		}
 	}
 
-	// Create TLS client with Chrome profile for browser emulation
-	// Using Chrome_133 (latest available) for better fingerprint compatibility
-	options := []tls_client.HttpClientOption{
-		tls_client.WithTimeoutSeconds(300),
-		tls_client.WithClientProfile(profiles.Chrome_133),
-		tls_client.WithNotFollowRedirects(),
-	}
-
-	httpClient, err := tls_client.NewHttpClient(tls_client.NewNoopLogger(), options...)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create HTTP client: %w", err)
-	}
-
 	client := &GeminiClient{
-		httpClient:            httpClient,
 		cookies:               cookies,
 		model:                 models.DefaultModel, // Default: gemini-2.5-flash (widely available)
 		autoRefresh:           true,
@@ -174,9 +168,26 @@ func NewClient(cookies *config.Cookies, opts ...ClientOption) (*GeminiClient, er
 		cookieLoader:          config.LoadCookies,
 	}
 
-	// Apply options
+	// Apply options first (allows injecting custom HTTP client)
 	for _, opt := range opts {
 		opt(client)
+	}
+
+	// Create default TLS client only if not injected via options
+	if client.httpClient == nil {
+		// Create TLS client with Chrome profile for browser emulation
+		// Using Chrome_133 (latest available) for better fingerprint compatibility
+		options := []tls_client.HttpClientOption{
+			tls_client.WithTimeoutSeconds(300),
+			tls_client.WithClientProfile(profiles.Chrome_133),
+			tls_client.WithNotFollowRedirects(),
+		}
+
+		httpClient, err := tls_client.NewHttpClient(tls_client.NewNoopLogger(), options...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create HTTP client: %w", err)
+		}
+		client.httpClient = httpClient
 	}
 
 	return client, nil

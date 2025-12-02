@@ -1065,6 +1065,37 @@ func TestNewClient_NilCookies(t *testing.T) {
 	}
 }
 
+// TestNewClient_WithHTTPClient tests that NewClient accepts a custom HTTP client
+func TestNewClient_WithHTTPClient(t *testing.T) {
+	validCookies := &config.Cookies{
+		Secure1PSID:   "test_psid",
+		Secure1PSIDTS: "test_psidts",
+	}
+
+	// Create a mock HTTP client
+	mockClient := &mockHTTPClient{
+		doFunc: func(req *fhttp.Request) (*fhttp.Response, error) {
+			return &fhttp.Response{
+				StatusCode: 200,
+				Body:       io.NopCloser(strings.NewReader("test")),
+			}, nil
+		},
+	}
+
+	client, err := NewClient(validCookies, WithHTTPClient(mockClient))
+	if err != nil {
+		t.Fatalf("NewClient with WithHTTPClient failed: %v", err)
+	}
+	if client == nil {
+		t.Fatal("NewClient with WithHTTPClient should return a valid client")
+	}
+
+	// Verify the mock HTTP client was injected
+	if client.httpClient != mockClient {
+		t.Error("Expected injected HTTP client to be used")
+	}
+}
+
 // TestGeminiClient_InitWithCookieLoader tests Init with a custom cookie loader
 func TestGeminiClient_InitWithCookieLoader(t *testing.T) {
 	t.Run("loads_cookies_from_loader_when_nil", func(t *testing.T) {
