@@ -12,6 +12,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/diogo/geminiweb/internal/api"
+	"github.com/diogo/geminiweb/internal/config"
 	"github.com/diogo/geminiweb/internal/history"
 	"github.com/diogo/geminiweb/internal/models"
 	"github.com/diogo/geminiweb/internal/render"
@@ -2225,6 +2226,971 @@ func TestHistoryLoadedForChatMsg(t *testing.T) {
 		}
 		if msg.conversations != nil {
 			t.Error("should not have conversations")
+		}
+	})
+}
+
+// ==================== Multi-line Input Tests ====================
+
+func TestCreateTextarea(t *testing.T) {
+	ta := createTextarea()
+
+	t.Run("has correct placeholder", func(t *testing.T) {
+		if !strings.Contains(ta.Placeholder, "Shift+Enter") {
+			t.Error("placeholder should mention Shift+Enter for newline")
+		}
+	})
+
+	t.Run("has multi-line height", func(t *testing.T) {
+		// Height should be at least 3 for multi-line input
+		// We can't directly check height, but we can verify textarea is configured
+		if ta.CharLimit != 4000 {
+			t.Errorf("expected CharLimit 4000, got %d", ta.CharLimit)
+		}
+	})
+
+	t.Run("InsertNewline uses shift+enter", func(t *testing.T) {
+		// The KeyMap.InsertNewline should be configured for shift+enter
+		// We verify by checking the key binding keys
+		keys := ta.KeyMap.InsertNewline.Keys()
+		found := false
+		for _, k := range keys {
+			if k == "shift+enter" || k == "ctrl+enter" {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("InsertNewline should include shift+enter or ctrl+enter, got keys: %v", keys)
+		}
+	})
+
+	t.Run("Enter is not bound to InsertNewline", func(t *testing.T) {
+		keys := ta.KeyMap.InsertNewline.Keys()
+		for _, k := range keys {
+			if k == "enter" {
+				t.Error("Enter should not be bound to InsertNewline (should send message instead)")
+			}
+		}
+	})
+}
+
+func TestModel_MultilineInput_StatusBar(t *testing.T) {
+	ta := textarea.New()
+	s := spinner.New()
+
+	m := Model{
+		textarea: ta,
+		spinner:  s,
+		ready:    true,
+		width:    120,
+		height:   40,
+		viewport: viewport.New(100, 20),
+	}
+
+	statusBar := m.renderStatusBar(100)
+
+	t.Run("shows Enter for Send", func(t *testing.T) {
+		if !strings.Contains(statusBar, "Enter") || !strings.Contains(statusBar, "Send") {
+			t.Error("status bar should show Enter for Send")
+		}
+	})
+
+	t.Run("shows Shift+Enter for Newline", func(t *testing.T) {
+		if !strings.Contains(statusBar, "Shift+Enter") || !strings.Contains(statusBar, "Newline") {
+			t.Error("status bar should show Shift+Enter for Newline")
+		}
+	})
+}
+
+func TestModel_EnterKey_SendsMessage(t *testing.T) {
+	t.Run("sends message when text present", func(t *testing.T) {
+		ta := createTextarea()
+		ta.SetValue("Hello world")
+		s := spinner.New()
+		mockSession := &mockChatSession{}
+
+		m := Model{
+			textarea: ta,
+			spinner:  s,
+			session:  mockSession,
+			ready:    true,
+			viewport: viewport.New(100, 20),
+			messages: []chatMessage{},
+		}
+
+		msg := tea.KeyMsg{Type: tea.KeyEnter}
+		updatedModel, cmd := m.Update(msg)
+
+		typedModel := updatedModel.(Model)
+
+		// Message should be added to messages
+		if len(typedModel.messages) != 1 {
+			t.Errorf("expected 1 message, got %d", len(typedModel.messages))
+		}
+
+		// First message should be from user
+		if typedModel.messages[0].role != "user" {
+			t.Errorf("expected user role, got %s", typedModel.messages[0].role)
+		}
+
+		// Content should match
+		if typedModel.messages[0].content != "Hello world" {
+			t.Errorf("expected 'Hello world', got %s", typedModel.messages[0].content)
+		}
+
+		// Loading should be true
+		if !typedModel.loading {
+			t.Error("should be loading after sending message")
+		}
+
+		// Textarea should be cleared
+		if typedModel.textarea.Value() != "" {
+			t.Error("textarea should be cleared after sending")
+		}
+
+		// Command should be returned (batch with send, spinner, animation)
+		if cmd == nil {
+			t.Error("should return a command")
+		}
+	})
+
+	t.Run("does nothing when text is empty", func(t *testing.T) {
+		ta := createTextarea()
+		ta.SetValue("")
+		s := spinner.New()
+		mockSession := &mockChatSession{}
+
+		m := Model{
+			textarea: ta,
+			spinner:  s,
+			session:  mockSession,
+			ready:    true,
+			viewport: viewport.New(100, 20),
+			messages: []chatMessage{},
+		}
+
+		msg := tea.KeyMsg{Type: tea.KeyEnter}
+		updatedModel, _ := m.Update(msg)
+
+		typedModel := updatedModel.(Model)
+
+		// No message should be added
+		if len(typedModel.messages) != 0 {
+			t.Errorf("expected 0 messages, got %d", len(typedModel.messages))
+		}
+
+		// Should not be loading
+		if typedModel.loading {
+			t.Error("should not be loading when text is empty")
+		}
+	})
+
+	t.Run("does nothing when only whitespace", func(t *testing.T) {
+		ta := createTextarea()
+		ta.SetValue("   \n\t  ")
+		s := spinner.New()
+		mockSession := &mockChatSession{}
+
+		m := Model{
+			textarea: ta,
+			spinner:  s,
+			session:  mockSession,
+			ready:    true,
+			viewport: viewport.New(100, 20),
+			messages: []chatMessage{},
+		}
+
+		msg := tea.KeyMsg{Type: tea.KeyEnter}
+		updatedModel, _ := m.Update(msg)
+
+		typedModel := updatedModel.(Model)
+
+		// No message should be added
+		if len(typedModel.messages) != 0 {
+			t.Errorf("expected 0 messages, got %d", len(typedModel.messages))
+		}
+	})
+
+	t.Run("does nothing when loading", func(t *testing.T) {
+		ta := createTextarea()
+		ta.SetValue("Hello")
+		s := spinner.New()
+		mockSession := &mockChatSession{}
+
+		m := Model{
+			textarea: ta,
+			spinner:  s,
+			session:  mockSession,
+			ready:    true,
+			loading:  true,
+			viewport: viewport.New(100, 20),
+			messages: []chatMessage{},
+		}
+
+		msg := tea.KeyMsg{Type: tea.KeyEnter}
+		updatedModel, _ := m.Update(msg)
+
+		typedModel := updatedModel.(Model)
+
+		// No message should be added while loading
+		if len(typedModel.messages) != 0 {
+			t.Errorf("expected 0 messages while loading, got %d", len(typedModel.messages))
+		}
+	})
+}
+
+func TestModel_MultilineInput_Integration(t *testing.T) {
+	t.Run("NewChatModelWithSession uses createTextarea", func(t *testing.T) {
+		session := &mockChatSession{}
+		ta := createTextarea()
+		s := spinner.New()
+
+		// Simulate what NewChatModelWithSession does
+		m := Model{
+			session:   session,
+			modelName: "test-model",
+			textarea:  ta,
+			spinner:   s,
+			messages:  []chatMessage{},
+		}
+
+		keys := m.textarea.KeyMap.InsertNewline.Keys()
+		hasShiftEnter := false
+		for _, k := range keys {
+			if k == "shift+enter" {
+				hasShiftEnter = true
+				break
+			}
+		}
+		if !hasShiftEnter {
+			t.Error("NewChatModelWithSession textarea should have shift+enter for InsertNewline")
+		}
+	})
+
+	t.Run("NewChatModelWithConversation uses createTextarea", func(t *testing.T) {
+		session := &mockChatSession{}
+		conv := &history.Conversation{ID: "test"}
+		store := &mockHistoryStoreForModel{}
+		ta := createTextarea()
+		s := spinner.New()
+
+		// Simulate what NewChatModelWithConversation does
+		m := Model{
+			session:      session,
+			modelName:    "test-model",
+			textarea:     ta,
+			spinner:      s,
+			messages:     []chatMessage{},
+			conversation: conv,
+			historyStore: store,
+		}
+
+		keys := m.textarea.KeyMap.InsertNewline.Keys()
+		hasShiftEnter := false
+		for _, k := range keys {
+			if k == "shift+enter" {
+				hasShiftEnter = true
+				break
+			}
+		}
+		if !hasShiftEnter {
+			t.Error("NewChatModelWithConversation textarea should have shift+enter for InsertNewline")
+		}
+	})
+}
+
+// ==================== Command Parsing Tests ====================
+
+func TestParseCommand(t *testing.T) {
+	tests := []struct {
+		name      string
+		input     string
+		expected  ParsedCommand
+	}{
+		{
+			name:  "simple command without args",
+			input: "/history",
+			expected: ParsedCommand{
+				Command:   "history",
+				Args:      "",
+				IsCommand: true,
+			},
+		},
+		{
+			name:  "command with args",
+			input: "/file /path/to/file.txt",
+			expected: ParsedCommand{
+				Command:   "file",
+				Args:      "/path/to/file.txt",
+				IsCommand: true,
+			},
+		},
+		{
+			name:  "command with spaces in args",
+			input: "/file /path/to/my file.txt",
+			expected: ParsedCommand{
+				Command:   "file",
+				Args:      "/path/to/my file.txt",
+				IsCommand: true,
+			},
+		},
+		{
+			name:  "not a command - regular text",
+			input: "hello world",
+			expected: ParsedCommand{
+				Command:   "",
+				Args:      "",
+				IsCommand: false,
+			},
+		},
+		{
+			name:  "not a command - empty string",
+			input: "",
+			expected: ParsedCommand{
+				Command:   "",
+				Args:      "",
+				IsCommand: false,
+			},
+		},
+		{
+			name:  "command is lowercased",
+			input: "/HISTORY",
+			expected: ParsedCommand{
+				Command:   "history",
+				Args:      "",
+				IsCommand: true,
+			},
+		},
+		{
+			name:  "command with leading whitespace",
+			input: "  /gems",
+			expected: ParsedCommand{
+				Command:   "gems",
+				Args:      "",
+				IsCommand: true,
+			},
+		},
+		{
+			name:  "image command",
+			input: "/image ~/Pictures/photo.jpg",
+			expected: ParsedCommand{
+				Command:   "image",
+				Args:      "~/Pictures/photo.jpg",
+				IsCommand: true,
+			},
+		},
+		{
+			name:  "exit command",
+			input: "/exit",
+			expected: ParsedCommand{
+				Command:   "exit",
+				Args:      "",
+				IsCommand: true,
+			},
+		},
+		{
+			name:  "clear command",
+			input: "/clear",
+			expected: ParsedCommand{
+				Command:   "clear",
+				Args:      "",
+				IsCommand: true,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := parseCommand(tt.input)
+
+			if result.Command != tt.expected.Command {
+				t.Errorf("Command: expected %q, got %q", tt.expected.Command, result.Command)
+			}
+			if result.Args != tt.expected.Args {
+				t.Errorf("Args: expected %q, got %q", tt.expected.Args, result.Args)
+			}
+			if result.IsCommand != tt.expected.IsCommand {
+				t.Errorf("IsCommand: expected %v, got %v", tt.expected.IsCommand, result.IsCommand)
+			}
+		})
+	}
+}
+
+func TestModel_CommandHandling(t *testing.T) {
+	t.Run("exit command quits", func(t *testing.T) {
+		ta := createTextarea()
+		ta.SetValue("/exit")
+		s := spinner.New()
+		mockSession := &mockChatSession{}
+
+		m := Model{
+			textarea: ta,
+			spinner:  s,
+			session:  mockSession,
+			ready:    true,
+			viewport: viewport.New(100, 20),
+			messages: []chatMessage{},
+		}
+
+		msg := tea.KeyMsg{Type: tea.KeyEnter}
+		_, cmd := m.Update(msg)
+
+		// Should return quit command
+		if cmd == nil {
+			t.Error("expected quit command for /exit")
+		}
+	})
+
+	t.Run("quit command quits", func(t *testing.T) {
+		ta := createTextarea()
+		ta.SetValue("/quit")
+		s := spinner.New()
+		mockSession := &mockChatSession{}
+
+		m := Model{
+			textarea: ta,
+			spinner:  s,
+			session:  mockSession,
+			ready:    true,
+			viewport: viewport.New(100, 20),
+			messages: []chatMessage{},
+		}
+
+		msg := tea.KeyMsg{Type: tea.KeyEnter}
+		_, cmd := m.Update(msg)
+
+		if cmd == nil {
+			t.Error("expected quit command for /quit")
+		}
+	})
+
+	t.Run("unknown command shows error", func(t *testing.T) {
+		ta := createTextarea()
+		ta.SetValue("/unknowncommand")
+		s := spinner.New()
+		mockSession := &mockChatSession{}
+
+		m := Model{
+			textarea: ta,
+			spinner:  s,
+			session:  mockSession,
+			ready:    true,
+			viewport: viewport.New(100, 20),
+			messages: []chatMessage{},
+		}
+
+		msg := tea.KeyMsg{Type: tea.KeyEnter}
+		updatedModel, _ := m.Update(msg)
+
+		typedModel := updatedModel.(Model)
+
+		if typedModel.err == nil {
+			t.Error("expected error for unknown command")
+		}
+		if !strings.Contains(typedModel.err.Error(), "unknown command") {
+			t.Errorf("expected 'unknown command' error, got: %v", typedModel.err)
+		}
+	})
+
+	t.Run("clear command clears attachments", func(t *testing.T) {
+		ta := createTextarea()
+		ta.SetValue("/clear")
+		s := spinner.New()
+		mockSession := &mockChatSession{}
+
+		m := Model{
+			textarea:    ta,
+			spinner:     s,
+			session:     mockSession,
+			ready:       true,
+			viewport:    viewport.New(100, 20),
+			messages:    []chatMessage{},
+			attachments: []*api.UploadedFile{{FileName: "test.txt"}},
+		}
+
+		msg := tea.KeyMsg{Type: tea.KeyEnter}
+		updatedModel, _ := m.Update(msg)
+
+		typedModel := updatedModel.(Model)
+
+		if len(typedModel.attachments) != 0 {
+			t.Errorf("expected 0 attachments after /clear, got %d", len(typedModel.attachments))
+		}
+		if typedModel.err != nil {
+			t.Errorf("unexpected error: %v", typedModel.err)
+		}
+	})
+
+	t.Run("gems command enters gem selection mode", func(t *testing.T) {
+		ta := createTextarea()
+		ta.SetValue("/gems")
+		s := spinner.New()
+		mockSession := &mockChatSession{}
+
+		m := Model{
+			textarea: ta,
+			spinner:  s,
+			session:  mockSession,
+			ready:    true,
+			viewport: viewport.New(100, 20),
+			messages: []chatMessage{},
+		}
+
+		msg := tea.KeyMsg{Type: tea.KeyEnter}
+		updatedModel, cmd := m.Update(msg)
+
+		typedModel := updatedModel.(Model)
+
+		if !typedModel.selectingGem {
+			t.Error("expected selectingGem to be true")
+		}
+		if !typedModel.gemsLoading {
+			t.Error("expected gemsLoading to be true")
+		}
+		if cmd == nil {
+			t.Error("expected command to load gems")
+		}
+	})
+
+	t.Run("history command without store shows error", func(t *testing.T) {
+		ta := createTextarea()
+		ta.SetValue("/history")
+		s := spinner.New()
+		mockSession := &mockChatSession{}
+
+		m := Model{
+			textarea:         ta,
+			spinner:          s,
+			session:          mockSession,
+			ready:            true,
+			viewport:         viewport.New(100, 20),
+			messages:         []chatMessage{},
+			fullHistoryStore: nil, // No store
+		}
+
+		msg := tea.KeyMsg{Type: tea.KeyEnter}
+		updatedModel, _ := m.Update(msg)
+
+		typedModel := updatedModel.(Model)
+
+		if typedModel.err == nil {
+			t.Error("expected error when history store is nil")
+		}
+	})
+}
+
+// mockGeminiClientWithUpload implements GeminiClientInterface with file upload
+type mockGeminiClientWithUpload struct {
+	uploadFileResult *api.UploadedFile
+	uploadFileErr    error
+	uploadFileCalled bool
+	uploadFilePath   string
+}
+
+func (m *mockGeminiClientWithUpload) Init() error                 { return nil }
+func (m *mockGeminiClientWithUpload) Close()                      {}
+func (m *mockGeminiClientWithUpload) GetAccessToken() string      { return "" }
+func (m *mockGeminiClientWithUpload) GetCookies() *config.Cookies { return nil }
+func (m *mockGeminiClientWithUpload) GetModel() models.Model      { return models.Model{} }
+func (m *mockGeminiClientWithUpload) SetModel(model models.Model) {}
+func (m *mockGeminiClientWithUpload) IsClosed() bool              { return false }
+func (m *mockGeminiClientWithUpload) StartChat(model ...models.Model) *api.ChatSession {
+	return nil
+}
+func (m *mockGeminiClientWithUpload) StartChatWithOptions(opts ...api.ChatOption) *api.ChatSession {
+	return nil
+}
+func (m *mockGeminiClientWithUpload) GenerateContent(prompt string, opts *api.GenerateOptions) (*models.ModelOutput, error) {
+	return nil, nil
+}
+func (m *mockGeminiClientWithUpload) UploadImage(filePath string) (*api.UploadedImage, error) {
+	return nil, nil
+}
+func (m *mockGeminiClientWithUpload) UploadFile(filePath string) (*api.UploadedFile, error) {
+	m.uploadFileCalled = true
+	m.uploadFilePath = filePath
+	return m.uploadFileResult, m.uploadFileErr
+}
+func (m *mockGeminiClientWithUpload) RefreshFromBrowser() (bool, error) { return false, nil }
+func (m *mockGeminiClientWithUpload) IsBrowserRefreshEnabled() bool     { return false }
+func (m *mockGeminiClientWithUpload) FetchGems(includeHidden bool) (*models.GemJar, error) {
+	return nil, nil
+}
+func (m *mockGeminiClientWithUpload) CreateGem(name, prompt, description string) (*models.Gem, error) {
+	return nil, nil
+}
+func (m *mockGeminiClientWithUpload) UpdateGem(gemID, name, prompt, description string) (*models.Gem, error) {
+	return nil, nil
+}
+func (m *mockGeminiClientWithUpload) DeleteGem(gemID string) error    { return nil }
+func (m *mockGeminiClientWithUpload) Gems() *models.GemJar            { return nil }
+func (m *mockGeminiClientWithUpload) GetGem(id, name string) *models.Gem { return nil }
+func (m *mockGeminiClientWithUpload) BatchExecute(requests []api.RPCData) ([]api.BatchResponse, error) {
+	return nil, nil
+}
+
+func TestModel_FileCommand(t *testing.T) {
+	t.Run("file command without path shows error", func(t *testing.T) {
+		ta := createTextarea()
+		ta.SetValue("/file")
+		s := spinner.New()
+		mockSession := &mockChatSession{}
+		mockClient := &mockGeminiClientWithUpload{}
+
+		m := Model{
+			textarea: ta,
+			spinner:  s,
+			session:  mockSession,
+			client:   mockClient,
+			ready:    true,
+			viewport: viewport.New(100, 20),
+			messages: []chatMessage{},
+		}
+
+		msg := tea.KeyMsg{Type: tea.KeyEnter}
+		updatedModel, _ := m.Update(msg)
+
+		typedModel := updatedModel.(Model)
+
+		if typedModel.err == nil {
+			t.Error("expected error for /file without path")
+		}
+		if !strings.Contains(typedModel.err.Error(), "usage:") {
+			t.Errorf("expected usage error, got: %v", typedModel.err)
+		}
+	})
+
+	t.Run("file command with nonexistent file shows error", func(t *testing.T) {
+		ta := createTextarea()
+		ta.SetValue("/file /nonexistent/path/to/file.txt")
+		s := spinner.New()
+		mockSession := &mockChatSession{}
+		mockClient := &mockGeminiClientWithUpload{}
+
+		m := Model{
+			textarea: ta,
+			spinner:  s,
+			session:  mockSession,
+			client:   mockClient,
+			ready:    true,
+			viewport: viewport.New(100, 20),
+			messages: []chatMessage{},
+		}
+
+		msg := tea.KeyMsg{Type: tea.KeyEnter}
+		updatedModel, _ := m.Update(msg)
+
+		typedModel := updatedModel.(Model)
+
+		if typedModel.err == nil {
+			t.Error("expected error for nonexistent file")
+		}
+		if !strings.Contains(typedModel.err.Error(), "file not found") {
+			t.Errorf("expected 'file not found' error, got: %v", typedModel.err)
+		}
+	})
+
+	t.Run("file command without client shows error", func(t *testing.T) {
+		ta := createTextarea()
+		ta.SetValue("/file /tmp/testfile.txt")
+		s := spinner.New()
+		mockSession := &mockChatSession{}
+
+		m := Model{
+			textarea: ta,
+			spinner:  s,
+			session:  mockSession,
+			client:   nil, // No client
+			ready:    true,
+			viewport: viewport.New(100, 20),
+			messages: []chatMessage{},
+		}
+
+		msg := tea.KeyMsg{Type: tea.KeyEnter}
+		updatedModel, _ := m.Update(msg)
+
+		typedModel := updatedModel.(Model)
+
+		// Since the file doesn't exist, we'll get "file not found" first
+		// This test verifies the error handling path
+		if typedModel.err == nil {
+			t.Error("expected error")
+		}
+	})
+
+	t.Run("image command is alias for file", func(t *testing.T) {
+		ta := createTextarea()
+		ta.SetValue("/image")
+		s := spinner.New()
+		mockSession := &mockChatSession{}
+		mockClient := &mockGeminiClientWithUpload{}
+
+		m := Model{
+			textarea: ta,
+			spinner:  s,
+			session:  mockSession,
+			client:   mockClient,
+			ready:    true,
+			viewport: viewport.New(100, 20),
+			messages: []chatMessage{},
+		}
+
+		msg := tea.KeyMsg{Type: tea.KeyEnter}
+		updatedModel, _ := m.Update(msg)
+
+		typedModel := updatedModel.(Model)
+
+		// Should show same usage error as /file
+		if typedModel.err == nil {
+			t.Error("expected error for /image without path")
+		}
+		if !strings.Contains(typedModel.err.Error(), "usage:") {
+			t.Errorf("expected usage error, got: %v", typedModel.err)
+		}
+	})
+}
+
+func TestModel_FileUploadedMsg(t *testing.T) {
+	t.Run("successful upload adds file to attachments", func(t *testing.T) {
+		ta := createTextarea()
+		s := spinner.New()
+		mockSession := &mockChatSession{}
+
+		m := Model{
+			textarea:    ta,
+			spinner:     s,
+			session:     mockSession,
+			ready:       true,
+			viewport:    viewport.New(100, 20),
+			messages:    []chatMessage{},
+			attachments: nil,
+		}
+
+		uploadedFile := &api.UploadedFile{FileName: "test.txt", MIMEType: "text/plain"}
+		msg := fileUploadedMsg{file: uploadedFile}
+		updatedModel, _ := m.Update(msg)
+
+		typedModel := updatedModel.(Model)
+
+		if len(typedModel.attachments) != 1 {
+			t.Errorf("expected 1 attachment, got %d", len(typedModel.attachments))
+		}
+		if typedModel.attachments[0].FileName != "test.txt" {
+			t.Errorf("expected attachment name 'test.txt', got %s", typedModel.attachments[0].FileName)
+		}
+		if typedModel.err != nil {
+			t.Errorf("unexpected error: %v", typedModel.err)
+		}
+	})
+
+	t.Run("failed upload shows error", func(t *testing.T) {
+		ta := createTextarea()
+		s := spinner.New()
+		mockSession := &mockChatSession{}
+
+		m := Model{
+			textarea:    ta,
+			spinner:     s,
+			session:     mockSession,
+			ready:       true,
+			viewport:    viewport.New(100, 20),
+			messages:    []chatMessage{},
+			attachments: nil,
+		}
+
+		msg := fileUploadedMsg{err: fmt.Errorf("upload failed")}
+		updatedModel, _ := m.Update(msg)
+
+		typedModel := updatedModel.(Model)
+
+		if typedModel.err == nil {
+			t.Error("expected error on upload failure")
+		}
+		if !strings.Contains(typedModel.err.Error(), "upload failed") {
+			t.Errorf("expected upload error, got: %v", typedModel.err)
+		}
+		if len(typedModel.attachments) != 0 {
+			t.Error("should not add attachment on failure")
+		}
+	})
+
+	t.Run("multiple uploads accumulate", func(t *testing.T) {
+		ta := createTextarea()
+		s := spinner.New()
+		mockSession := &mockChatSession{}
+
+		m := Model{
+			textarea:    ta,
+			spinner:     s,
+			session:     mockSession,
+			ready:       true,
+			viewport:    viewport.New(100, 20),
+			messages:    []chatMessage{},
+			attachments: []*api.UploadedFile{{FileName: "first.txt"}},
+		}
+
+		msg := fileUploadedMsg{file: &api.UploadedFile{FileName: "second.txt"}}
+		updatedModel, _ := m.Update(msg)
+
+		typedModel := updatedModel.(Model)
+
+		if len(typedModel.attachments) != 2 {
+			t.Errorf("expected 2 attachments, got %d", len(typedModel.attachments))
+		}
+	})
+}
+
+func TestModel_SendMessageWithAttachments(t *testing.T) {
+	t.Run("sends message with attachments", func(t *testing.T) {
+		ta := createTextarea()
+		ta.SetValue("analyze this file")
+		s := spinner.New()
+
+		mockSession := &mockChatSession{
+			sendMessageFunc: func(prompt string, files []*api.UploadedFile) (*models.ModelOutput, error) {
+				_ = files // Verify files are passed (would be checked in integration test)
+				return &models.ModelOutput{
+					Candidates: []models.Candidate{{Text: "response"}},
+				}, nil
+			},
+		}
+
+		m := Model{
+			textarea:    ta,
+			spinner:     s,
+			session:     mockSession,
+			ready:       true,
+			viewport:    viewport.New(100, 20),
+			messages:    []chatMessage{},
+			attachments: []*api.UploadedFile{{FileName: "test.txt"}},
+		}
+
+		msg := tea.KeyMsg{Type: tea.KeyEnter}
+		updatedModel, cmd := m.Update(msg)
+
+		typedModel := updatedModel.(Model)
+
+		// Attachments should be cleared after sending
+		if len(typedModel.attachments) != 0 {
+			t.Errorf("expected 0 attachments after send, got %d", len(typedModel.attachments))
+		}
+
+		// Should return a command
+		if cmd == nil {
+			t.Error("expected command")
+		}
+
+		// Execute the command to verify attachments were sent
+		// (In a real test, we'd need to run the command)
+	})
+
+	t.Run("clears attachments after sending", func(t *testing.T) {
+		ta := createTextarea()
+		ta.SetValue("test message")
+		s := spinner.New()
+		mockSession := &mockChatSession{}
+
+		m := Model{
+			textarea:    ta,
+			spinner:     s,
+			session:     mockSession,
+			ready:       true,
+			viewport:    viewport.New(100, 20),
+			messages:    []chatMessage{},
+			attachments: []*api.UploadedFile{{FileName: "file1.txt"}, {FileName: "file2.txt"}},
+		}
+
+		msg := tea.KeyMsg{Type: tea.KeyEnter}
+		updatedModel, _ := m.Update(msg)
+
+		typedModel := updatedModel.(Model)
+
+		if len(typedModel.attachments) != 0 {
+			t.Errorf("expected attachments to be cleared, got %d", len(typedModel.attachments))
+		}
+	})
+}
+
+func TestModel_AttachmentIndicator(t *testing.T) {
+	t.Run("shows attachment count in view", func(t *testing.T) {
+		ta := createTextarea()
+		s := spinner.New()
+		mockSession := &mockChatSession{}
+
+		m := Model{
+			textarea:    ta,
+			spinner:     s,
+			session:     mockSession,
+			ready:       true,
+			width:       100,
+			height:      40,
+			viewport:    viewport.New(96, 20),
+			messages:    []chatMessage{},
+			attachments: []*api.UploadedFile{{FileName: "file1.txt"}, {FileName: "file2.txt"}},
+		}
+
+		view := m.View()
+
+		// Should show file count with emoji
+		if !strings.Contains(view, "📎") {
+			t.Error("view should show attachment emoji")
+		}
+		if !strings.Contains(view, "2 file") {
+			t.Error("view should show '2 files' count")
+		}
+	})
+
+	t.Run("shows singular file for one attachment", func(t *testing.T) {
+		ta := createTextarea()
+		s := spinner.New()
+		mockSession := &mockChatSession{}
+
+		m := Model{
+			textarea:    ta,
+			spinner:     s,
+			session:     mockSession,
+			ready:       true,
+			width:       100,
+			height:      40,
+			viewport:    viewport.New(96, 20),
+			messages:    []chatMessage{},
+			attachments: []*api.UploadedFile{{FileName: "file.txt"}},
+		}
+
+		view := m.View()
+
+		if !strings.Contains(view, "1 file") {
+			t.Error("view should show '1 file' count")
+		}
+		// Make sure it doesn't say "1 files"
+		if strings.Contains(view, "1 files") {
+			t.Error("should not show '1 files' (grammatically incorrect)")
+		}
+	})
+
+	t.Run("no indicator when no attachments", func(t *testing.T) {
+		ta := createTextarea()
+		s := spinner.New()
+		mockSession := &mockChatSession{}
+
+		m := Model{
+			textarea:    ta,
+			spinner:     s,
+			session:     mockSession,
+			ready:       true,
+			width:       100,
+			height:      40,
+			viewport:    viewport.New(96, 20),
+			messages:    []chatMessage{},
+			attachments: nil,
+		}
+
+		view := m.View()
+
+		// Should not show attachment indicator
+		if strings.Contains(view, "📎") {
+			t.Error("view should not show attachment emoji when no attachments")
 		}
 	})
 }

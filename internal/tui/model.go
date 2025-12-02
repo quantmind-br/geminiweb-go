@@ -2,9 +2,11 @@ package tui
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -110,6 +112,9 @@ type Model struct {
 	historyFilter     string
 	fullHistoryStore  FullHistoryStore  // Full store interface for /history command
 
+	// File attachments (for /file and /image commands)
+	attachments []*api.UploadedFile
+
 	// Dimensions
 	width  int
 	height int
@@ -122,21 +127,36 @@ type chatMessage struct {
 	thoughts string
 }
 
-// NewChatModel creates a new chat TUI model
-func NewChatModel(client api.GeminiClientInterface, modelName string) Model {
-	// Create textarea for input
+// createTextarea creates and configures a textarea for multi-line input
+// Enter sends the message, Shift+Enter inserts a newline
+func createTextarea() textarea.Model {
 	ta := textarea.New()
-	ta.Placeholder = "Type your message here..."
+	ta.Placeholder = "Type your message... (Shift+Enter for newline)"
 	ta.CharLimit = 4000
 	ta.ShowLineNumbers = false
-	ta.SetHeight(2)
+	ta.SetHeight(3) // Multi-line input support
 	ta.Focus()
+
+	// Configure key bindings for multi-line input
+	// InsertNewline: Shift+Enter inserts a newline
+	// Enter will be handled by Model.Update to send the message
+	ta.KeyMap.InsertNewline = key.NewBinding(
+		key.WithKeys("shift+enter", "ctrl+enter"),
+		key.WithHelp("shift+enter", "newline"),
+	)
 
 	// Style the textarea
 	ta.FocusedStyle.CursorLine = lipgloss.NewStyle()
 	ta.FocusedStyle.Base = lipgloss.NewStyle().Foreground(colorText)
 	ta.FocusedStyle.Placeholder = lipgloss.NewStyle().Foreground(colorTextDim)
 	ta.BlurredStyle = ta.FocusedStyle
+
+	return ta
+}
+
+// NewChatModel creates a new chat TUI model
+func NewChatModel(client api.GeminiClientInterface, modelName string) Model {
+	ta := createTextarea()
 
 	// Create spinner
 	s := spinner.New()
@@ -190,7 +210,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Calculate component heights
 		headerHeight := 4 // Header panel with border
-		inputHeight := 6  // Input panel with border
+		inputHeight := 7  // Input panel with border (includes multi-line textarea)
 		statusHeight := 1 // Status bar
 		padding := 2      // Extra spacing
 
@@ -227,34 +247,58 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "enter":
 			if !m.loading && strings.TrimSpace(m.textarea.Value()) != "" {
-				// Check for exit commands
 				input := strings.TrimSpace(m.textarea.Value())
-				if input == "exit" || input == "quit" || input == "/exit" || input == "/quit" {
-					return m, tea.Quit
-				}
+				parsed := parseCommand(input)
 
-				// Check for /gems command
-				if input == "/gems" || input == "/gem" {
-					m.textarea.Reset()
-					m.selectingGem = true
-					m.gemsLoading = true
-					m.gemsCursor = 0
-					m.gemsFilter = ""
-					return m, m.loadGemsForChat()
-				}
+				// Handle commands
+				if parsed.IsCommand {
+					switch parsed.Command {
+					case "exit", "quit":
+						return m, tea.Quit
 
-				// Check for /history command
-				if input == "/history" || input == "/hist" {
-					if m.fullHistoryStore == nil {
-						m.err = fmt.Errorf("history not available")
+					case "gems", "gem":
+						m.textarea.Reset()
+						m.selectingGem = true
+						m.gemsLoading = true
+						m.gemsCursor = 0
+						m.gemsFilter = ""
+						return m, m.loadGemsForChat()
+
+					case "history", "hist":
+						if m.fullHistoryStore == nil {
+							m.err = fmt.Errorf("history not available")
+							return m, nil
+						}
+						m.textarea.Reset()
+						m.selectingHistory = true
+						m.historyLoading = true
+						m.historyCursor = 0
+						m.historyFilter = ""
+						return m, m.loadHistoryForChat()
+
+					case "file":
+						return m.handleFileCommand(parsed.Args)
+
+					case "image":
+						return m.handleImageCommand(parsed.Args)
+
+					case "clear":
+						// Clear all attachments
+						m.attachments = nil
+						m.textarea.Reset()
+						m.err = nil
+						return m, nil
+
+					default:
+						// Unknown command - show error but don't send as message
+						m.err = fmt.Errorf("unknown command: /%s", parsed.Command)
 						return m, nil
 					}
-					m.textarea.Reset()
-					m.selectingHistory = true
-					m.historyLoading = true
-					m.historyCursor = 0
-					m.historyFilter = ""
-					return m, m.loadHistoryForChat()
+				}
+
+				// Handle exit commands without slash
+				if input == "exit" || input == "quit" {
+					return m, tea.Quit
 				}
 
 				// Add user message
@@ -275,7 +319,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				userMsg := m.textarea.Value()
 				m.textarea.Reset()
 
-				cmd = m.sendMessage(userMsg)
+				// Send message with attachments
+				cmd = m.sendMessageWithAttachments(userMsg)
+
+				// Clear attachments after sending
+				m.attachments = nil
 
 				return m, tea.Batch(
 					cmd,
@@ -301,6 +349,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.err = msg.err
 		} else {
 			m.historyList = msg.conversations
+		}
+
+	case fileUploadedMsg:
+		if msg.err != nil {
+			m.err = fmt.Errorf("file upload failed: %w", msg.err)
+		} else {
+			// Add file to attachments
+			m.attachments = append(m.attachments, msg.file)
+			// Show success feedback (could use a toast/notification style)
+			m.err = nil
 		}
 
 	case responseMsg:
@@ -415,9 +473,19 @@ func (m Model) View() string {
 		// Use colorful animated loading indicator
 		inputContent = m.renderLoadingAnimation()
 	} else {
+		// Build label with attachment indicator
+		label := "You"
+		if len(m.attachments) > 0 {
+			attachmentInfo := fmt.Sprintf(" 📎 %d file", len(m.attachments))
+			if len(m.attachments) > 1 {
+				attachmentInfo += "s"
+			}
+			label += attachmentInfo
+		}
+
 		inputContent = lipgloss.JoinVertical(
 			lipgloss.Left,
-			inputLabelStyle.Render("You"),
+			inputLabelStyle.Render(label),
 			m.textarea.View(),
 		)
 	}
@@ -522,6 +590,7 @@ func (m Model) renderStatusBar(width int) string {
 		desc string
 	}{
 		{"Enter", "Send"},
+		{"Shift+Enter", "Newline"},
 		{"Esc", "Quit"},
 		{"↑↓", "Scroll"},
 	}
@@ -548,6 +617,76 @@ func (m Model) sendMessage(prompt string) tea.Cmd {
 			return errMsg{err: err}
 		}
 		return responseMsg{output: output}
+	}
+}
+
+// sendMessageWithAttachments creates a command to send a message with file attachments
+func (m Model) sendMessageWithAttachments(prompt string) tea.Cmd {
+	// Capture attachments in closure (they will be cleared after this returns)
+	attachments := m.attachments
+	return func() tea.Msg {
+		output, err := m.session.SendMessage(prompt, attachments)
+		if err != nil {
+			return errMsg{err: err}
+		}
+		return responseMsg{output: output}
+	}
+}
+
+// fileUploadedMsg is sent when a file upload completes
+type fileUploadedMsg struct {
+	file *api.UploadedFile
+	err  error
+}
+
+// handleFileCommand handles the /file <path> command
+func (m Model) handleFileCommand(path string) (tea.Model, tea.Cmd) {
+	if path == "" {
+		m.err = fmt.Errorf("usage: /file <path>")
+		return m, nil
+	}
+
+	// Expand home directory if needed
+	if strings.HasPrefix(path, "~") {
+		home, err := os.UserHomeDir()
+		if err == nil {
+			path = strings.Replace(path, "~", home, 1)
+		}
+	}
+
+	// Check if file exists
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		m.err = fmt.Errorf("file not found: %s", path)
+		return m, nil
+	}
+
+	// Check if client supports file upload
+	if m.client == nil {
+		m.err = fmt.Errorf("client not available for file upload")
+		return m, nil
+	}
+
+	m.textarea.Reset()
+	m.err = nil
+
+	// Upload file asynchronously
+	return m, m.uploadFile(path)
+}
+
+// handleImageCommand handles the /image <path> command (alias for /file)
+func (m Model) handleImageCommand(path string) (tea.Model, tea.Cmd) {
+	// Image is just a specialized file upload
+	return m.handleFileCommand(path)
+}
+
+// uploadFile creates a command to upload a file
+func (m Model) uploadFile(path string) tea.Cmd {
+	return func() tea.Msg {
+		file, err := m.client.UploadFile(path)
+		if err != nil {
+			return fileUploadedMsg{err: err}
+		}
+		return fileUploadedMsg{file: file}
 	}
 }
 
@@ -692,19 +831,7 @@ func RunChatWithSession(client api.GeminiClientInterface, session ChatSessionInt
 
 // NewChatModelWithSession creates a new chat TUI model with a pre-configured session
 func NewChatModelWithSession(client api.GeminiClientInterface, session ChatSessionInterface, modelName string) Model {
-	// Create textarea for input
-	ta := textarea.New()
-	ta.Placeholder = "Type your message here..."
-	ta.CharLimit = 4000
-	ta.ShowLineNumbers = false
-	ta.SetHeight(2)
-	ta.Focus()
-
-	// Style the textarea
-	ta.FocusedStyle.CursorLine = lipgloss.NewStyle()
-	ta.FocusedStyle.Base = lipgloss.NewStyle().Foreground(colorText)
-	ta.FocusedStyle.Placeholder = lipgloss.NewStyle().Foreground(colorTextDim)
-	ta.BlurredStyle = ta.FocusedStyle
+	ta := createTextarea()
 
 	// Create spinner
 	s := spinner.New()
@@ -736,19 +863,7 @@ func RunChatWithConversation(client api.GeminiClientInterface, session ChatSessi
 
 // NewChatModelWithConversation creates a new chat TUI model with a conversation for persistence
 func NewChatModelWithConversation(client api.GeminiClientInterface, session ChatSessionInterface, modelName string, conv *history.Conversation, store HistoryStoreInterface) Model {
-	// Create textarea for input
-	ta := textarea.New()
-	ta.Placeholder = "Type your message here..."
-	ta.CharLimit = 4000
-	ta.ShowLineNumbers = false
-	ta.SetHeight(2)
-	ta.Focus()
-
-	// Style the textarea
-	ta.FocusedStyle.CursorLine = lipgloss.NewStyle()
-	ta.FocusedStyle.Base = lipgloss.NewStyle().Foreground(colorText)
-	ta.FocusedStyle.Placeholder = lipgloss.NewStyle().Foreground(colorTextDim)
-	ta.BlurredStyle = ta.FocusedStyle
+	ta := createTextarea()
 
 	// Create spinner
 	s := spinner.New()
@@ -1292,6 +1407,46 @@ func formatTimeAgo(t time.Time) string {
 		return fmt.Sprintf("%dd ago", days)
 	default:
 		return t.Format("Jan 2")
+	}
+}
+
+// ParsedCommand represents a parsed command from user input
+type ParsedCommand struct {
+	Command   string // The command name (e.g., "file", "image", "history", "gems")
+	Args      string // The arguments after the command
+	IsCommand bool   // Whether the input was a command
+}
+
+// parseCommand parses user input to detect commands
+// Commands start with / and may have arguments separated by space
+// Examples:
+//   - "/file path/to/file.txt" -> {Command: "file", Args: "path/to/file.txt", IsCommand: true}
+//   - "/history" -> {Command: "history", Args: "", IsCommand: true}
+//   - "hello world" -> {Command: "", Args: "", IsCommand: false}
+func parseCommand(input string) ParsedCommand {
+	input = strings.TrimSpace(input)
+
+	// Check if input starts with /
+	if !strings.HasPrefix(input, "/") {
+		return ParsedCommand{IsCommand: false}
+	}
+
+	// Remove the leading /
+	cmdLine := input[1:]
+
+	// Split into command and args
+	parts := strings.SplitN(cmdLine, " ", 2)
+	command := strings.ToLower(parts[0])
+
+	args := ""
+	if len(parts) > 1 {
+		args = strings.TrimSpace(parts[1])
+	}
+
+	return ParsedCommand{
+		Command:   command,
+		Args:      args,
+		IsCommand: true,
 	}
 }
 

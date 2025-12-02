@@ -37,6 +37,7 @@ type GeminiClientInterface interface {
 	// Content generation
 	GenerateContent(prompt string, opts *GenerateOptions) (*models.ModelOutput, error)
 	UploadImage(filePath string) (*UploadedImage, error)
+	UploadFile(filePath string) (*UploadedFile, error)
 
 	// Browser refresh
 	RefreshFromBrowser() (bool, error)
