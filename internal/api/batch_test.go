@@ -1,13 +1,44 @@
 package api
 
 import (
-	"net/http"
-	"net/http/httptest"
+	"bytes"
+	"io"
+	"net/url"
 	"strings"
 	"testing"
 
+	http2 "github.com/bogdanfinn/fhttp"
+	"github.com/bogdanfinn/tls-client/bandwidth"
 	"github.com/diogo/geminiweb/internal/config"
 )
+
+// mockHTTPClient implements tls_client.HttpClient for testing
+type mockHTTPClient struct {
+	doFunc func(req *http2.Request) (*http2.Response, error)
+}
+
+func (m *mockHTTPClient) GetCookies(u *url.URL) []*http2.Cookie          { return nil }
+func (m *mockHTTPClient) SetCookies(u *url.URL, cookies []*http2.Cookie) {}
+func (m *mockHTTPClient) SetCookieJar(jar http2.CookieJar)               {}
+func (m *mockHTTPClient) GetCookieJar() http2.CookieJar                  { return nil }
+func (m *mockHTTPClient) SetProxy(proxyUrl string) error                 { return nil }
+func (m *mockHTTPClient) GetProxy() string                               { return "" }
+func (m *mockHTTPClient) SetFollowRedirect(followRedirect bool)          {}
+func (m *mockHTTPClient) GetFollowRedirect() bool                        { return false }
+func (m *mockHTTPClient) CloseIdleConnections()                          {}
+func (m *mockHTTPClient) Get(url string) (*http2.Response, error)        { return nil, nil }
+func (m *mockHTTPClient) Head(url string) (*http2.Response, error)       { return nil, nil }
+func (m *mockHTTPClient) Post(url, contentType string, body io.Reader) (*http2.Response, error) {
+	return nil, nil
+}
+func (m *mockHTTPClient) GetBandwidthTracker() bandwidth.BandwidthTracker { return nil }
+
+func (m *mockHTTPClient) Do(req *http2.Request) (*http2.Response, error) {
+	if m.doFunc != nil {
+		return m.doFunc(req)
+	}
+	return nil, nil
+}
 
 func TestRPCDataSerialize(t *testing.T) {
 	rpc := RPCData{
@@ -185,41 +216,121 @@ func TestBatchExecuteClosedClient(t *testing.T) {
 }
 
 func TestBatchExecuteWithMockServer(t *testing.T) {
-	// Mock server que retorna resposta válida
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Verificar método
-		if r.Method != http.MethodPost {
-			t.Errorf("Expected POST method, got %s", r.Method)
-		}
+	// Mock HTTP client que retorna resposta válida
+	mockClient := &mockHTTPClient{
+		doFunc: func(req *http2.Request) (*http2.Response, error) {
+			// Verificar método
+			if req.Method != http2.MethodPost {
+				t.Errorf("Expected POST method, got %s", req.Method)
+			}
 
-		// Verificar content type
-		contentType := r.Header.Get("Content-Type")
-		if !strings.Contains(contentType, "application/x-www-form-urlencoded") {
-			t.Errorf("Expected form content type, got %s", contentType)
-		}
+			// Verificar content type
+			contentType := req.Header.Get("Content-Type")
+			if !strings.Contains(contentType, "application/x-www-form-urlencoded") {
+				t.Errorf("Expected form content type, got %s", contentType)
+			}
 
-		response := `)]}'
+			response := `)]}'
 [["wrb.fr","CNgdBe","[\"test_data\"]",null,null,null,"test_id"]]`
-		w.WriteHeader(200)
-		_, _ = w.Write([]byte(response))
-	}))
-	defer server.Close()
 
-	// Nota: Este teste não funciona com o mock porque o cliente usa um endpoint fixo
-	// Seria necessário injetar a URL ou usar um transport mock
-	t.Skip("Requires endpoint injection or transport mock")
+			return &http2.Response{
+				StatusCode: 200,
+				Body:       io.NopCloser(bytes.NewBufferString(response)),
+			}, nil
+		},
+	}
+
+	client, err := NewClient(&config.Cookies{
+		Secure1PSID:   "test-psid",
+		Secure1PSIDTS: "test-psidts",
+	}, WithHTTPClient(mockClient), WithAutoRefresh(false))
+	if err != nil {
+		t.Fatalf("Failed to create client: %v", err)
+	}
+	client.accessToken = "test-token"
+
+	requests := []RPCData{
+		{RPCID: "CNgdBe", Payload: "[]", Identifier: "test_id"},
+	}
+
+	responses, err := client.BatchExecute(requests)
+	if err != nil {
+		t.Fatalf("BatchExecute failed: %v", err)
+	}
+
+	if len(responses) != 1 {
+		t.Fatalf("Expected 1 response, got %d", len(responses))
+	}
+
+	if responses[0].Identifier != "test_id" {
+		t.Errorf("Expected identifier 'test_id', got %s", responses[0].Identifier)
+	}
+
+	if responses[0].Data != "[\"test_data\"]" {
+		t.Errorf("Expected data '[\"test_data\"]', got %s", responses[0].Data)
+	}
 }
 
 func TestBatchExecuteHTTPError(t *testing.T) {
-	// Este teste verifica o comportamento quando o servidor retorna erro
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(401)
-		_, _ = w.Write([]byte("Unauthorized"))
-	}))
-	defer server.Close()
+	testCases := []struct {
+		name           string
+		statusCode     int
+		responseBody   string
+		expectedErrMsg string
+	}{
+		{
+			name:           "401 Unauthorized",
+			statusCode:     401,
+			responseBody:   "Unauthorized",
+			expectedErrMsg: "401",
+		},
+		{
+			name:           "500 Internal Server Error",
+			statusCode:     500,
+			responseBody:   "Internal Server Error",
+			expectedErrMsg: "500",
+		},
+		{
+			name:           "403 Forbidden",
+			statusCode:     403,
+			responseBody:   "Forbidden",
+			expectedErrMsg: "403",
+		},
+	}
 
-	// Nota: Assim como o teste anterior, requer injeção de endpoint
-	t.Skip("Requires endpoint injection or transport mock")
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			mockClient := &mockHTTPClient{
+				doFunc: func(req *http2.Request) (*http2.Response, error) {
+					return &http2.Response{
+						StatusCode: tc.statusCode,
+						Body:       io.NopCloser(bytes.NewBufferString(tc.responseBody)),
+					}, nil
+				},
+			}
+
+			client, err := NewClient(&config.Cookies{
+				Secure1PSID:   "test-psid",
+				Secure1PSIDTS: "test-psidts",
+			}, WithHTTPClient(mockClient), WithAutoRefresh(false))
+			if err != nil {
+				t.Fatalf("Failed to create client: %v", err)
+			}
+			client.accessToken = "test-token"
+
+			requests := []RPCData{
+				{RPCID: "CNgdBe", Payload: "[]", Identifier: "test"},
+			}
+
+			_, err = client.BatchExecute(requests)
+			if err == nil {
+				t.Error("Expected error for HTTP error response")
+			}
+			if !strings.Contains(err.Error(), tc.expectedErrMsg) {
+				t.Errorf("Expected error to contain '%s', got: %v", tc.expectedErrMsg, err)
+			}
+		})
+	}
 }
 
 func TestParseBatchResponseWithPrefixVariants(t *testing.T) {
