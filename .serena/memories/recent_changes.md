@@ -1,120 +1,64 @@
 # Recent Changes and Project Status
 
-## Git Status Overview
+## Latest Commits (as of 2025-12-02)
 
-As of the current workspace snapshot, the following changes have been made:
+Recent development has focused on TUI improvements and conversation persistence:
 
-### Deleted Files (D)
-- `internal/api/mock_test.go` - Removed mock test file
-- `internal/api/stream.go` - Removed SSE streaming implementation
-- `internal/api/stream_test.go` - Removed streaming tests
+1. **TUI Input Overhaul**
+   - Replaced Shift+Enter with `\ + Enter` for multiline input
+   - Phase 2 & 3 style and UX polish
+   - Improved input handling and command system
 
-### Modified Files (M)
-The following files have uncommitted modifications:
-- `internal/api/client_test.go`
-- `internal/api/generate.go`
-- `internal/api/session.go`
-- `internal/commands/chat.go`
-- `internal/commands/query.go`
-- `internal/tui/model.go`
-- `api.test`
-- `cookies.json`
+2. **Conversation Persistence**
+   - `/history` command for switching between conversations
+   - Auto-save functionality for conversation persistence
+   - History selector model for conversation selection
+   - Conversation loading from JSON files
 
-### New Files
-The following new files were created:
-- `.gitignore`
-- `.serena/`
-- `CLAUDE.md`
-- `internal/browser/browser.go` - Browser cookie extraction module
-- `internal/browser/browser_test.go` - Browser module tests
-- `internal/commands/autologin.go` - Auto-login command
-- `internal/api/generate_test.go`
-- `internal/api/session_test.go`
-- `internal/commands/query_test.go`
-- `internal/commands/root_test.go`
-- `internal/errors/errors_test.go`
-- `internal/models/models_test.go`
-- `internal/tui/model_test.go`
-- `removesteaming.md`
+3. **API Enhancements**
+   - File support added to ChatSession.SendMessage
+   - HTTP client injection for improved testability
 
-## Key Architectural Changes
+## Current Git Status
 
-### Removal of Streaming Support
-The project has removed Server-Sent Events (SSE) streaming functionality:
-- **File**: `internal/api/stream.go` - Deleted
-- **File**: `internal/api/stream_test.go` - Deleted
-- **Impact**: Client now returns complete responses synchronously instead of streaming
-- **Reason**: Streamed responses were causing issues with the Gemini web API
+- Modified: `CLAUDE.md`, `PLAN.md`
+- Deleted: `TASKS.md`
+- New directory: `development-docs/`
 
-### Testing Infrastructure
-- Enhanced test coverage with new `_test.go` files
-- Separated unit tests into dedicated files per module
-- Tests require `SECURE_1PSID` environment variable
-- Some tests require `SECURE_1PSIDTS` depending on account type
+## Key Architectural Features
 
-### Commands Refactoring
-- `internal/commands/chat.go` - Modified for improved chat experience
-- `internal/commands/query.go` - Enhanced query handling
-- `internal/commands/root_test.go` - New test suite for root command
+### TUI Components
+- **Main chat model**: `internal/tui/model.go`
+- **Gems selector**: `internal/tui/gems_model.go`
+- **History selector**: `internal/tui/history_selector.go`
+- **Config editor**: `internal/tui/config_model.go`
+- **Styles**: `internal/tui/styles.go`
 
-### TUI Enhancements
-- `internal/tui/model.go` - Modified to improve user interface
-- Added `internal/tui/model_test.go` - New test suite for TUI
+### Render System
+- Pooled Glamour renderers for markdown
+- Theme system (dark/light/dracula/nord/custom)
+- LRU caching for rendered content
+- Located in `internal/render/`
 
-### Persona System
-- New feature for custom persona management
-- CRUD operations for persona creation and management
-- Storage in `~/.geminiweb/personas.json`
+### Browser Cookie Extraction
+- Package: `internal/browser/`
+- Supported browsers: Chrome, Chromium, Firefox, Edge, Opera
+- `auto-login` command for direct extraction
+- `--browser-refresh` flag for auto-refresh on 401
+- Rate limiting: 30 second minimum between refresh attempts
 
-### Browser Cookie Extraction (NEW)
-- **Package**: `internal/browser/` - New module for browser cookie extraction
-- **Library**: Uses `browserutils/kooky` for cross-browser cookie access
-- **Supported browsers**: Chrome, Chromium, Firefox, Edge, Opera
-- **Features**:
-  - `auto-login` command: Extract cookies directly from browser
-  - `--browser-refresh` flag: Auto-refresh cookies on 401 errors
-  - Multi-profile support: Scans all browser profiles
-  - Rate limiting: 30 second minimum between refresh attempts
-- **Note**: Browser must be closed to avoid SQLite database locks
+## Testing
 
-## Documentation Updates
+Integration tests require:
+```bash
+export SECURE_1PSID="your_cookie_value"
+export SECURE_1PSIDTS="optional_cookie_value"
+make test
+```
 
-### CLAUDE.md
-Project documentation has been updated with:
-- Current architecture details
-- Client lifecycle patterns
-- Persona management documentation
-- Recent changes tracking
+## Known Working State
 
-## Testing Strategy
-
-Current testing approach:
-1. **Unit Tests**: Individual module testing
-   - `internal/api/*_test.go` - API client tests
-   - `internal/commands/*_test.go` - Command tests
-   - `internal/tui/model_test.go` - TUI tests
-   - `internal/errors/errors_test.go` - Error handling tests
-   - `internal/models/models_test.go` - Model tests
-
-2. **Integration Tests**: End-to-end testing with real Gemini cookies
-   - Requires valid `SECURE_1PSID` cookie
-   - Optionally requires `SECURE_1PSIDTS`
-
-3. **Manual Testing**: 
-   - Build and run: `make build-dev && ./build/geminiweb chat`
-   - Test new features interactively
-
-## Recommended Next Steps
-
-1. Review and commit test files
-2. Run `make test` to verify all tests pass
-3. Verify the removal of streaming functionality doesn't break existing workflows
-4. Test persona management features
-5. Update documentation if needed
-6. Clean up temporary files (`cookies.json`, etc.)
-
-## Known Issues
-
-- No known critical issues at this time
-- Cookie rotation should be tested with long-running sessions
-- Persona system should be tested for prompt injection vulnerabilities
+- All TUI features functional
+- Conversation persistence working
+- Gems integration complete
+- Browser cookie extraction stable

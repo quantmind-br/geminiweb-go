@@ -22,10 +22,12 @@ make run ARGS="chat"      # Build and run with arguments
 make test                 # Run all tests: go test -v ./...
 go test -v ./internal/api -run TestClientInit   # Single test
 make test-coverage        # Tests with HTML coverage report
+make cover                # Show coverage breakdown by function
 
 # Quality
 make lint                 # golangci-lint
 make fmt                  # go fmt + gofumpt
+make check                # Verify build compiles without output
 ```
 
 ## Architecture
@@ -33,15 +35,15 @@ make fmt                  # go fmt + gofumpt
 ### Package Structure
 
 - **`cmd/geminiweb/`** - CLI entrypoint
-- **`internal/api/`** - GeminiClient: TLS client, token extraction (SNlM0e), cookie rotation, content generation, browser refresh
+- **`internal/api/`** - GeminiClient: TLS client, token extraction (SNlM0e), cookie rotation, content generation, browser refresh, Gems API
 - **`internal/browser/`** - Browser cookie extraction using `browserutils/kooky` (Chrome, Firefox, Edge, Chromium, Opera)
-- **`internal/commands/`** - Cobra commands: root (query), chat, config, import-cookies, auto-login, history, persona
-- **`internal/config/`** - Settings and cookie storage in `~/.geminiweb/`
+- **`internal/commands/`** - Cobra commands: root (query), chat, config, import-cookies, auto-login, history, persona, gems
+- **`internal/config/`** - Settings, cookie storage, and local personas in `~/.geminiweb/`
 - **`internal/models/`** - Types (ModelOutput, Candidate, WebImage), model definitions, API constants/endpoints
-- **`internal/tui/`** - Bubble Tea TUI with Glamour markdown rendering and Lipgloss styling
-- **`internal/render/`** - Markdown rendering with Glamour, pooled renderers, configurable themes and caching
+- **`internal/tui/`** - Bubble Tea TUI: main chat model, gems selector, history selector, config editor
+- **`internal/render/`** - Markdown rendering with Glamour: pooled renderers, theme system (dark/light/dracula/nord/custom), LRU caching
 - **`internal/history/`** - JSON-based conversation history persistence
-- **`internal/errors/`** - Custom error types
+- **`internal/errors/`** - Custom error types (AuthError, APIError, TimeoutError, UsageLimitError, BlockedError, ParseError)
 
 ### Key Dependencies
 
@@ -73,12 +75,14 @@ client.Close()
 4. **Browser Cookie Refresh** - On auth failure (401), automatically extracts fresh cookies from browser and retries (rate-limited to 30s)
 5. **Bubble Tea Architecture** - TUI uses Model/Update/View pattern; messages flow through Update, never mutate state directly
 6. **Dependency Injection** - Key components use interfaces (`GeminiClientInterface`, `ChatSessionInterface`, `BrowserCookieExtractor`) and option functions (`WithRefreshFunc`, `WithCookieLoader`) for testability
+7. **Context Propagation** - Always pass `context.Context` explicitly; use `context.WithTimeout` for request deadlines
 
 ### TUI Notes
 
 - **Glamour markdown**: Use `glamour.WithStylePath("dark")` instead of `glamour.WithAutoStyle()` to avoid OSC 11 terminal query escape sequence leaks into stdin
 - **Textarea input filtering**: Only pass `tea.KeyMsg` to textarea.Update() to prevent escape sequences from appearing as garbage characters
 - **Viewport**: Always updated with all messages for scrolling support
+- **Input**: Use `\ + Enter` for multiline input (backslash followed by Enter inserts a newline)
 
 ## Code Style
 
@@ -95,3 +99,29 @@ Default model is `models.DefaultModel` which points to `models.Model30Pro` (gemi
 - `models.Model25Flash` - Fast model (gemini-2.5-flash)
 - `models.Model30Pro` - Advanced model (gemini-3.0-pro) - **recommended default**
 - `models.ModelUnspecified` - Server's default model (no model header sent)
+
+## Gems (Server-side Personas)
+
+Gems are Google's custom personas stored on their servers. Unlike local personas, gems sync across devices.
+
+```bash
+geminiweb gems list              # Browse gems with interactive TUI
+geminiweb chat --gem "Code Helper"  # Start chat with a gem
+geminiweb chat -g code           # Partial name matching
+```
+
+In chat TUI: type `/gems` to switch gems without leaving the session.
+
+## Testing
+
+Integration tests require valid cookies:
+```bash
+export SECURE_1PSID="your_cookie_value"
+export SECURE_1PSIDTS="optional_cookie_value"  # Some accounts require this
+make test
+```
+
+For mocking in tests, use the provided interfaces:
+- `GeminiClientInterface` - Mock the API client
+- `ChatSessionInterface` - Mock chat sessions
+- `BrowserCookieExtractor` - Mock browser cookie extraction

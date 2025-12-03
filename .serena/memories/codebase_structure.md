@@ -13,6 +13,7 @@ geminiweb-go/
 │   │   ├── rotate.go           # Cookie rotation logic
 │   │   ├── upload.go           # File upload support
 │   │   ├── paths.go            # URL path construction
+│   │   ├── gems.go             # Gems API (server-side personas)
 │   │   └── *_test.go           # Tests for each module
 │   ├── browser/                # Browser cookie extraction
 │   │   ├── browser.go          # Cookie extraction from Chrome, Firefox, Edge, etc.
@@ -25,19 +26,31 @@ geminiweb-go/
 │   │   ├── import.go           # Cookie import command
 │   │   ├── autologin.go        # Auto-login from browser command
 │   │   ├── history.go          # History management
-│   │   └── persona.go          # Persona management
+│   │   ├── persona.go          # Local persona management
+│   │   └── gems.go             # Gems listing and selection
 │   ├── config/                 # Configuration management
 │   │   ├── config.go           # Settings storage
 │   │   ├── cookies.go          # Cookie persistence
-│   │   └── personas.go         # Persona storage
+│   │   └── personas.go         # Local persona storage
 │   ├── models/                 # Data types and constants
 │   │   ├── constants.go        # Endpoints, Models, ErrorCodes, Headers
 │   │   ├── response.go         # Response types (ModelOutput, Candidate, etc.)
 │   │   └── message.go          # Message types
 │   ├── tui/                    # Bubble Tea TUI
-│   │   ├── model.go            # Main TUI model
+│   │   ├── model.go            # Main TUI model (chat interface)
 │   │   ├── styles.go           # Lipgloss styling
-│   │   └── config_model.go     # Config TUI model
+│   │   ├── gems_model.go       # Gems selector TUI
+│   │   ├── history_selector.go # Conversation history selector
+│   │   ├── config_model.go     # Config editor TUI
+│   │   └── *_test.go           # Tests for TUI components
+│   ├── render/                 # Markdown rendering
+│   │   ├── render.go           # Glamour markdown renderer
+│   │   ├── cache.go            # LRU caching for rendered content
+│   │   ├── themes.go           # Theme definitions
+│   │   ├── tui_themes.go       # TUI-specific theme helpers
+│   │   ├── config.go           # Render configuration
+│   │   ├── options.go          # Functional options
+│   │   └── themes/             # Custom theme files
 │   ├── history/                # Conversation history
 │   │   └── store.go            # JSON-based persistence
 │   └── errors/                 # Custom error types
