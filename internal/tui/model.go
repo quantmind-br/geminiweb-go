@@ -129,21 +129,18 @@ type chatMessage struct {
 }
 
 // createTextarea creates and configures a textarea for multi-line input
-// Enter sends the message, Shift+Enter inserts a newline
+// Enter sends the message, \ + Enter inserts a newline (line continuation)
 func createTextarea() textarea.Model {
 	ta := textarea.New()
-	ta.Placeholder = "Type your message... (Shift+Enter for newline)"
+	ta.Placeholder = "Type your message... (\\ + Enter for newline)"
 	ta.CharLimit = 4000
 	ta.ShowLineNumbers = false
 	ta.SetHeight(3) // Multi-line input support
 	ta.Focus()
 
-	// Configure key bindings for multi-line input
-	// InsertNewline: Shift+Enter inserts a newline
-	// Enter will be handled by Model.Update to send the message
+	// Disable default InsertNewline binding - we handle newlines via \ + Enter in Update()
 	ta.KeyMap.InsertNewline = key.NewBinding(
-		key.WithKeys("shift+enter", "ctrl+enter"),
-		key.WithHelp("shift+enter", "newline"),
+		key.WithKeys(""), // Disabled - handled manually
 	)
 
 	// Style the textarea
@@ -247,8 +244,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case "enter":
-			if !m.loading && strings.TrimSpace(m.textarea.Value()) != "" {
-				input := strings.TrimSpace(m.textarea.Value())
+			if !m.loading {
+				rawInput := m.textarea.Value()
+
+				// Check for line continuation: if line ends with \, insert newline instead of sending
+				if strings.HasSuffix(rawInput, "\\") {
+					// Remove the trailing backslash and insert a newline
+					m.textarea.SetValue(strings.TrimSuffix(rawInput, "\\") + "\n")
+					// Move cursor to end
+					m.textarea.CursorEnd()
+					return m, nil
+				}
+
+				// Empty input - do nothing
+				if strings.TrimSpace(rawInput) == "" {
+					return m, nil
+				}
+
+				input := strings.TrimSpace(rawInput)
 				parsed := parseCommand(input)
 
 				// Handle commands
@@ -593,7 +606,7 @@ func (m Model) renderStatusBar(width int) string {
 		desc string
 	}{
 		{"Enter", "Send"},
-		{"Shift+Enter", "Newline"},
+		{"\\+Enter", "Newline"},
 		{"Esc", "Quit"},
 		{"↑↓", "Scroll"},
 	}
