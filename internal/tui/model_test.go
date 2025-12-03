@@ -2236,8 +2236,9 @@ func TestCreateTextarea(t *testing.T) {
 	ta := createTextarea()
 
 	t.Run("has correct placeholder", func(t *testing.T) {
-		if !strings.Contains(ta.Placeholder, "Shift+Enter") {
-			t.Error("placeholder should mention Shift+Enter for newline")
+		// Placeholder should mention \ + Enter for newline (line continuation)
+		if !strings.Contains(ta.Placeholder, "\\") || !strings.Contains(ta.Placeholder, "Enter") {
+			t.Error("placeholder should mention \\ + Enter for newline")
 		}
 	})
 
@@ -2249,19 +2250,14 @@ func TestCreateTextarea(t *testing.T) {
 		}
 	})
 
-	t.Run("InsertNewline uses shift+enter", func(t *testing.T) {
-		// The KeyMap.InsertNewline should be configured for shift+enter
-		// We verify by checking the key binding keys
+	t.Run("InsertNewline is disabled", func(t *testing.T) {
+		// InsertNewline should be disabled because we handle \ + Enter manually
 		keys := ta.KeyMap.InsertNewline.Keys()
-		found := false
+		// Should be empty or contain only empty string
 		for _, k := range keys {
-			if k == "shift+enter" || k == "ctrl+enter" {
-				found = true
-				break
+			if k != "" {
+				t.Errorf("InsertNewline should be disabled, but has key: %s", k)
 			}
-		}
-		if !found {
-			t.Errorf("InsertNewline should include shift+enter or ctrl+enter, got keys: %v", keys)
 		}
 	})
 
@@ -2296,9 +2292,10 @@ func TestModel_MultilineInput_StatusBar(t *testing.T) {
 		}
 	})
 
-	t.Run("shows Shift+Enter for Newline", func(t *testing.T) {
-		if !strings.Contains(statusBar, "Shift+Enter") || !strings.Contains(statusBar, "Newline") {
-			t.Error("status bar should show Shift+Enter for Newline")
+	t.Run("shows backslash+Enter for Newline", func(t *testing.T) {
+		// Status bar should show \+Enter for Newline (line continuation)
+		if !strings.Contains(statusBar, "\\+Enter") || !strings.Contains(statusBar, "Newline") {
+			t.Error("status bar should show \\+Enter for Newline")
 		}
 	})
 }
@@ -2455,16 +2452,12 @@ func TestModel_MultilineInput_Integration(t *testing.T) {
 			messages:  []chatMessage{},
 		}
 
+		// InsertNewline should be disabled (we handle \ + Enter manually)
 		keys := m.textarea.KeyMap.InsertNewline.Keys()
-		hasShiftEnter := false
 		for _, k := range keys {
-			if k == "shift+enter" {
-				hasShiftEnter = true
-				break
+			if k != "" {
+				t.Errorf("InsertNewline should be disabled, but has key: %s", k)
 			}
-		}
-		if !hasShiftEnter {
-			t.Error("NewChatModelWithSession textarea should have shift+enter for InsertNewline")
 		}
 	})
 
@@ -2486,16 +2479,106 @@ func TestModel_MultilineInput_Integration(t *testing.T) {
 			historyStore: store,
 		}
 
+		// InsertNewline should be disabled (we handle \ + Enter manually)
 		keys := m.textarea.KeyMap.InsertNewline.Keys()
-		hasShiftEnter := false
 		for _, k := range keys {
-			if k == "shift+enter" {
-				hasShiftEnter = true
-				break
+			if k != "" {
+				t.Errorf("InsertNewline should be disabled, but has key: %s", k)
 			}
 		}
-		if !hasShiftEnter {
-			t.Error("NewChatModelWithConversation textarea should have shift+enter for InsertNewline")
+	})
+}
+
+func TestModel_LineContinuation(t *testing.T) {
+	t.Run("backslash at end inserts newline", func(t *testing.T) {
+		ta := createTextarea()
+		ta.SetValue("Hello\\")
+		s := spinner.New()
+		mockSession := &mockChatSession{}
+
+		m := Model{
+			textarea: ta,
+			spinner:  s,
+			session:  mockSession,
+			ready:    true,
+			viewport: viewport.New(100, 20),
+			messages: []chatMessage{},
+		}
+
+		// Press Enter with backslash at end
+		enterMsg := tea.KeyMsg{Type: tea.KeyEnter}
+		newModel, _ := m.Update(enterMsg)
+		updatedModel := newModel.(Model)
+
+		// Should insert newline instead of sending
+		value := updatedModel.textarea.Value()
+		if !strings.Contains(value, "\n") {
+			t.Error("backslash + Enter should insert newline")
+		}
+		if strings.Contains(value, "\\") {
+			t.Error("backslash should be removed after line continuation")
+		}
+		if len(updatedModel.messages) > 0 {
+			t.Error("message should not be sent when using line continuation")
+		}
+	})
+
+	t.Run("no backslash sends message", func(t *testing.T) {
+		ta := createTextarea()
+		ta.SetValue("Hello world")
+		s := spinner.New()
+		mockSession := &mockChatSession{}
+
+		m := Model{
+			textarea: ta,
+			spinner:  s,
+			session:  mockSession,
+			ready:    true,
+			viewport: viewport.New(100, 20),
+			messages: []chatMessage{},
+		}
+
+		// Press Enter without backslash
+		enterMsg := tea.KeyMsg{Type: tea.KeyEnter}
+		newModel, _ := m.Update(enterMsg)
+		updatedModel := newModel.(Model)
+
+		// Should send message
+		if len(updatedModel.messages) == 0 {
+			t.Error("message should be sent when no backslash at end")
+		}
+	})
+
+	t.Run("multiple continuations work", func(t *testing.T) {
+		ta := createTextarea()
+		ta.SetValue("Line 1\\")
+		s := spinner.New()
+		mockSession := &mockChatSession{}
+
+		m := Model{
+			textarea: ta,
+			spinner:  s,
+			session:  mockSession,
+			ready:    true,
+			viewport: viewport.New(100, 20),
+			messages: []chatMessage{},
+		}
+
+		// First continuation
+		enterMsg := tea.KeyMsg{Type: tea.KeyEnter}
+		newModel, _ := m.Update(enterMsg)
+		m = newModel.(Model)
+
+		// Add more text with backslash
+		m.textarea.SetValue(m.textarea.Value() + "Line 2\\")
+
+		// Second continuation
+		newModel, _ = m.Update(enterMsg)
+		m = newModel.(Model)
+
+		value := m.textarea.Value()
+		if strings.Count(value, "\n") != 2 {
+			t.Errorf("expected 2 newlines, got %d", strings.Count(value, "\n"))
 		}
 	})
 }
