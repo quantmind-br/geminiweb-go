@@ -1,146 +1,152 @@
-# Refactoring/Design Plan: TUI Enhancement - Conversation History, Input Area & UX
+# Refactoring/Design Plan: Gerenciamento de Conversas e Favoritos
 
 ## 1\. Executive Summary & Goals
 
-This plan outlines the refactoring and new feature implementation required to significantly enhance the `geminiweb` interactive TUI. The primary focus is integrating local conversation persistence, improving user input capabilities, and polishing the overall user experience.
+O objetivo primário é estender a funcionalidade de **`history`** (histórico de conversas) para incluir recursos de gerenciamento, manipulação e um mecanismo de favoritos, melhorando significativamente a **usabilidade** e **capacidade de organização** do aplicativo CLI.
 
 ### Key Goals:
 
-1.  **Integrate Local Persistence:** Fully connect the `internal/history` package to the `internal/tui/model.go` for automatic real-time saving and conversation resumption.
-2.  **Enhance Input Usability:** Enable multi-line input and implement command-based file attachment (VIM-style command mode).
-3.  **Improve UX/Styling:** Implement URL display for images and introduce TUI color theme customization.
+1.  **Implementar Operações de Gerenciamento:** Adicionar comandos para exportar, deletar, mover e renomear conversas.
+2.  **Desenvolver Mecanismo de Favoritos:** Criar um menu de conversas favoritas persistente, permitindo acesso rápido.
+3.  **Melhorar a Interação do Usuário:** Integrar as novas funcionalidades ao TUI (Terminal User Interface) para uma experiência mais intuitiva.
 
 -----
 
 ## 2\. Current Situation Analysis
 
-### Overview of Relevant Components
+O projeto utiliza o pacote **`internal/history`** para persistir as conversas em arquivos JSON (um por conversa) no diretório `~/.geminiweb/history`. O `Store` atual (`internal/history/store.go`) já possui operações básicas de CRUD, como `CreateConversation`, `GetConversation`, `ListConversations`, `AddMessage`, `UpdateMetadata`, `DeleteConversation` e `ClearAll`.
 
-| Component | Status | Role | Required Change |
-| :--- | :--- | :--- | :--- |
-| `internal/tui/model.go` | Exists | Main TUI loop (`Update`, `View`) and state management. | Major refactoring needed to handle pre-chat selection, history loading, saving logic, new commands (`/file`, `/history`), and enhanced input (multi-line, command parsing). |
-| `internal/api/session.go` | Exists | Manages chat context (`metadata`: `[cid, rid, rcid]`). | Needs modification to accept `UploadedFile` for `SendMessage` to support file attachment. |
-| `internal/history/store.go` | Exists | Persistence layer (JSON files). | Already provides necessary public methods (`DefaultStore()`, `ListConversations()`, `GetConversation()`, `AddMessage()`, `UpdateMetadata()`). |
-| `internal/commands/chat.go` | Exists | Entry point for `geminiweb chat`. | Needs refactoring to handle conversation ID passed from a TUI selection menu, instead of immediately starting a session. |
-| `internal/api/generate.go` | Exists | Builds the API payload (`buildPayloadWithGem`). | Needs modification to correctly handle `UploadedFile` objects in `GenerateOptions`. |
-| `internal/api/upload.go` | Exists | Contains `UploadedFile` type and `UploadFile`/`UploadText` methods. | The `UploadedFile` type should be leveraged directly. |
-| `internal/render/themes.go`| Exists | Manages markdown themes. | Extend to provide TUI colors. |
-| `internal/tui/styles.go`| Exists | TUI Lipgloss styles. | Refactor to load colors from a central theme provider. |
+**Limitações Atuais:**
 
-### Key Pain Points/Limitations
-
-  * **Lack of Persistence:** Conversations are ephemeral; context is lost upon exiting the TUI.
-  * **Input Area:** The single-line input (`textarea.New()`) limits complex, multi-paragraph prompts.
-  * **Feature Gaps:** Missing basic interactive TUI features like history switching and file attachment.
-  * **Image URLs:** Image response (URL) is currently not presented in a user-friendly manner.
+  * **Gerenciamento CLI Básico:** O comando `geminiweb history` só oferece `list`, `show`, `delete` e `clear`. As funcionalidades de exportação, renomeação e manipulação de ordem não existem.
+  * **Ausência de Favoritos:** Não há um mecanismo para marcar ou gerenciar conversas favoritas.
+  * **Modelo de Conversa Fixo:** A estrutura `history.Conversation` não suporta metadados adicionais, como um flag de "favorito" ou um campo para ordem de exibição.
+  * **Interação em TUI Limitada:** A seleção de histórico (`internal/tui/history_selector.go`) é apenas para retomada; não há interface para gerenciar as conversas.
 
 -----
 
 ## 3\. Proposed Solution / Refactoring Strategy
 
-The strategy involves a **phased approach** focused on injecting persistence, overhauling input, and applying visual improvements.
+A estratégia proposta é introduzir um novo mecanismo de **metadados globais** para gerenciar a ordem e o status de favorito das conversas, mantendo a estrutura de conversas individualizadas (JSON) em `internal/history`.
 
 ### 3.1. High-Level Design / Architectural Overview
 
-The core architectural change is the introduction of a **Pre-Chat Selection Model** and a direct **History Persister** layer inside the main `Model`.
+O novo design envolve:
 
-  * **TUI Flow Change:** `geminiweb chat` $\rightarrow$ **`HistorySelectorModel`** $\rightarrow$ `ChatModel` (loaded session or new session).
-  * **History Persister:** `ChatModel.Update` will interact directly with `history.Store` after an assistant's `responseMsg` is received.
-  * **Input Area Refactoring:** The existing `textarea.Model` will be configured for multi-line. New internal logic in `ChatModel.Update` will parse commands (e.g., `/file`, `/history`) *before* sending the message to the session.
+1.  **Novo Arquivo de Metadados:** Criar um arquivo `history_meta.json` (ou similar) no diretório `~/.geminiweb/history` para armazenar a lista ordenada de IDs de conversas e metadados como a flag de `Favorito`.
+2.  **Refatorar `history.Store`:** Adicionar métodos para manipular a ordem e a flag de favoritos, lendo e escrevendo no novo arquivo de metadados.
+3.  **Implementar Novos Comandos CLI:** Adicionar subcomandos em `geminiweb history` para as novas funcionalidades (exportar, renomear, mover).
+4.  **Estender TUI:** Atualizar o seletor de histórico ou criar um novo TUI de gerenciamento para as novas operações.
+
+<!-- end list -->
+
+```mermaid
+graph TD
+    subgraph CLI / TUI
+        Cobra[geminiweb history <cmd>]
+        ChatTUI[/history command]
+        ManagerTUI[Novo TUI de Gerenciamento]
+    end
+
+    subgraph Internal Packages
+        HStore[internal/history/Store]
+        HConv[internal/history/Conversation.json]
+        HMeta[internal/history/HistoryMeta.json (Novo)]
+    end
+
+    Cobra -->|Chama| HStore
+    ChatTUI -->|Chama| HStore
+    ManagerTUI -->|Chama| HStore
+
+    HStore -->|Lê/Escreve| HConv
+    HStore -->|Lê/Escreve Ordem/Favoritos| HMeta
+```
 
 ### 3.2. Key Components / Modules
 
-| Component | Responsibility | Change Summary |
+| Componente | Localização | Responsabilidades |
 | :--- | :--- | :--- |
-| `internal/tui/history_selector.go` **(New)** | Handles the pre-chat menu to select *New* or *Resume* conversation. | New file, using logic similar to `gems_model.go`. |
-| `internal/tui/model.go` | Manages chat state, now including: `currentConvID`, `attachments []*api.UploadedFile`. | New state/logic to save/load on `Init`/`Update`, and manage attached files. |
-| `internal/api/session.go` | Handle API call context. | Modify `SendMessage(prompt string, files []*api.UploadedFile)` to incorporate files into `GenerateOptions`. |
-| `internal/api/generate.go` | API payload construction. | Update `buildPayloadWithGem` signature to accept `[]*api.UploadedFile` and modify JSON payload structure when files are present. |
-| `internal/tui/styles.go` | TUI Visuals. | Extract color constants into a configurable theme struct, allowing runtime updates. |
-
------
+| **`HistoryMeta`** (Novo) | `internal/history/store.go` | Estrutura para armazenar a ordem de exibição e os favoritos (lista de IDs). |
+| **`Store` Refatorado** | `internal/history/store.go` | Gerenciar a persistência/carregamento de `HistoryMeta`. Adicionar métodos para `ToggleFavorite`, `ReorderConversation`, `RenameConversation`. |
+| **`Conversation`** Refatorado | `internal/history/store.go` | Adicionar campos transientes (não persistidos no JSON da conversa) como `IsFavorite`, `OrderIndex` (preenchidos a partir de `HistoryMeta`). *Alternativa: Adicionar a flag de `IsFavorite` ao JSON da conversa, se a ordem global for a única preocupação do metafile.* **Manter o metafile para ordem e favoritos é o ideal.**|
+| **`history` Command** | `internal/commands/history.go` | Implementar `export`, `rename`, `move`, `favorite`. |
+| **`ChatModel` Extendido** | `internal/tui/model.go` | Adicionar lógica para o comando `/favorite` dentro do chat. |
 
 ### 3.3. Detailed Action Plan / Phases
 
-#### 📦 Phase 1: Conversation Persistence (Critical Path)
-
-**Objective(s):** Implement automatic saving and the conversation selection menu.
-**Priority:** High (Foundation for long-term chat)
+#### Phase 1: Data Model Refactoring & Core Store Logic (High Priority)
 
 | Task | Rationale/Goal | Estimated Effort | Deliverable/Criteria for Completion |
 | :--- | :--- | :--- | :--- |
-| **1.1:** Modify `ChatSession` for File Support | Prepare session logic for file attachments (for Phase 2). | S | Update `session.SendMessage` to take an optional `[]*api.UploadedFile` and update `GenerateOptions` accordingly. |
-| **1.2:** Create `HistorySelectorModel` | Enable user to select existing or new conversation at startup. | M | New file `internal/tui/history_selector.go` with list/select logic. |
-| **1.3:** Refactor `commands/chat.go` | Launch `HistorySelectorModel` instead of immediately creating a `ChatSession`. | S | `runChat()` now calls `RunHistorySelector()`; logic moved to TUI. |
-| **1.4:** Update `Model.NewChatModel` | Accept `*history.Conversation` to initialize `ChatSession` and `messages`. | M | Load conversation data (messages, metadata) into the TUI Model and session. |
-| **1.5:** Implement Auto-Save in `Model.Update` | Save user message, then save assistant response *and* metadata (`CID`, `RID`, `RCID`). | L | Successful `history.Store.AddMessage` and `history.Store.UpdateMetadata` call after every `responseMsg`. |
-| **1.6:** Implement `/history` Command | Allow dynamic switching between saved conversations within the chat TUI. | M | New state/sub-view in `Model.Update` to show a temporary list (using existing `gems_model` rendering logic as a base). |
+| 1.1: **Definir `ConversationMeta` & `HistoryMeta`** | Criar as estruturas em `internal/history/store.go` para persistir ordem e favoritos globalmente. | S | Estruturas `ConversationMeta` e `HistoryMeta` definidas. |
+| 1.2: **Implementar `LoadMeta` & `SaveMeta`** | Adicionar métodos ao `Store` para persistir e carregar o arquivo de metadados (`~/.geminiweb/history/meta.json`). | M | `LoadMeta` e `SaveMeta` funcionando, com inicialização default. |
+| 1.3: **Refatorar `ListConversations`** | Usar a ordem definida em `HistoryMeta` para retornar a lista de conversas. Adicionar os campos `IsFavorite` e `OrderIndex` à struct `Conversation` (como campos *calculados* ou *populados*). | M | `ListConversations()` retorna conversas ordenadas, com `IsFavorite` preenchido. |
+| 1.4: **Implementar `UpdateTitle` (Renomear)** | Refatorar para garantir que o título seja atualizado tanto no arquivo da conversa quanto no metafile (se necessário para busca/exibição). | S | Método `UpdateTitle(id, newTitle string)` em `Store` funcionando. |
+| 1.5: **Implementar `ToggleFavorite`** | Adicionar método ao `Store` que altera o status `IsFavorite` no `HistoryMeta` e salva. | S | Método `ToggleFavorite(id string)` em `Store` funcionando. |
+| 1.6: **Implementar `ReorderConversation`** | Adicionar método ao `Store` que altera a posição de um `id` na lista de ordem do `HistoryMeta`. | M | Método `ReorderConversation(id string, newIndex int)` em `Store` funcionando. |
 
------
-
-#### 🛠️ Phase 2: Input & Command Overhaul
-
-**Objective(s):** Enable multi-line text input and implement file/image attachment commands.
-**Priority:** Medium
+#### Phase 2: CLI & Export Functionality (Medium Priority)
 
 | Task | Rationale/Goal | Estimated Effort | Deliverable/Criteria for Completion |
 | :--- | :--- | :--- | :--- |
-| **2.1:** Configure Multi-line Input | Improve prompt complexity. | S | In `Model.NewChatModel`, set `textarea.Newline` to `Shift+Enter` or `Ctrl+Enter`, making `Enter` the default submission key. |
-| **2.2:** Command Parsing in `Model.Update` | Enable handling of `/file`, `/image`, `/history` (from Phase 1). | M | New internal `m.parseInput(input string) (command, args, cleanPrompt)` function. |
-| **2.3:** Implement `/file <path>` & `/image <path>` | Allow multimodal input. | M | `Model` must track a list of `[]*api.UploadedFile`. The parsing logic calls `client.UploadFile` and stores the result in state *before* sending the message (Task 1.1 dependency). |
-| **2.4:** Clear Attachments on Send | Prevent accidental re-sending of files. | S | Reset `Model.attachments` to `nil` immediately after successfully sending the message. |
-| **2.5:** Update Input Area UX | Show active attached files (e.g., `[1 file attached]`) above the textarea. | S | Modify `Model.View` to render attachment count. |
-| **2.6:** (Future) Implement Gem Autocomplete | Provide a smoother UX for typing `/gem <name>`. | L | Requires integrating a text-input `bubble` for suggestions/state management (out of scope for MVP). |
+| 2.1: **Adicionar `history rename <id> <new_title>`** | Permitir renomear via CLI. Reutiliza 1.4. | S | Comando CLI integrado. |
+| 2.2: **Adicionar `history move <id> <index>`** | Permitir mover para nova posição na lista (por índice). Reutiliza 1.6. | S | Comando CLI integrado. |
+| 2.3: **Adicionar `history favorite <id>`** | Permitir adicionar/remover de favoritos via CLI. Reutiliza 1.5. | S | Comando CLI integrado. |
+| 2.4: **Implementar `history export <id> -f <format>`** | Permitir exportar conversas. Suportar `json` (nativa) e `markdown` (formatando os `Messages`). | M | Novo comando `export` e lógica de formatação de mensagens para Markdown. |
 
------
-
-#### 🎨 Phase 3: Style and UX Polish
-
-**Objective(s):** Improve the display of image URLs and enable TUI color customization.
-**Priority:** Medium/Low
+#### Phase 3: TUI Integration & Favorites Menu (Medium Priority)
 
 | Task | Rationale/Goal | Estimated Effort | Deliverable/Criteria for Completion |
 | :--- | :--- | :--- | :--- |
-| **3.1:** Display Image URLs from `ModelOutput` | Provide useful links when images are returned. | M | In `Model.updateViewport`, detect image URLs in `models.ModelOutput` and append a styled list (e.g., `[Image: Title] (URL)`) below the main markdown content. |
-| **3.2:** Refactor `internal/tui/styles.go` | Centralize color definitions for easy theming. | M | Define a theme struct (e.g., `TUITheme`) in a new file (e.g., `internal/render/tui_themes.go`) and initialize `internal/tui/styles.go` with the current theme. |
-| **3.3:** Extend `ConfigModel` for Themes | Allow user selection of a new TUI theme. | S | Integrate the theme selection logic into `internal/tui/config_model.go`, updating the theme and saving the name to `config.json`. |
-| **3.4:** Create New Themes (Catppuccin/Nord) | Provide initial theme choices for users. | S | New theme definitions in `internal/render/tui_themes.go`. |
+| 3.1: **Refatorar `history_selector.go`** | Adicionar filtros e ordenação por favoritos no seletor, e ações no TUI para renomear, deletar, e favoritar (usando `HistoryStore` estendido). | L | Seletor de histórico permite busca, filtro por favoritos, e ações de gerenciamento. |
+| 3.2: **Implementar Comando `/favorite` no Chat** | Permitir que o usuário favorite a conversa atual sem sair do chat. | S | Comando `/favorite` adicionado e integração com `ToggleFavorite` (1.5). |
+| 3.3: **Criar `FavoriteConversationsModel` (Menu Favoritos)** | Implementar um novo TUI ou sub-menu dentro do `chat` para exibir *apenas* as conversas favoritas e retomá-las. | M | Novo TUI/menu de favoritos acessível e funcional. |
 
------
+### 3.4. Data Model Changes (if applicable)
 
-### 3.4. Data Model Changes
+O campo `Messages` em `history.Conversation` já contém `Role`, `Content`, `Thoughts` e `Timestamp`.
 
-  * **`internal/api/session.go`:**
+**Novas Estruturas (em `internal/history/store.go`):**
 
-    ```go
-    // Modified SendMessage signature (before: prompt string)
-    func (s *ChatSession) SendMessage(prompt string, files []*UploadedFile) (*models.ModelOutput, error)
-    ```
+```go
+// ConversationMeta armazena metadados globais por conversa
+type ConversationMeta struct {
+	ID         string `json:"id"`
+	IsFavorite bool   `json:"is_favorite"`
+	Title      string `json:"title"` // Copiar o título para o metafile para evitar ler todos os arquivos ao listar
+}
 
-  * **`internal/api/generate.go`:**
+// HistoryMeta armazena a ordem e os favoritos
+type HistoryMeta struct {
+	// A lista de IDs na ordem em que devem ser exibidos
+	Order   []string                      `json:"order"` 
+	MetaMap map[string]*ConversationMeta  `json:"meta_map"`
+	// Outros metadados globais
+	Version int `json:"version"` // Para migração futura
+}
 
-    ```go
-    // Modified GenerateOptions struct
-    type GenerateOptions struct {
-        Model    models.Model
-        Metadata []string
-        // Previously Images - now consolidated/unified to Files
-        Files   []*UploadedFile // <-- CHANGE: Renamed field to be more generic, assuming UploadedImage is aliased to UploadedFile
-        GemID    string
-    }
-    // Update all internal usages of GenerateOptions (including client.go, session.go)
-    // Update buildPayloadWithGem signature
-    func buildPayloadWithGem(prompt string, metadata []string, files []*UploadedFile, gemID string) (string, error)
-    ```
+// Conversa atualizada para facilitar o TUI (campos não persistidos no arquivo JSON individual)
+type Conversation struct {
+	// ... campos existentes (ID, Title, Model, CreatedAt, UpdatedAt, Messages, CID, RID, RCID)
+	// Adicionar:
+	IsFavorite bool `json:"-"` // Preenchido a partir do HistoryMeta
+	OrderIndex int  `json:"-"` // Posição na lista Order do HistoryMeta
+}
+```
 
-  * **`internal/tui/model.go`:**
+### 3.5. API Design / Interface Changes (if applicable)
 
-    ```go
-    // New field to track attached files
-    attachments []*api.UploadedFile
-    // New field to track conversation ID
-    currentConvID string
-    ```
+**Modificações na Interface `HistoryStoreInterface` (`internal/tui/model.go`):**
+
+```go
+// HistoryStoreInterface (existing methods)
+// ...
+// New methods:
+UpdateTitle(id, title string) error
+DeleteConversation(id string) error // Already exists, but will need to update metafile
+ToggleFavorite(id string) error
+ReorderConversation(id string, newIndex int) error
+```
 
 -----
 
@@ -148,50 +154,47 @@ The core architectural change is the introduction of a **Pre-Chat Selection Mode
 
 ### 4.1. Technical Risks & Challenges
 
-| Risk/Challenge | Impact | Mitigation Strategy |
+| Risco | Descrição | Mitigação |
 | :--- | :--- | :--- |
-| **R1:** Race conditions in `Model.Update` (Auto-Save) | Corrupted history file or lost metadata/messages. | **Mutex in `history.Store` (already exists).** Ensure `Model.Update` only attempts to save *after* `responseMsg` is fully processed and `m.session.metadata` is updated. |
-| **R2:** Complex `textarea` configuration for multi-line/send | Poor UX, accidental message sending. | Use `bubbles/textarea` built-in `SetSubmitKeys` or `SetNewlineKeys` functionality. Clearly communicate key bindings in the status bar. |
-| **R3:** File Upload Failure & Retries | Loss of user context, frustration. | **Implement file upload as part of the command parsing step (Task 2.3), *before* `SendMessage`.** If upload fails, alert user with error message (`errMsg`) but retain prompt and state for retry. |
-| **R4:** `glamour` markdown renderer re-initialization on theme change | Performance bottleneck or memory leak. | Leverage `internal/render`'s existing `rendererPool` and `cacheKey` logic. Ensure the TUI theme selection triggers a cache flush or key update for the renderer pool. |
+| **Consistência de Dados** | Inconsistência entre os arquivos `Conversation.json` e `HistoryMeta.json` (ex: um conversa deletada ainda referenciada no metafile). | `DeleteConversation` deve sempre remover a entrada do metafile. `ListConversations` deve limpar o metafile de IDs órfãos (se a conversa não existir no disco) durante o carregamento. |
+| **Conflito de Escrita** | Múltiplas operações TUI/CLI tentando escrever o `HistoryMeta.json` simultaneamente (menos provável em um app CLI single-user). | O `Store` deve usar um `sync.Mutex` ao ler/escrever o arquivo `HistoryMeta.json` (já é feito no `Store.mu`). |
+| **Exportação Markdown** | Conversões complexas de conteúdo (código, tabelas) do formato de resposta para Markdown limpo para exportação. | Reutilizar o pacote `internal/render` para a lógica de formatação, garantindo que o output seja limpo e portátil. |
 
 ### 4.2. Dependencies
 
-  * Phase 1.5 (Auto-Save) depends on a stable `history.Store` interface.
-  * Phase 2.3 (`/file` command) depends on successful completion of Phase 1.1 (modifying `ChatSession.SendMessage` to accept files).
-  * Phase 3.1 (Image URL Display) depends on Phase 3.2 (Style Refactor) to ensure the image link styling is consistent with the new theme logic.
+  * **`internal/history/store.go`**: Depende da implementação correta e thread-safe de `LoadMeta`, `SaveMeta`, `ToggleFavorite`, `ReorderConversation` para todos os novos comandos.
+  * **`internal/commands/history.go`**: Depende da nova interface do `Store` para implementar os comandos `rename`, `move`, `favorite`.
+  * **`internal/tui/model.go`**: Depende do `Store` para o comando `/favorite`.
 
 ### 4.3. Non-Functional Requirements (NFRs) Addressed
 
-  * **Reliability:** Auto-save greatly increases session reliability. (Phase 1)
-  * **Usability:** Multi-line input and command-based file attachment drastically improve user workflow efficiency. (Phase 2)
-  * **Maintainability:** Centralizing TUI styles and abstracting theme logic makes future visual updates simpler. (Phase 3)
-  * **Extensibility:** Introducing command parsing in `Model.Update` creates a robust foundation for adding future TUI commands (e.g., `/model`, `/persona`). (Phase 2)
+| NFR | Como o Plano Contribui |
+| :--- | :--- |
+| **Usabilidade** | Novos comandos CLI e integração TUI (favoritos, renomear, mover) tornam o gerenciamento de conversas mais fácil e intuitivo. |
+| **Confiabilidade** | O mecanismo de metadados garante que o estado de Favorito/Ordem seja persistente e recuperável após o reinício da aplicação. A lógica de mitigação de consistência de dados (4.1) aumenta a confiabilidade. |
+| **Manutenibilidade** | A separação da ordem/favoritos (`HistoryMeta`) do conteúdo da conversa (`Conversation.json`) mantém o princípio de separação de preocupações e facilita futuras extensões. |
 
 -----
 
 ## 5\. Success Metrics / Validation Criteria
 
-| Metric | Validation Criteria |
-| :--- | :--- |
-| **Persistence Integrity** | 1. A completed chat session can be resumed, accurately restoring all messages and the correct `CID`, `RID`, and `RCID`. |
-| **Input Usability** | 2. Users can input multi-line prompts using `Shift+Enter` (or `Ctrl+Enter`) and submit the message using `Enter`. |
-| **File Attachment** | 3. The `/file <path>` command successfully uploads a file and includes it in the *next* outgoing API request. |
-| **UX Improvement** | 4. Image URLs in model output are extracted from the markdown and displayed in a visually distinct, styled format below the main response. |
-| **Theming** | 5. Users can change the TUI's primary color palette via the `geminiweb config` menu, and the change is immediately reflected in the chat border/accents. |
+1.  **Funcionalidade Básica:** Todos os novos comandos CLI (`rename`, `move`, `favorite`, `export`) são implementados e funcionam conforme o esperado (testados com unit tests no pacote `internal/history`).
+2.  **Persistência de Favoritos:** O status de favorito de uma conversa é mantido após o fechamento e reabertura do aplicativo.
+3.  **Ordenação de Conversas:** A ordem de exibição das conversas (`ListConversations`) reflete a ordem definida no `HistoryMeta.json` e a operação `move` funciona corretamente.
+4.  **Integração TUI:** O TUI de chat e o seletor de histórico refletem o status de favorito e a ordem das conversas, e permitem ativar/desativar favoritos.
 
 -----
 
 ## 6\. Assumptions Made
 
-1.  **Data Consistency:** It is assumed that the existing `internal/history/store.go` logic is robust enough to handle concurrent read/write operations (due to its internal `sync.RWMutex`).
-2.  **API Compatibility:** The current understanding of the Gemini API payload structure for multi-modal input (files and text in `buildPayloadWithGem`) is correct and will not change unexpectedly.
-3.  **TUI Framework Stability:** The `charmbracelet/bubbles` and `bubbletea` libraries will handle the complex state transitions (switching between chat, `/history` command list, and `/gems` command list) without major visual glitches or performance issues.
+  * O formato de exportação para **Markdown** será uma simples concatenação formatada das mensagens, usando `internal/render` para a formatação final do conteúdo.
+  * A ordenação será baseada em **índices de array** (começando em 0). A operação `move` exigirá o ID da conversa e o novo índice.
+  * O arquivo `HistoryMeta.json` é a **fonte da verdade** para ordem e status de favoritos.
 
 -----
 
 ## 7\. Open Questions / Areas for Further Investigation
 
-1.  **HistorySelector Implementation:** Should the `HistorySelectorModel` be a separate `tea.Model` run before the chat, or a sub-view within the main `ChatModel`? (Decision: Separate `tea.Model` for cleaner separation, followed by refactoring `commands/chat.go`).
-2.  **Error Handling for File Attachments:** How should the `ChatModel` handle *multiple* file upload failures from a single `/file` command chain? (Decision: Group all upload failures into a single descriptive `errMsg` and prevent message send, retaining the input text.)
-3.  **TUI Theme Scope:** Will the TUI theme apply only to the `lipgloss` styles in `internal/tui/styles.go`, or should it also attempt to modify the `glamour` markdown theme (via `internal/render/themes.go`) to match? (Decision: TUI theme applies to `lipgloss` styles; markdown theme remains configurable but separate unless explicitly linked by a new config field.)
+  * **Exportação de Metadados:** Deve-se incluir os metadados da API (`CID`, `RID`, `RCID`) no arquivo de exportação (ex: JSON)? *Decisão: Incluir no JSON, não no Markdown.*
+  * **Gestão de Metadados Órfãos:** A limpeza de referências inválidas no `HistoryMeta.json` deve ser feita de forma silenciosa ou apenas em caso de erro? *Decisão: Limpeza silenciosa durante o carregamento de `ListConversations`.*
+  * **Comando de Exportação:** Qual deve ser o *output default* se o formato não for especificado? *Decisão: `markdown` é o mais útil para o usuário, mas JSON é o mais fiel. Usar `markdown` como default para usabilidade.*
