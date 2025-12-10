@@ -36,7 +36,7 @@ config.json
 go.work
 
 # Requests folder
-requests/
+# requests/
 
 # Shotgun prompt files (already in gitignore but worth repeating)
 shotgun-prompt-*

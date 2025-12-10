@@ -1660,6 +1660,26 @@ func (m *mockFullHistoryStore) CreateConversation(model string) (*history.Conver
 	return m.createConversation, m.createErr
 }
 
+func (m *mockFullHistoryStore) DeleteConversation(id string) error {
+	return nil
+}
+
+func (m *mockFullHistoryStore) ToggleFavorite(id string) (bool, error) {
+	return false, nil
+}
+
+func (m *mockFullHistoryStore) MoveConversation(id string, newIndex int) error {
+	return nil
+}
+
+func (m *mockFullHistoryStore) SwapConversations(id1, id2 string) error {
+	return nil
+}
+
+func (m *mockFullHistoryStore) ExportToMarkdown(id string) (string, error) {
+	return "", nil
+}
+
 func TestFullHistoryStoreInterface(t *testing.T) {
 	// Verify the interface is implemented by mockFullHistoryStore
 	var _ FullHistoryStore = &mockFullHistoryStore{}

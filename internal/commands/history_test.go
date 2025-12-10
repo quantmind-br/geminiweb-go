@@ -3,6 +3,7 @@ package commands
 import (
 	"bytes"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/diogo/geminiweb/internal/history"
@@ -19,7 +20,7 @@ func TestHistoryCommand(t *testing.T) {
 	}
 
 	// Test that subcommands are registered
-	expectedSubcommands := []string{"list", "show", "delete", "clear"}
+	expectedSubcommands := []string{"list", "show", "delete", "clear", "rename", "favorite", "export", "search"}
 	for _, sub := range expectedSubcommands {
 		found := false
 		for _, cmd := range historyCmd.Commands() {
@@ -53,9 +54,9 @@ func TestHistoryListCommand(t *testing.T) {
 }
 
 func TestHistoryShowCommand(t *testing.T) {
-	// Test command structure
-	if historyShowCmd.Use != "show <id>" {
-		t.Errorf("Expected use 'show <id>', got %s", historyShowCmd.Use)
+	// Test command structure - now uses <ref> instead of <id>
+	if historyShowCmd.Use != "show <ref>" {
+		t.Errorf("Expected use 'show <ref>', got %s", historyShowCmd.Use)
 	}
 
 	if historyShowCmd.RunE == nil {
@@ -72,9 +73,9 @@ func TestHistoryShowCommand(t *testing.T) {
 }
 
 func TestHistoryDeleteCommand(t *testing.T) {
-	// Test command structure
-	if historyDeleteCmd.Use != "delete <id>" {
-		t.Errorf("Expected use 'delete <id>', got %s", historyDeleteCmd.Use)
+	// Test command structure - now uses <ref> instead of <id>
+	if historyDeleteCmd.Use != "delete <ref>" {
+		t.Errorf("Expected use 'delete <ref>', got %s", historyDeleteCmd.Use)
 	}
 
 	if historyDeleteCmd.RunE == nil {
@@ -94,6 +95,66 @@ func TestHistoryClearCommand(t *testing.T) {
 
 	// Note: Argument validation is handled by Cobra's Args field, not tested here
 	// since calling RunE directly bypasses Cobra's validation
+}
+
+func TestHistoryRenameCommand(t *testing.T) {
+	// Test command structure
+	if historyRenameCmd.Use != "rename <ref> <title>" {
+		t.Errorf("Expected use 'rename <ref> <title>', got %s", historyRenameCmd.Use)
+	}
+
+	if historyRenameCmd.RunE == nil {
+		t.Error("RunE should not be nil")
+	}
+
+	if historyRenameCmd.Args == nil {
+		t.Error("Args validation should be configured")
+	}
+}
+
+func TestHistoryFavoriteCommand(t *testing.T) {
+	// Test command structure
+	if historyFavoriteCmd.Use != "favorite <ref>" {
+		t.Errorf("Expected use 'favorite <ref>', got %s", historyFavoriteCmd.Use)
+	}
+
+	if historyFavoriteCmd.RunE == nil {
+		t.Error("RunE should not be nil")
+	}
+
+	if historyFavoriteCmd.Args == nil {
+		t.Error("Args validation should be configured")
+	}
+}
+
+func TestHistoryExportCommand(t *testing.T) {
+	// Test command structure
+	if historyExportCmd.Use != "export <ref>" {
+		t.Errorf("Expected use 'export <ref>', got %s", historyExportCmd.Use)
+	}
+
+	if historyExportCmd.RunE == nil {
+		t.Error("RunE should not be nil")
+	}
+
+	if historyExportCmd.Args == nil {
+		t.Error("Args validation should be configured")
+	}
+}
+
+func TestHistorySearchCommand(t *testing.T) {
+	// Test command structure
+	if historySearchCmd.Use != "search <query>" {
+		t.Errorf("Expected use 'search <query>', got %s", historySearchCmd.Use)
+	}
+
+	if historySearchCmd.RunE == nil {
+		t.Error("RunE should not be nil")
+	}
+
+	if historySearchCmd.Args == nil {
+		t.Error("Args validation should be configured")
+	}
 }
 
 // Test that history commands work with a temporary store
@@ -202,9 +263,12 @@ func TestRunHistoryList_Empty(t *testing.T) {
 	_, _ = buf.ReadFrom(r)
 	output := buf.String()
 
-	// Should print "No conversations found"
-	if output != "No conversations found.\n" {
+	// Should print "No conversations found" with hint
+	if !strings.Contains(output, "No conversations found.") {
 		t.Errorf("Expected 'No conversations found.', got: %s", output)
+	}
+	if !strings.Contains(output, "geminiweb chat") {
+		t.Errorf("Expected hint about starting new chat, got: %s", output)
 	}
 }
 
@@ -249,12 +313,16 @@ func TestRunHistoryList_WithConversations(t *testing.T) {
 	_, _ = buf.ReadFrom(r)
 	output := buf.String()
 
-	// Should contain the headers
-	if !bytes.Contains([]byte(output), []byte("ID")) {
-		t.Error("Output should contain 'ID' header")
+	// New format shows indices like [1], [2]
+	if !strings.Contains(output, "[1]") {
+		t.Error("Output should contain index [1]")
 	}
-	if !bytes.Contains([]byte(output), []byte("TITLE")) {
-		t.Error("Output should contain 'TITLE' header")
+	if !strings.Contains(output, "[2]") {
+		t.Error("Output should contain index [2]")
+	}
+	// Should contain message count
+	if !strings.Contains(output, "msg") {
+		t.Error("Output should contain message count indicator")
 	}
 }
 
@@ -279,7 +347,7 @@ func TestRunHistoryShow_Success(t *testing.T) {
 	r, w, _ := os.Pipe()
 	os.Stdout = w
 
-	// Run the command
+	// Run the command - use index "1" or direct ID
 	err = runHistoryShow(historyShowCmd, []string{conv.ID})
 
 	// Restore stdout
@@ -296,7 +364,93 @@ func TestRunHistoryShow_Success(t *testing.T) {
 	output := buf.String()
 
 	// Should contain the conversation ID
-	if !bytes.Contains([]byte(output), []byte(conv.ID)) {
+	if !strings.Contains(output, conv.ID) {
+		t.Errorf("Output should contain conversation ID: %s", conv.ID)
+	}
+}
+
+func TestRunHistoryShow_WithAlias(t *testing.T) {
+	// Create a temporary directory for history
+	tmpDir := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	os.Setenv("HOME", tmpDir)
+	defer os.Setenv("HOME", oldHome)
+
+	// Create a conversation
+	store, err := history.DefaultStore()
+	if err != nil {
+		t.Fatalf("Failed to create store: %v", err)
+	}
+
+	conv, _ := store.CreateConversation("test-model")
+	store.AddMessage(conv.ID, "user", "test message", "")
+
+	// Capture output
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	// Run the command with @last alias
+	err = runHistoryShow(historyShowCmd, []string{"@last"})
+
+	// Restore stdout
+	w.Close()
+	os.Stdout = oldStdout
+
+	if err != nil {
+		t.Errorf("runHistoryShow with @last failed: %v", err)
+	}
+
+	// Read output
+	var buf bytes.Buffer
+	_, _ = buf.ReadFrom(r)
+	output := buf.String()
+
+	// Should contain the conversation ID
+	if !strings.Contains(output, conv.ID) {
+		t.Errorf("Output should contain conversation ID: %s", conv.ID)
+	}
+}
+
+func TestRunHistoryShow_WithNumericIndex(t *testing.T) {
+	// Create a temporary directory for history
+	tmpDir := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	os.Setenv("HOME", tmpDir)
+	defer os.Setenv("HOME", oldHome)
+
+	// Create a conversation
+	store, err := history.DefaultStore()
+	if err != nil {
+		t.Fatalf("Failed to create store: %v", err)
+	}
+
+	conv, _ := store.CreateConversation("test-model")
+	store.AddMessage(conv.ID, "user", "test message", "")
+
+	// Capture output
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	// Run the command with numeric index
+	err = runHistoryShow(historyShowCmd, []string{"1"})
+
+	// Restore stdout
+	w.Close()
+	os.Stdout = oldStdout
+
+	if err != nil {
+		t.Errorf("runHistoryShow with numeric index failed: %v", err)
+	}
+
+	// Read output
+	var buf bytes.Buffer
+	_, _ = buf.ReadFrom(r)
+	output := buf.String()
+
+	// Should contain the conversation ID
+	if !strings.Contains(output, conv.ID) {
 		t.Errorf("Output should contain conversation ID: %s", conv.ID)
 	}
 }
@@ -321,6 +475,10 @@ func TestRunHistoryDelete_Success(t *testing.T) {
 	r, w, _ := os.Pipe()
 	os.Stdout = w
 
+	// Set force flag to skip confirmation
+	historyForceFlag = true
+	defer func() { historyForceFlag = false }()
+
 	// Run the command
 	err = runHistoryDelete(historyDeleteCmd, []string{conv.ID})
 
@@ -337,9 +495,61 @@ func TestRunHistoryDelete_Success(t *testing.T) {
 	_, _ = buf.ReadFrom(r)
 	output := buf.String()
 
+	// Should contain success message (now uses ✓)
+	if !strings.Contains(output, "Deleted") {
+		t.Errorf("Output should contain success message, got: %s", output)
+	}
+
+	// Verify the conversation was actually deleted
+	_, err = store.GetConversation(conv.ID)
+	if err == nil {
+		t.Error("Conversation should be deleted")
+	}
+}
+
+func TestRunHistoryDelete_WithAlias(t *testing.T) {
+	// Create a temporary directory for history
+	tmpDir := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	os.Setenv("HOME", tmpDir)
+	defer os.Setenv("HOME", oldHome)
+
+	// Create a conversation
+	store, err := history.DefaultStore()
+	if err != nil {
+		t.Fatalf("Failed to create store: %v", err)
+	}
+
+	conv, _ := store.CreateConversation("test-model")
+
+	// Capture output
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	// Set force flag to skip confirmation
+	historyForceFlag = true
+	defer func() { historyForceFlag = false }()
+
+	// Run the command with @last alias
+	err = runHistoryDelete(historyDeleteCmd, []string{"@last"})
+
+	// Restore stdout
+	w.Close()
+	os.Stdout = oldStdout
+
+	if err != nil {
+		t.Errorf("runHistoryDelete with @last failed: %v", err)
+	}
+
+	// Read output
+	var buf bytes.Buffer
+	_, _ = buf.ReadFrom(r)
+	output := buf.String()
+
 	// Should contain success message
-	if !bytes.Contains([]byte(output), []byte("Deleted conversation:")) {
-		t.Error("Output should contain success message")
+	if !strings.Contains(output, "Deleted") {
+		t.Errorf("Output should contain success message, got: %s", output)
 	}
 
 	// Verify the conversation was actually deleted
@@ -371,6 +581,10 @@ func TestRunHistoryClear_Success(t *testing.T) {
 	r, w, _ := os.Pipe()
 	os.Stdout = w
 
+	// Set force flag to skip confirmation
+	historyForceFlag = true
+	defer func() { historyForceFlag = false }()
+
 	// Run the command
 	err = runHistoryClear(historyClearCmd, []string{})
 
@@ -387,9 +601,9 @@ func TestRunHistoryClear_Success(t *testing.T) {
 	_, _ = buf.ReadFrom(r)
 	output := buf.String()
 
-	// Should contain success message
-	if !bytes.Contains([]byte(output), []byte("All conversations deleted.")) {
-		t.Error("Output should contain success message")
+	// Should contain success message (now uses ✓ and count)
+	if !strings.Contains(output, "Deleted") || !strings.Contains(output, "3") {
+		t.Errorf("Output should contain success message with count, got: %s", output)
 	}
 
 	// Verify all conversations were deleted
@@ -400,5 +614,333 @@ func TestRunHistoryClear_Success(t *testing.T) {
 
 	if len(conversations) != 0 {
 		t.Errorf("Expected 0 conversations after clear, got %d", len(conversations))
+	}
+}
+
+func TestRunHistoryRename_Success(t *testing.T) {
+	// Create a temporary directory for history
+	tmpDir := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	os.Setenv("HOME", tmpDir)
+	defer os.Setenv("HOME", oldHome)
+
+	// Create a conversation
+	store, err := history.DefaultStore()
+	if err != nil {
+		t.Fatalf("Failed to create store: %v", err)
+	}
+
+	conv, _ := store.CreateConversation("test-model")
+
+	// Capture output
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	// Run the command
+	err = runHistoryRename(historyRenameCmd, []string{conv.ID, "New Title"})
+
+	// Restore stdout
+	w.Close()
+	os.Stdout = oldStdout
+
+	if err != nil {
+		t.Errorf("runHistoryRename failed: %v", err)
+	}
+
+	// Read output
+	var buf bytes.Buffer
+	_, _ = buf.ReadFrom(r)
+	output := buf.String()
+
+	// Should contain success message
+	if !strings.Contains(output, "Renamed") || !strings.Contains(output, "New Title") {
+		t.Errorf("Output should contain success message, got: %s", output)
+	}
+
+	// Verify the title was changed
+	updated, _ := store.GetConversation(conv.ID)
+	if updated.Title != "New Title" {
+		t.Errorf("Title should be 'New Title', got: %s", updated.Title)
+	}
+}
+
+func TestRunHistoryFavorite_Toggle(t *testing.T) {
+	// Create a temporary directory for history
+	tmpDir := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	os.Setenv("HOME", tmpDir)
+	defer os.Setenv("HOME", oldHome)
+
+	// Create a conversation
+	store, err := history.DefaultStore()
+	if err != nil {
+		t.Fatalf("Failed to create store: %v", err)
+	}
+
+	conv, _ := store.CreateConversation("test-model")
+
+	// Capture output
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	// Run the command - first toggle (add to favorites)
+	err = runHistoryFavorite(historyFavoriteCmd, []string{conv.ID})
+
+	// Restore stdout
+	w.Close()
+	os.Stdout = oldStdout
+
+	if err != nil {
+		t.Errorf("runHistoryFavorite failed: %v", err)
+	}
+
+	// Read output
+	var buf bytes.Buffer
+	_, _ = buf.ReadFrom(r)
+	output := buf.String()
+
+	// Should contain success message about adding
+	if !strings.Contains(output, "★") || !strings.Contains(output, "favorites") {
+		t.Errorf("Output should indicate added to favorites, got: %s", output)
+	}
+
+	// Verify favorite status
+	isFav, _ := store.IsFavorite(conv.ID)
+	if !isFav {
+		t.Error("Conversation should be favorited")
+	}
+
+	// Toggle again (remove from favorites)
+	r, w, _ = os.Pipe()
+	os.Stdout = w
+
+	err = runHistoryFavorite(historyFavoriteCmd, []string{conv.ID})
+
+	w.Close()
+	os.Stdout = oldStdout
+
+	if err != nil {
+		t.Errorf("runHistoryFavorite second toggle failed: %v", err)
+	}
+
+	buf.Reset()
+	_, _ = buf.ReadFrom(r)
+	output = buf.String()
+
+	// Should contain message about removing
+	if !strings.Contains(output, "☆") || !strings.Contains(output, "Removed") {
+		t.Errorf("Output should indicate removed from favorites, got: %s", output)
+	}
+
+	// Verify favorite status
+	isFav, _ = store.IsFavorite(conv.ID)
+	if isFav {
+		t.Error("Conversation should not be favorited")
+	}
+}
+
+func TestRunHistoryExport_Markdown(t *testing.T) {
+	// Create a temporary directory for history
+	tmpDir := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	os.Setenv("HOME", tmpDir)
+	defer os.Setenv("HOME", oldHome)
+
+	// Create a conversation with messages
+	store, err := history.DefaultStore()
+	if err != nil {
+		t.Fatalf("Failed to create store: %v", err)
+	}
+
+	conv, _ := store.CreateConversation("test-model")
+	store.AddMessage(conv.ID, "user", "Hello", "")
+	store.AddMessage(conv.ID, "assistant", "Hi there!", "")
+	store.UpdateTitle(conv.ID, "Test Export")
+
+	// Capture output
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	// Reset flags
+	historyOutputFlag = ""
+	historyFormatFlag = ""
+
+	// Run the command
+	err = runHistoryExport(historyExportCmd, []string{conv.ID})
+
+	// Restore stdout
+	w.Close()
+	os.Stdout = oldStdout
+
+	if err != nil {
+		t.Errorf("runHistoryExport failed: %v", err)
+	}
+
+	// Read output
+	var buf bytes.Buffer
+	_, _ = buf.ReadFrom(r)
+	output := buf.String()
+
+	// Should contain markdown content
+	if !strings.Contains(output, "# Test Export") {
+		t.Errorf("Output should contain markdown title, got: %s", output)
+	}
+	if !strings.Contains(output, "Hello") {
+		t.Errorf("Output should contain message content, got: %s", output)
+	}
+}
+
+func TestRunHistorySearch_TitleMatch(t *testing.T) {
+	// Create a temporary directory for history
+	tmpDir := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	os.Setenv("HOME", tmpDir)
+	defer os.Setenv("HOME", oldHome)
+
+	// Create conversations
+	store, err := history.DefaultStore()
+	if err != nil {
+		t.Fatalf("Failed to create store: %v", err)
+	}
+
+	conv1, _ := store.CreateConversation("test-model")
+	store.UpdateTitle(conv1.ID, "API Development Chat")
+
+	conv2, _ := store.CreateConversation("test-model")
+	store.UpdateTitle(conv2.ID, "Database Design")
+
+	// Capture output
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	// Reset flag
+	historyContentFlag = false
+
+	// Run the command
+	err = runHistorySearch(historySearchCmd, []string{"API"})
+
+	// Restore stdout
+	w.Close()
+	os.Stdout = oldStdout
+
+	if err != nil {
+		t.Errorf("runHistorySearch failed: %v", err)
+	}
+
+	// Read output
+	var buf bytes.Buffer
+	_, _ = buf.ReadFrom(r)
+	output := buf.String()
+
+	// Should find the API conversation
+	if !strings.Contains(output, "API Development") {
+		t.Errorf("Output should contain matched conversation, got: %s", output)
+	}
+	if strings.Contains(output, "Database Design") {
+		t.Errorf("Output should not contain non-matching conversation, got: %s", output)
+	}
+}
+
+func TestRunHistorySearch_NoResults(t *testing.T) {
+	// Create a temporary directory for history
+	tmpDir := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	os.Setenv("HOME", tmpDir)
+	defer os.Setenv("HOME", oldHome)
+
+	// Create a conversation
+	store, err := history.DefaultStore()
+	if err != nil {
+		t.Fatalf("Failed to create store: %v", err)
+	}
+
+	conv, _ := store.CreateConversation("test-model")
+	store.UpdateTitle(conv.ID, "General Chat")
+
+	// Capture output
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	// Reset flag
+	historyContentFlag = false
+
+	// Run the command
+	err = runHistorySearch(historySearchCmd, []string{"xyz123nonexistent"})
+
+	// Restore stdout
+	w.Close()
+	os.Stdout = oldStdout
+
+	if err != nil {
+		t.Errorf("runHistorySearch failed: %v", err)
+	}
+
+	// Read output
+	var buf bytes.Buffer
+	_, _ = buf.ReadFrom(r)
+	output := buf.String()
+
+	// Should indicate no results
+	if !strings.Contains(output, "No conversations matching") {
+		t.Errorf("Output should indicate no results, got: %s", output)
+	}
+}
+
+func TestRunHistoryList_Favorites(t *testing.T) {
+	// Create a temporary directory for history
+	tmpDir := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	os.Setenv("HOME", tmpDir)
+	defer os.Setenv("HOME", oldHome)
+
+	// Create conversations
+	store, err := history.DefaultStore()
+	if err != nil {
+		t.Fatalf("Failed to create store: %v", err)
+	}
+
+	conv1, _ := store.CreateConversation("model-1")
+	store.UpdateTitle(conv1.ID, "Favorite Chat")
+	store.SetFavorite(conv1.ID, true)
+
+	conv2, _ := store.CreateConversation("model-2")
+	store.UpdateTitle(conv2.ID, "Regular Chat")
+
+	// Capture output
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	// Set favorites filter
+	historyFavoritesFlag = true
+	defer func() { historyFavoritesFlag = false }()
+
+	// Run the command
+	err = runHistoryList(historyListCmd, []string{})
+
+	// Restore stdout
+	w.Close()
+	os.Stdout = oldStdout
+
+	if err != nil {
+		t.Errorf("runHistoryList with favorites failed: %v", err)
+	}
+
+	// Read output
+	var buf bytes.Buffer
+	_, _ = buf.ReadFrom(r)
+	output := buf.String()
+
+	// Should contain only the favorite conversation
+	if !strings.Contains(output, "Favorite Chat") {
+		t.Errorf("Output should contain favorited conversation, got: %s", output)
+	}
+	if strings.Contains(output, "Regular Chat") {
+		t.Errorf("Output should not contain non-favorited conversation, got: %s", output)
 	}
 }

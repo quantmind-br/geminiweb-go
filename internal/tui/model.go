@@ -67,11 +67,17 @@ type HistoryStoreInterface interface {
 }
 
 // FullHistoryStore extends HistoryStoreInterface with read operations for /history command
+// Also implements HistoryManagerStore for /manage command
 type FullHistoryStore interface {
 	HistoryStoreInterface
 	ListConversations() ([]*history.Conversation, error)
 	GetConversation(id string) (*history.Conversation, error)
 	CreateConversation(model string) (*history.Conversation, error)
+	DeleteConversation(id string) error
+	ToggleFavorite(id string) (bool, error)
+	MoveConversation(id string, newIndex int) error
+	SwapConversations(id1, id2 string) error
+	ExportToMarkdown(id string) (string, error)
 }
 
 // Model represents the TUI state
@@ -289,6 +295,49 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.historyCursor = 0
 						m.historyFilter = ""
 						return m, m.loadHistoryForChat()
+
+					case "manage":
+						// Open full history manager
+						if m.fullHistoryStore == nil {
+							m.err = fmt.Errorf("history not available")
+							return m, nil
+						}
+						m.textarea.Reset()
+						// Run the history manager synchronously
+						result, err := RunHistoryManager(m.fullHistoryStore)
+						if err != nil {
+							m.err = fmt.Errorf("history manager error: %w", err)
+							return m, nil
+						}
+						// If a conversation was selected, switch to it
+						if result.Conversation != nil {
+							return m.switchConversation(result.Conversation)
+						}
+						return m, nil
+
+					case "favorite", "fav":
+						// Toggle favorite status of current conversation
+						if m.fullHistoryStore == nil {
+							m.err = fmt.Errorf("history not available")
+							return m, nil
+						}
+						if m.conversation == nil {
+							m.err = fmt.Errorf("no active conversation to favorite")
+							return m, nil
+						}
+						m.textarea.Reset()
+						isFav, err := m.fullHistoryStore.ToggleFavorite(m.conversation.ID)
+						if err != nil {
+							m.err = fmt.Errorf("failed to toggle favorite: %w", err)
+							return m, nil
+						}
+						m.conversation.IsFavorite = isFav
+						if isFav {
+							m.err = fmt.Errorf("★ Added to favorites")
+						} else {
+							m.err = fmt.Errorf("☆ Removed from favorites")
+						}
+						return m, nil
 
 					case "file":
 						return m.handleFileCommand(parsed.Args)

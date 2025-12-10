@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -147,12 +148,19 @@ func (c *GeminiClient) doGenerateContent(prompt string, opts *GenerateOptions) (
 	}
 
 	// Read response body
+	// The Gemini API uses a streaming format with chunks: {size}\n{json}\n
+	// The stream ends with a special marker: [["e",status,null,null,bytes]]
 	body := make([]byte, 0, 65536)
 	buf := make([]byte, 4096)
+	streamEndMarker := []byte(`[["e",`)
 	for {
 		n, err := resp.Body.Read(buf)
 		if n > 0 {
 			body = append(body, buf[:n]...)
+			// Check if we've received the stream end marker
+			if bytes.Contains(body, streamEndMarker) {
+				break
+			}
 		}
 		if err != nil {
 			break
@@ -240,55 +248,80 @@ func buildPayloadWithGem(prompt string, metadata []string, files []*UploadedFile
 
 // parseResponse parses the Gemini API response
 func parseResponse(body []byte, modelName string) (*models.ModelOutput, error) {
-	// Response has garbage prefix - find first valid JSON line
-	var jsonLine string
-	for _, line := range strings.Split(string(body), "\n") {
+	// Response is streaming with multiple JSON chunks separated by size prefixes
+	// We need to find the chunk that contains the actual response with candidates
+	lines := strings.Split(string(body), "\n")
+
+	var responseBody gjson.Result
+	var bodyIndex int
+	var lastError error
+
+	// Iterate through all valid JSON lines to find one with candidates
+	for _, line := range lines {
 		line = strings.TrimSpace(line)
-		if gjson.Valid(line) {
-			jsonLine = line
+		if !gjson.Valid(line) {
+			continue
+		}
+
+		parsed := gjson.Parse(line)
+
+		// Check for alternative error format first
+		// Format: [["wrb.fr",null,null,null,null,[3]],...]
+		// Error code at position 0.5.0 (first element of the array at position 5)
+		altErrorCode := parsed.Get(PathAltErrorCode)
+		if altErrorCode.Exists() && !altErrorCode.IsArray() && altErrorCode.Int() > 0 {
+			lastError = handleErrorCode(models.ErrorCode(altErrorCode.Int()), modelName)
+			continue // Try next chunk, error might be resolved in later chunk
+		}
+
+		// Check for error codes in the standard path
+		errorCode := parsed.Get(PathErrorCode)
+		if errorCode.Exists() && errorCode.Int() > 0 {
+			lastError = handleErrorCode(models.ErrorCode(errorCode.Int()), modelName)
+			continue // Try next chunk
+		}
+
+		// Find the response body with candidates in this chunk
+		parsed.ForEach(func(key, value gjson.Result) bool {
+			bodyData := value.Get(PathBody)
+			if !bodyData.Exists() {
+				return true
+			}
+
+			// Try to parse the body data as JSON
+			bodyJSON := gjson.Parse(bodyData.String())
+			if bodyJSON.Get(PathCandList).Exists() {
+				// Check if this chunk has actual text content (not just empty strings)
+				candList := bodyJSON.Get(PathCandList)
+				if candList.IsArray() {
+					hasContent := false
+					candList.ForEach(func(_, candValue gjson.Result) bool {
+						text := candValue.Get(PathCandText).String()
+						if text != "" {
+							hasContent = true
+							return false
+						}
+						return true
+					})
+					if hasContent {
+						responseBody = bodyJSON
+						bodyIndex = int(key.Int())
+						return false
+					}
+				}
+			}
+			return true
+		})
+
+		// If we found a response with content, stop searching
+		if responseBody.Exists() {
 			break
 		}
 	}
 
-	if jsonLine == "" {
-		return nil, apierrors.NewParseError("no valid JSON found in response", "")
-	}
-
-	parsed := gjson.Parse(jsonLine)
-
-	// Check for alternative error format first
-	// Format: [["wrb.fr",null,null,null,null,[3]],...]
-	// Error code at position 0.5.0 (first element of the array at position 5)
-	altErrorCode := parsed.Get(PathAltErrorCode)
-	if altErrorCode.Exists() && !altErrorCode.IsArray() && altErrorCode.Int() > 0 {
-		return nil, handleErrorCode(models.ErrorCode(altErrorCode.Int()), modelName)
-	}
-
-	// Find the response body
-	var responseBody gjson.Result
-	var bodyIndex int
-
-	parsed.ForEach(func(key, value gjson.Result) bool {
-		bodyData := value.Get(PathBody)
-		if !bodyData.Exists() {
-			return true
-		}
-
-		// Try to parse the body data as JSON
-		bodyJSON := gjson.Parse(bodyData.String())
-		if bodyJSON.Get(PathCandList).Exists() {
-			responseBody = bodyJSON
-			bodyIndex = int(key.Int())
-			return false
-		}
-		return true
-	})
-
 	if !responseBody.Exists() {
-		// Check for error codes in the standard path
-		errorCode := parsed.Get(PathErrorCode)
-		if errorCode.Exists() {
-			return nil, handleErrorCode(models.ErrorCode(errorCode.Int()), modelName)
+		if lastError != nil {
+			return nil, lastError
 		}
 		return nil, apierrors.NewParseError("no response body found", PathBody)
 	}

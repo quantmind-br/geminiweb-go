@@ -92,12 +92,13 @@ const (
 // DefaultHeaders returns the default headers for Gemini requests
 func DefaultHeaders() map[string]string {
 	return map[string]string{
-		"Content-Type":  "application/x-www-form-urlencoded;charset=utf-8",
-		"Host":          "gemini.google.com",
-		"Origin":        "https://gemini.google.com",
-		"Referer":       "https://gemini.google.com/",
-		"User-Agent":    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
-		"X-Same-Domain": "1",
+		"Content-Type":               "application/x-www-form-urlencoded;charset=utf-8",
+		"Host":                       "gemini.google.com",
+		"Origin":                     "https://gemini.google.com",
+		"Referer":                    "https://gemini.google.com/",
+		"User-Agent":                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
+		"X-Same-Domain":              "1",
+		"x-goog-ext-73010989-jspb":   "[0]", // Required safety/feature flag header
 	}
 }
 
