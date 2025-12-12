@@ -175,11 +175,10 @@ func matchesBrowser(browserName string, target SupportedBrowser) bool {
 
 // extractCookiesFromStore extracts Gemini cookies from a specific cookie store
 func extractCookiesFromStore(ctx context.Context, store kooky.CookieStore, browserName, profile string) (*ExtractResult, error) {
-	// Extract cookies for google.com domain (includes .google.com, .google.com.br, etc.)
-	cookies := store.TraverseCookies(
-		kooky.Valid,
-		kooky.DomainContains("google.com"),
-	).OnlyCookies()
+	// Note: We don't pass filters to TraverseCookies() due to a bug in kooky v0.2.4
+	// where filters passed directly cause all cookies to be filtered out.
+	// Instead, we filter manually in the loop below.
+	cookies := store.TraverseCookies().OnlyCookies()
 
 	var secure1PSID, secure1PSIDTS string
 
@@ -188,6 +187,11 @@ func extractCookiesFromStore(ctx context.Context, store kooky.CookieStore, brows
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		default:
+		}
+
+		// Manual filtering: only process google.com domain cookies
+		if !strings.Contains(cookie.Domain, "google.com") {
+			continue
 		}
 
 		switch cookie.Name {

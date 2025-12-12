@@ -25,7 +25,7 @@ geminiweb-go/
 │   │   ├── config.go           # Configuration management
 │   │   ├── import.go           # Cookie import command
 │   │   ├── autologin.go        # Auto-login from browser command
-│   │   ├── history.go          # History management
+│   │   ├── history.go          # History management (list, show, delete, export, search)
 │   │   ├── persona.go          # Local persona management
 │   │   └── gems.go             # Gems listing and selection
 │   ├── config/                 # Configuration management
@@ -37,10 +37,11 @@ geminiweb-go/
 │   │   ├── response.go         # Response types (ModelOutput, Candidate, etc.)
 │   │   └── message.go          # Message types
 │   ├── tui/                    # Bubble Tea TUI
-│   │   ├── model.go            # Main TUI model (chat interface)
+│   │   ├── model.go            # Main TUI model (chat interface, ~1600 lines)
 │   │   ├── styles.go           # Lipgloss styling
 │   │   ├── gems_model.go       # Gems selector TUI
-│   │   ├── history_selector.go # Conversation history selector
+│   │   ├── history_selector.go # Conversation history selector (/history command)
+│   │   ├── history_manager.go  # Full history manager (/manage command)
 │   │   ├── config_model.go     # Config editor TUI
 │   │   └── *_test.go           # Tests for TUI components
 │   ├── render/                 # Markdown rendering
@@ -52,7 +53,11 @@ geminiweb-go/
 │   │   ├── options.go          # Functional options
 │   │   └── themes/             # Custom theme files
 │   ├── history/                # Conversation history
-│   │   └── store.go            # JSON-based persistence
+│   │   ├── store.go            # JSON-based persistence (Store, Conversation, Message)
+│   │   ├── meta.go             # Metadata store (favorites, ordering, ConversationMeta)
+│   │   ├── resolver.go         # Alias resolution (@last, @first, index numbers)
+│   │   ├── export.go           # Export to Markdown/JSON with options
+│   │   └── *_test.go           # Tests for history system
 │   └── errors/                 # Custom error types
 │       └── errors.go           # AuthError, APIError, TimeoutError, etc.
 ├── build/                      # Build output directory
@@ -61,3 +66,9 @@ geminiweb-go/
 ├── go.sum                      # Dependency checksums
 └── CLAUDE.md                   # AI assistant instructions
 ```
+
+## Key File Sizes (approximate)
+
+- `internal/tui/model.go` - ~1600 lines (main chat TUI)
+- `internal/api/client.go` - ~400 lines (API client)
+- `internal/history/store.go` - ~300 lines (persistence)

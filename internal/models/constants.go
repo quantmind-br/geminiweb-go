@@ -92,13 +92,24 @@ const (
 // DefaultHeaders returns the default headers for Gemini requests
 func DefaultHeaders() map[string]string {
 	return map[string]string{
-		"Content-Type":               "application/x-www-form-urlencoded;charset=utf-8",
-		"Host":                       "gemini.google.com",
-		"Origin":                     "https://gemini.google.com",
-		"Referer":                    "https://gemini.google.com/",
-		"User-Agent":                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
-		"X-Same-Domain":              "1",
-		"x-goog-ext-73010989-jspb":   "[0]", // Required safety/feature flag header
+		"Content-Type":             "application/x-www-form-urlencoded;charset=utf-8",
+		"Host":                     "gemini.google.com",
+		"Origin":                   "https://gemini.google.com",
+		"Referer":                  "https://gemini.google.com/",
+		"User-Agent":               "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+		"Accept":                   "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+		"Accept-Language":          "en-US,en;q=0.9",
+		"Accept-Encoding":          "gzip, deflate, br, zstd",
+		"Sec-CH-UA":                `"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"`,
+		"Sec-CH-UA-Mobile":         "?0",
+		"Sec-CH-UA-Platform":       `"Linux"`,
+		"Sec-Fetch-Site":           "same-origin",
+		"Sec-Fetch-Mode":           "navigate",
+		"Sec-Fetch-User":           "?1",
+		"Sec-Fetch-Dest":           "document",
+		"Upgrade-Insecure-Requests": "1",
+		"X-Same-Domain":            "1",
+		"x-goog-ext-73010989-jspb": "[0]", // Required safety/feature flag header
 	}
 }
 

@@ -97,7 +97,4 @@ Before committing changes:
 
 ## File Changes
 
-Based on recent git status, be aware:
-- Files marked with `D` (deleted): `internal/api/mock_test.go`, `internal/api/stream.go`, `internal/api/stream_test.go`
-- Files marked with `M` (modified): Multiple files have uncommitted changes
-- Files marked with `?` (untracked): New test files that should be reviewed
+Check git status for current state of working tree before committing.

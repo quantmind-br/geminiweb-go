@@ -78,8 +78,10 @@ func WithModel(model models.Model) ClientOption {
 ## Available Models
 
 - `models.Model25Flash` - Fast model (gemini-2.5-flash)
-- `models.Model25Pro` - Balanced model (gemini-2.5-pro)
-- `models.Model30Pro` - Advanced model (gemini-3.0-pro)
+- `models.Model30Pro` - Advanced model (gemini-3.0-pro) - **default**
+- `models.ModelUnspecified` - Server's default (no model header sent)
+
+The default model is `models.DefaultModel` which points to `models.Model30Pro`.
 
 ## Key Components
 

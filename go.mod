@@ -1,11 +1,11 @@
 module github.com/diogo/geminiweb
 
-go 1.23.10
+go 1.24.1
 
 require (
 	github.com/atotto/clipboard v0.1.4
-	github.com/bogdanfinn/fhttp v0.5.34
-	github.com/bogdanfinn/tls-client v1.9.1
+	github.com/bogdanfinn/fhttp v0.6.2
+	github.com/bogdanfinn/tls-client v1.11.2
 	github.com/browserutils/kooky v0.2.4
 	github.com/charmbracelet/bubbles v0.21.0
 	github.com/charmbracelet/bubbletea v1.3.4
@@ -13,7 +13,8 @@ require (
 	github.com/charmbracelet/lipgloss v1.1.1-0.20250404203927-76690c660834
 	github.com/spf13/cobra v1.8.1
 	github.com/tidwall/gjson v1.18.0
-	golang.org/x/term v0.33.0
+	golang.org/x/net v0.48.0
+	golang.org/x/term v0.38.0
 )
 
 require (
@@ -24,7 +25,8 @@ require (
 	github.com/andybalholm/brotli v1.1.1 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/aymerick/douceur v0.2.0 // indirect
-	github.com/bogdanfinn/utls v1.6.5 // indirect
+	github.com/bogdanfinn/quic-go-utls v1.0.4-utls // indirect
+	github.com/bogdanfinn/utls v1.7.4-barnius // indirect
 	github.com/charmbracelet/colorprofile v0.2.3-0.20250311203215-f60798e515dc // indirect
 	github.com/charmbracelet/x/ansi v0.8.0 // indirect
 	github.com/charmbracelet/x/cellbuf v0.0.13 // indirect
@@ -52,7 +54,7 @@ require (
 	github.com/muesli/reflow v0.3.0 // indirect
 	github.com/muesli/termenv v0.16.0 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
-	github.com/quic-go/quic-go v0.48.1 // indirect
+	github.com/quic-go/qpack v0.5.1 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/spf13/pflag v1.0.6 // indirect
 	github.com/tam7t/hpkp v0.0.0-20160821193359-2b70b4024ed5 // indirect
@@ -62,10 +64,13 @@ require (
 	github.com/yuin/goldmark v1.7.8 // indirect
 	github.com/yuin/goldmark-emoji v1.0.5 // indirect
 	github.com/zalando/go-keyring v0.2.6 // indirect
-	golang.org/x/crypto v0.40.0 // indirect
-	golang.org/x/net v0.42.0 // indirect
-	golang.org/x/sync v0.16.0 // indirect
-	golang.org/x/sys v0.34.0 // indirect
-	golang.org/x/text v0.27.0 // indirect
+	go.uber.org/mock v0.5.0 // indirect
+	golang.org/x/crypto v0.46.0 // indirect
+	golang.org/x/exp v0.0.0-20240506185415-9bf2ced13842 // indirect
+	golang.org/x/mod v0.30.0 // indirect
+	golang.org/x/sync v0.19.0 // indirect
+	golang.org/x/sys v0.39.0 // indirect
+	golang.org/x/text v0.32.0 // indirect
+	golang.org/x/tools v0.39.0 // indirect
 	www.velocidex.com/golang/go-ese v0.2.0 // indirect
 )

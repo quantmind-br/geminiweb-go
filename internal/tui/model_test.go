@@ -1680,6 +1680,10 @@ func (m *mockFullHistoryStore) ExportToMarkdown(id string) (string, error) {
 	return "", nil
 }
 
+func (m *mockFullHistoryStore) ExportToJSON(id string) ([]byte, error) {
+	return nil, nil
+}
+
 func TestFullHistoryStoreInterface(t *testing.T) {
 	// Verify the interface is implemented by mockFullHistoryStore
 	var _ FullHistoryStore = &mockFullHistoryStore{}
@@ -3596,6 +3600,391 @@ func TestModel_UpdateViewportWithImages(t *testing.T) {
 		// Should not contain image section header
 		if strings.Contains(content, "🖼") {
 			t.Error("viewport should not show image emoji when no images")
+		}
+	})
+}
+
+// ==================== Export Command Tests ====================
+
+func TestParseExportArgs(t *testing.T) {
+	tests := []struct {
+		name       string
+		args       string
+		wantPath   string
+		wantFormat string
+		wantErr    bool
+	}{
+		{
+			name:       "markdown extension",
+			args:       "chat.md",
+			wantPath:   "chat.md",
+			wantFormat: "markdown",
+		},
+		{
+			name:       "json extension",
+			args:       "chat.json",
+			wantPath:   "chat.json",
+			wantFormat: "json",
+		},
+		{
+			name:       "no extension adds .md",
+			args:       "chat",
+			wantPath:   "chat.md",
+			wantFormat: "markdown",
+		},
+		{
+			name:       "explicit json flag",
+			args:       "chat -f json",
+			wantPath:   "chat.json",
+			wantFormat: "json",
+		},
+		{
+			name:       "explicit md flag",
+			args:       "chat -f md",
+			wantPath:   "chat.md",
+			wantFormat: "markdown",
+		},
+		{
+			name:       "flag overrides extension",
+			args:       "chat.md -f json",
+			wantPath:   "chat.md",
+			wantFormat: "json",
+		},
+		{
+			name:       "path with spaces",
+			args:       "my chat.md",
+			wantPath:   "my chat.md",
+			wantFormat: "markdown",
+		},
+		{
+			name:    "empty args",
+			args:    "",
+			wantErr: true,
+		},
+		{
+			name:    "unknown format",
+			args:    "chat -f xml",
+			wantErr: true,
+		},
+		{
+			name:    "flag without path",
+			args:    "-f json",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path, format, err := parseExportArgs(tt.args)
+
+			if (err != nil) != tt.wantErr {
+				t.Errorf("parseExportArgs() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+
+			if !tt.wantErr {
+				if path != tt.wantPath {
+					t.Errorf("parseExportArgs() path = %v, want %v", path, tt.wantPath)
+				}
+				if format != tt.wantFormat {
+					t.Errorf("parseExportArgs() format = %v, want %v", format, tt.wantFormat)
+				}
+			}
+		})
+	}
+}
+
+func TestValidateExportPath(t *testing.T) {
+	t.Run("relative path becomes absolute", func(t *testing.T) {
+		path, err := validateExportPath("test.md")
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+			return
+		}
+
+		// Path should be absolute
+		if path == "test.md" || path[0] != '/' {
+			t.Errorf("expected absolute path, got %s", path)
+		}
+	})
+
+	t.Run("tilde expansion", func(t *testing.T) {
+		path, err := validateExportPath("~/test.md")
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+			return
+		}
+
+		// Path should not contain tilde
+		if strings.Contains(path, "~") {
+			t.Errorf("expected tilde to be expanded, got %s", path)
+		}
+	})
+
+	t.Run("nonexistent parent directory", func(t *testing.T) {
+		_, err := validateExportPath("/nonexistent/path/to/test.md")
+		if err == nil {
+			t.Error("expected error for nonexistent parent directory")
+		}
+	})
+}
+
+func TestSanitizeFilename(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "normal title",
+			input:    "My Chat",
+			expected: "My Chat",
+		},
+		{
+			name:     "with slashes",
+			input:    "Chat/with/slashes",
+			expected: "Chat_with_slashes",
+		},
+		{
+			name:     "with colons",
+			input:    "Chat: Topic",
+			expected: "Chat_ Topic",
+		},
+		{
+			name:     "with multiple invalid chars",
+			input:    "File: *test* <data>",
+			expected: "File_ _test_ _data_",
+		},
+		{
+			name:     "empty after sanitization",
+			input:    "///",
+			expected: "conversation",
+		},
+		{
+			name:     "dots at ends",
+			input:    "...test...",
+			expected: "test",
+		},
+		{
+			name:     "long title truncated",
+			input:    strings.Repeat("a", 300),
+			expected: strings.Repeat("a", 200),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := sanitizeFilename(tt.input)
+			if result != tt.expected {
+				t.Errorf("sanitizeFilename(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestExportResultMsg(t *testing.T) {
+	t.Run("with success", func(t *testing.T) {
+		msg := exportResultMsg{
+			path:      "/tmp/test.md",
+			format:    "markdown",
+			size:      1024,
+			overwrite: false,
+		}
+
+		if msg.path != "/tmp/test.md" {
+			t.Errorf("expected path /tmp/test.md, got %s", msg.path)
+		}
+		if msg.format != "markdown" {
+			t.Errorf("expected format markdown, got %s", msg.format)
+		}
+		if msg.err != nil {
+			t.Error("expected no error")
+		}
+	})
+
+	t.Run("with error", func(t *testing.T) {
+		testErr := fmt.Errorf("test error")
+		msg := exportResultMsg{err: testErr}
+
+		if msg.err == nil {
+			t.Error("expected error")
+		}
+	})
+}
+
+func TestModel_HandleExportCommand(t *testing.T) {
+	t.Run("no conversation returns error", func(t *testing.T) {
+		m := Model{
+			conversation: nil,
+			messages:     []chatMessage{},
+		}
+
+		updatedModel, _ := m.handleExportCommand("test.md")
+		typedModel := updatedModel.(Model)
+
+		if typedModel.err == nil {
+			t.Error("expected error when no conversation to export")
+		}
+	})
+
+	t.Run("with in-memory messages exports from memory", func(t *testing.T) {
+		m := Model{
+			conversation: nil,
+			messages: []chatMessage{
+				{role: "user", content: "Hello"},
+				{role: "assistant", content: "Hi"},
+			},
+		}
+
+		updatedModel, cmd := m.handleExportCommand("/tmp/test_export.md")
+		typedModel := updatedModel.(Model)
+
+		if typedModel.err != nil {
+			t.Errorf("unexpected error: %v", typedModel.err)
+		}
+		if cmd == nil {
+			t.Error("expected a command for async export")
+		}
+	})
+
+	t.Run("invalid path returns error", func(t *testing.T) {
+		m := Model{
+			conversation: nil,
+			messages: []chatMessage{
+				{role: "user", content: "Hello"},
+			},
+		}
+
+		updatedModel, _ := m.handleExportCommand("/nonexistent/dir/test.md")
+		typedModel := updatedModel.(Model)
+
+		if typedModel.err == nil {
+			t.Error("expected error for invalid path")
+		}
+	})
+
+	t.Run("default filename from conversation title", func(t *testing.T) {
+		m := Model{
+			conversation: &history.Conversation{
+				ID:    "test-id",
+				Title: "My Test Chat",
+			},
+			fullHistoryStore: &mockFullHistoryStore{},
+		}
+
+		// Empty args should use conversation title
+		updatedModel, cmd := m.handleExportCommand("")
+		typedModel := updatedModel.(Model)
+
+		if typedModel.err != nil {
+			t.Errorf("unexpected error: %v", typedModel.err)
+		}
+		if cmd == nil {
+			t.Error("expected a command for async export")
+		}
+	})
+}
+
+func TestModel_Update_ExportResultMsg(t *testing.T) {
+	t.Run("success sets feedback", func(t *testing.T) {
+		m := Model{ready: true}
+
+		msg := exportResultMsg{
+			path:      "/tmp/test.md",
+			format:    "markdown",
+			size:      1024,
+			overwrite: false,
+		}
+
+		updatedModel, _ := m.Update(msg)
+		typedModel := updatedModel.(Model)
+
+		if typedModel.err == nil {
+			t.Error("expected feedback in err field")
+		}
+		if !strings.Contains(typedModel.err.Error(), "Exported") {
+			t.Errorf("expected success message, got: %v", typedModel.err)
+		}
+	})
+
+	t.Run("success with overwrite indicates overwrite", func(t *testing.T) {
+		m := Model{ready: true}
+
+		msg := exportResultMsg{
+			path:      "/tmp/test.md",
+			format:    "markdown",
+			size:      1024,
+			overwrite: true,
+		}
+
+		updatedModel, _ := m.Update(msg)
+		typedModel := updatedModel.(Model)
+
+		if typedModel.err == nil {
+			t.Error("expected feedback in err field")
+		}
+		if !strings.Contains(typedModel.err.Error(), "overwritten") {
+			t.Errorf("expected overwrite indication, got: %v", typedModel.err)
+		}
+	})
+
+	t.Run("error is propagated", func(t *testing.T) {
+		m := Model{ready: true}
+
+		testErr := fmt.Errorf("export failed")
+		msg := exportResultMsg{err: testErr}
+
+		updatedModel, _ := m.Update(msg)
+		typedModel := updatedModel.(Model)
+
+		if typedModel.err == nil {
+			t.Error("expected error")
+		}
+		if typedModel.err.Error() != "export failed" {
+			t.Errorf("expected 'export failed', got: %v", typedModel.err)
+		}
+	})
+}
+
+func TestModel_ExportCommand_Registration(t *testing.T) {
+	t.Run("/export command is recognized", func(t *testing.T) {
+		ta := textarea.New()
+		ta.SetWidth(80)
+		ta.SetValue("/export test.md")
+
+		vp := viewport.New(80, 20)
+
+		m := Model{
+			ready:    true,
+			loading:  false,
+			textarea: ta,
+			viewport: vp,
+			width:    100,
+			height:   40,
+			messages: []chatMessage{
+				{role: "user", content: "Hello"},
+			},
+		}
+
+		msg := tea.KeyMsg{Type: tea.KeyEnter}
+		updatedModel, cmd := m.Update(msg)
+
+		typedModel := updatedModel.(Model)
+
+		// Should not add a message (command was processed)
+		if len(typedModel.messages) > 1 {
+			t.Error("should not add message for /export command")
+		}
+
+		// May have error (path validation) or cmd (async export)
+		// The key is that the command was recognized, not treated as unknown
+		if typedModel.err != nil && strings.Contains(typedModel.err.Error(), "unknown command") {
+			t.Error("/export should be a recognized command")
+		}
+
+		// If no error, should have a command
+		if typedModel.err == nil && cmd == nil {
+			t.Log("no error and no cmd - path may be invalid")
 		}
 	})
 }

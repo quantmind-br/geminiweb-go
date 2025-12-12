@@ -1,8 +1,10 @@
 package tui
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -41,6 +43,14 @@ type (
 		conversations []*history.Conversation
 		err           error
 	}
+	// exportResultMsg is sent when a conversation export completes
+	exportResultMsg struct {
+		path      string // Absolute path of exported file
+		format    string // "markdown" or "json"
+		size      int64  // File size in bytes
+		overwrite bool   // If file was overwritten
+		err       error  // Error, if any
+	}
 )
 
 // ChatSessionInterface defines the interface for chat session operations needed by the TUI
@@ -78,6 +88,7 @@ type FullHistoryStore interface {
 	MoveConversation(id string, newIndex int) error
 	SwapConversations(id1, id2 string) error
 	ExportToMarkdown(id string) (string, error)
+	ExportToJSON(id string) ([]byte, error)
 }
 
 // Model represents the TUI state
@@ -352,6 +363,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.err = nil
 						return m, nil
 
+					case "export":
+						return m.handleExportCommand(parsed.Args)
+
 					default:
 						// Unknown command - show error but don't send as message
 						m.err = fmt.Errorf("unknown command: /%s", parsed.Command)
@@ -422,6 +436,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.attachments = append(m.attachments, msg.file)
 			// Show success feedback (could use a toast/notification style)
 			m.err = nil
+		}
+
+	case exportResultMsg:
+		if msg.err != nil {
+			m.err = msg.err
+		} else {
+			// Show success feedback (using m.err for feedback - existing pattern)
+			feedback := fmt.Sprintf("✓ Exported to %s", msg.path)
+			if msg.overwrite {
+				feedback += " (overwritten)"
+			}
+			m.err = fmt.Errorf(feedback)
 		}
 
 	case responseMsg:
@@ -744,6 +770,56 @@ func (m Model) handleImageCommand(path string) (tea.Model, tea.Cmd) {
 	return m.handleFileCommand(path)
 }
 
+// handleExportCommand handles the /export <path> [-f format] command
+func (m Model) handleExportCommand(args string) (tea.Model, tea.Cmd) {
+	// If no args given and we have a conversation with title, use that as default filename
+	if strings.TrimSpace(args) == "" {
+		// Generate default filename from conversation title or timestamp
+		var filename string
+		if m.conversation != nil && m.conversation.Title != "" {
+			filename = sanitizeFilename(m.conversation.Title) + ".md"
+		} else {
+			filename = fmt.Sprintf("conversation_%s.md", time.Now().Format("20060102_150405"))
+		}
+		args = filename
+	}
+
+	// Parse arguments
+	path, format, err := parseExportArgs(args)
+	if err != nil {
+		m.err = err
+		return m, nil
+	}
+
+	// Validate and expand path
+	absPath, err := validateExportPath(path)
+	if err != nil {
+		m.err = err
+		return m, nil
+	}
+
+	// Check for conversation to export
+	if m.conversation != nil && m.conversation.ID != "" && m.fullHistoryStore != nil {
+		// Export from store (persisted conversation)
+		return m, exportCommand(m.fullHistoryStore, m.conversation.ID, format, absPath)
+	}
+
+	// Check for in-memory messages
+	if len(m.messages) > 0 {
+		// Export from memory (unsaved conversation)
+		var title string
+		if m.conversation != nil && m.conversation.Title != "" {
+			title = m.conversation.Title
+		} else {
+			title = "Conversation"
+		}
+		return m, exportFromMemory(m.messages, title, format, absPath)
+	}
+
+	m.err = fmt.Errorf("no conversation to export")
+	return m, nil
+}
+
 // uploadFile creates a command to upload a file
 func (m Model) uploadFile(path string) tea.Cmd {
 	return func() tea.Msg {
@@ -753,6 +829,239 @@ func (m Model) uploadFile(path string) tea.Cmd {
 		}
 		return fileUploadedMsg{file: file}
 	}
+}
+
+// parseExportArgs parses /export command arguments
+// Returns path, format, and error
+// Examples:
+//   - "/export chat.md" -> path="chat.md", format="markdown"
+//   - "/export chat.json" -> path="chat.json", format="json"
+//   - "/export chat" -> path="chat.md", format="markdown" (default)
+//   - "/export chat -f json" -> path="chat.json", format="json"
+func parseExportArgs(args string) (path, format string, err error) {
+	args = strings.TrimSpace(args)
+	if args == "" {
+		return "", "", fmt.Errorf("usage: /export <path> [-f json|md]")
+	}
+
+	parts := strings.Fields(args)
+	format = "markdown" // default
+
+	// Parse flags
+	var pathParts []string
+	for i := 0; i < len(parts); i++ {
+		if parts[i] == "-f" && i+1 < len(parts) {
+			f := strings.ToLower(parts[i+1])
+			switch f {
+			case "json":
+				format = "json"
+			case "md", "markdown":
+				format = "markdown"
+			default:
+				return "", "", fmt.Errorf("unknown format: %s (use json or md)", f)
+			}
+			i++ // skip format value
+		} else {
+			pathParts = append(pathParts, parts[i])
+		}
+	}
+
+	if len(pathParts) == 0 {
+		return "", "", fmt.Errorf("missing filename")
+	}
+
+	path = strings.Join(pathParts, " ")
+
+	// Infer format from extension if not explicitly set via flag
+	if strings.HasSuffix(strings.ToLower(path), ".json") {
+		format = "json"
+	} else if !strings.HasSuffix(strings.ToLower(path), ".md") {
+		// Add default extension
+		if format == "json" {
+			if !strings.HasSuffix(path, ".json") {
+				path += ".json"
+			}
+		} else {
+			if !strings.HasSuffix(path, ".md") {
+				path += ".md"
+			}
+		}
+	}
+
+	return path, format, nil
+}
+
+// validateExportPath validates and expands an export path
+// Returns absolute path or error
+func validateExportPath(path string) (string, error) {
+	// Expand home directory
+	if strings.HasPrefix(path, "~") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("cannot expand ~: %w", err)
+		}
+		path = strings.Replace(path, "~", home, 1)
+	}
+
+	// Convert to absolute path
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return "", fmt.Errorf("invalid path: %w", err)
+	}
+
+	// Check if parent directory exists
+	dir := filepath.Dir(absPath)
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		return "", fmt.Errorf("directory does not exist: %s", dir)
+	}
+
+	return absPath, nil
+}
+
+// sanitizeFilename removes or replaces characters invalid in filenames
+func sanitizeFilename(title string) string {
+	// Characters invalid on Windows and/or Unix
+	invalid := []string{"/", "\\", ":", "*", "?", "\"", "<", ">", "|"}
+	result := title
+
+	for _, char := range invalid {
+		result = strings.ReplaceAll(result, char, "_")
+	}
+
+	// Trim whitespace and dots from ends
+	result = strings.Trim(result, " .")
+
+	// Truncate to 200 characters
+	if len(result) > 200 {
+		result = result[:200]
+	}
+
+	// If empty or all underscores after sanitization, use fallback
+	if result == "" || strings.Trim(result, "_") == "" {
+		result = "conversation"
+	}
+
+	return result
+}
+
+// exportCommand creates a tea.Cmd that exports a conversation from store
+func exportCommand(store FullHistoryStore, convID, format, path string) tea.Cmd {
+	return func() tea.Msg {
+		// Check if file exists (for overwrite flag)
+		overwrite := false
+		if _, err := os.Stat(path); err == nil {
+			overwrite = true
+		}
+
+		var data []byte
+		var err error
+
+		if format == "json" {
+			data, err = store.ExportToJSON(convID)
+		} else {
+			var md string
+			md, err = store.ExportToMarkdown(convID)
+			data = []byte(md)
+		}
+
+		if err != nil {
+			return exportResultMsg{err: fmt.Errorf("export failed: %w", err)}
+		}
+
+		// Write to file
+		if err := os.WriteFile(path, data, 0644); err != nil {
+			return exportResultMsg{err: fmt.Errorf("write failed: %w", err)}
+		}
+
+		return exportResultMsg{
+			path:      path,
+			format:    format,
+			size:      int64(len(data)),
+			overwrite: overwrite,
+		}
+	}
+}
+
+// exportFromMemory creates a tea.Cmd that exports in-memory messages
+func exportFromMemory(messages []chatMessage, title, format, path string) tea.Cmd {
+	return func() tea.Msg {
+		// Check if file exists (for overwrite flag)
+		overwrite := false
+		if _, err := os.Stat(path); err == nil {
+			overwrite = true
+		}
+
+		var data []byte
+
+		if format == "json" {
+			// Build JSON structure for in-memory export
+			type exportMessage struct {
+				Role      string `json:"role"`
+				Content   string `json:"content"`
+				Thoughts  string `json:"thoughts,omitempty"`
+				Timestamp string `json:"timestamp,omitempty"`
+			}
+			type exportData struct {
+				Title    string          `json:"title"`
+				Messages []exportMessage `json:"messages"`
+			}
+
+			export := exportData{Title: title}
+			for _, msg := range messages {
+				export.Messages = append(export.Messages, exportMessage{
+					Role:    msg.role,
+					Content: msg.content,
+				})
+			}
+
+			var err error
+			data, err = jsonMarshalIndent(export, "", "  ")
+			if err != nil {
+				return exportResultMsg{err: fmt.Errorf("json marshal failed: %w", err)}
+			}
+		} else {
+			// Build markdown for in-memory export
+			var md strings.Builder
+			if title != "" {
+				md.WriteString("# ")
+				md.WriteString(title)
+				md.WriteString("\n\n")
+			}
+
+			for i, msg := range messages {
+				if i > 0 {
+					md.WriteString("\n---\n\n")
+				}
+				if msg.role == "user" {
+					md.WriteString("**User:**\n\n")
+				} else {
+					md.WriteString("**Gemini:**\n\n")
+				}
+				md.WriteString(msg.content)
+				md.WriteString("\n")
+			}
+
+			data = []byte(md.String())
+		}
+
+		// Write to file
+		if err := os.WriteFile(path, data, 0644); err != nil {
+			return exportResultMsg{err: fmt.Errorf("write failed: %w", err)}
+		}
+
+		return exportResultMsg{
+			path:      path,
+			format:    format,
+			size:      int64(len(data)),
+			overwrite: overwrite,
+		}
+	}
+}
+
+// jsonMarshalIndent is a helper to marshal JSON with indentation
+// Note: We use gjson for reading JSON but encoding/json for writing
+func jsonMarshalIndent(v interface{}, prefix, indent string) ([]byte, error) {
+	return json.MarshalIndent(v, prefix, indent)
 }
 
 // saveMessageToHistory saves a message to the history store if available
