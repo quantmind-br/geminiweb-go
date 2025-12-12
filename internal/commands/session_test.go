@@ -20,13 +20,16 @@ func (m *mockGeminiClientForSession) FetchGems(includeHidden bool) (*models.GemJ
 }
 
 func TestResolveGemFlag_EmptyFlag(t *testing.T) {
-	// When gemFlag is empty, should return empty string without error
-	gemID, err := resolveGemFlag(nil, "")
+	// When gemFlag is empty, should return empty ResolvedGem without error
+	resolved, err := resolveGemFlag(nil, "")
 	if err != nil {
 		t.Errorf("Expected no error for empty flag, got: %v", err)
 	}
-	if gemID != "" {
-		t.Errorf("Expected empty gemID for empty flag, got: %s", gemID)
+	if resolved.ID != "" {
+		t.Errorf("Expected empty gemID for empty flag, got: %s", resolved.ID)
+	}
+	if resolved.Name != "" {
+		t.Errorf("Expected empty gemName for empty flag, got: %s", resolved.Name)
 	}
 }
 
@@ -80,13 +83,13 @@ func TestResolveGemFlag_Integration(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gemID, err := resolveGemFlag(nil, tt.gemFlag)
+			resolved, err := resolveGemFlag(nil, tt.gemFlag)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("resolveGemFlag() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			if (gemID == "") != tt.wantEmpty {
-				t.Errorf("resolveGemFlag() gemID = %v, wantEmpty %v", gemID, tt.wantEmpty)
+			if (resolved.ID == "") != tt.wantEmpty {
+				t.Errorf("resolveGemFlag() gemID = %v, wantEmpty %v", resolved.ID, tt.wantEmpty)
 			}
 		})
 	}
@@ -164,12 +167,12 @@ func TestChatCommand_GemFlagUsage(t *testing.T) {
 // TestResolveGemFlag_Example demonstrates how to use resolveGemFlag
 func TestResolveGemFlag_Example(t *testing.T) {
 	// When no gem is specified
-	gemID, err := resolveGemFlag(nil, "")
+	resolved, err := resolveGemFlag(nil, "")
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
 	}
-	if gemID != "" {
-		t.Errorf("Expected empty gemID, got: %s", gemID)
+	if resolved.ID != "" {
+		t.Errorf("Expected empty gemID, got: %s", resolved.ID)
 	}
-	t.Log("No gem specified - returns empty string")
+	t.Log("No gem specified - returns empty ResolvedGem")
 }

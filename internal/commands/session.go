@@ -18,17 +18,23 @@ func createChatSession(client *api.GeminiClient, gemID string, model models.Mode
 	return client.StartChatWithOptions(opts...)
 }
 
-// resolveGemFlag resolves the --gem flag to a gem ID
-// Returns empty string if no gem specified
-func resolveGemFlag(client *api.GeminiClient, gemFlag string) (string, error) {
+// ResolvedGem contains the resolved gem ID and name
+type ResolvedGem struct {
+	ID   string
+	Name string
+}
+
+// resolveGemFlag resolves the --gem flag to a gem ID and name
+// Returns empty ResolvedGem if no gem specified
+func resolveGemFlag(client *api.GeminiClient, gemFlag string) (ResolvedGem, error) {
 	if gemFlag == "" {
-		return "", nil
+		return ResolvedGem{}, nil
 	}
 
 	gem, err := resolveGem(client, gemFlag)
 	if err != nil {
-		return "", fmt.Errorf("failed to resolve gem '%s': %w", gemFlag, err)
+		return ResolvedGem{}, fmt.Errorf("failed to resolve gem '%s': %w", gemFlag, err)
 	}
 
-	return gem.ID, nil
+	return ResolvedGem{ID: gem.ID, Name: gem.Name}, nil
 }

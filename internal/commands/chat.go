@@ -102,7 +102,7 @@ func runChat() error {
 	spin.stopWithSuccess("Connected")
 
 	// Resolve gem if specified
-	gemID, err := resolveGemFlag(client, chatGemFlag)
+	resolvedGem, err := resolveGemFlag(client, chatGemFlag)
 	if err != nil {
 		return err
 	}
@@ -117,10 +117,10 @@ func runChat() error {
 	}
 
 	// Create session with conversation context
-	session := createChatSessionWithConversation(client, gemID, model, selectedConv)
+	session := createChatSessionWithConversation(client, resolvedGem.ID, model, selectedConv)
 
-	// Run chat TUI with conversation
-	return tui.RunChatWithConversation(client, session, modelName, selectedConv, store)
+	// Run chat TUI with conversation and initial gem name
+	return tui.RunChatWithConversationAndGem(client, session, modelName, selectedConv, store, resolvedGem.Name)
 }
 
 // createChatSessionWithConversation creates a chat session, optionally resuming from a conversation

@@ -447,7 +447,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if msg.overwrite {
 				feedback += " (overwritten)"
 			}
-			m.err = fmt.Errorf(feedback)
+			m.err = fmt.Errorf("%s", feedback)
 		}
 
 	case responseMsg:
@@ -1269,7 +1269,13 @@ func NewChatModelWithSession(client api.GeminiClientInterface, session ChatSessi
 
 // RunChatWithConversation starts the chat TUI with a pre-configured session and conversation
 func RunChatWithConversation(client api.GeminiClientInterface, session ChatSessionInterface, modelName string, conv *history.Conversation, store HistoryStoreInterface) error {
+	return RunChatWithConversationAndGem(client, session, modelName, conv, store, "")
+}
+
+// RunChatWithConversationAndGem starts the chat TUI with a pre-configured session, conversation, and initial gem name
+func RunChatWithConversationAndGem(client api.GeminiClientInterface, session ChatSessionInterface, modelName string, conv *history.Conversation, store HistoryStoreInterface, gemName string) error {
 	m := NewChatModelWithConversation(client, session, modelName, conv, store)
+	m.activeGemName = gemName
 
 	p := tea.NewProgram(
 		m,

@@ -1,314 +1,153 @@
-# Análise Crítica: Plano de Exportação de Conversas no TUI
+# Refactoring/Design Plan: Integração de Gems e Atalho no Modo Chat
 
-## Resumo Executivo
+## 1\. Executive Summary & Goals
 
-O documento `shotgun-prompt-20251210-183012_response.md` propõe a implementação de um comando `/export` no TUI para exportar conversas para `.md` e `.json`. Embora bem estruturado, contém **inconsistências com o código atual**, **lacunas técnicas significativas** e **decisões de design questionáveis**.
+O objetivo primário é integrar a funcionalidade de gerenciamento e seleção de Gems (Personas do lado do servidor) diretamente no ambiente de chat TUI (Terminal User Interface) e adicionar um atalho (`/gems`) para acessá-la de forma rápida, complementando o comando CLI `geminiweb gems list`.
 
----
+### Key Goals:
 
-## 1. Inconsistências com o Código Atual
+1.  **Acesso Rápido a Gems no TUI:** Implementar o comando `/gems` dentro do `internal/tui/model.go` para abrir o seletor de Gems.
+2.  **Transição Sem Perda de Contexto:** Permitir que o usuário selecione ou altere o Gem ativo sem sair da sessão de chat em andamento.
+3.  **Atualização de Sessão:** Atualizar o `GemID` da `ChatSession` ativa (em `internal/api/session.go`) e o cabeçalho do TUI para refletir o Gem selecionado.
+4.  **UX no Chat:** Adicionar o nome do Gem ativo ao cabeçalho do chat TUI para feedback visual.
 
-### 1.1. Interface `FullHistoryStore` Incompleta
+## 2\. Current Situation Analysis
 
-**Problema**: O plano afirma que `ExportToJSON` já existe no `*history.Store` e apenas precisa ser adicionada à interface. Porém, a interface atual (`internal/tui/model.go:70-80`) **já possui `ExportToMarkdown` mas NÃO possui `ExportToJSON`**:
+O projeto já implementa a gestão completa de Gems:
+
+  * **API:** O pacote `internal/api` possui `FetchGems`, `CreateGem`, `UpdateGem`, e `DeleteGem` (em `internal/api/gems.go`) que usam `BatchExecute` para interagir com a API.
+  * **Cliente/Sessão:** `internal/api/client.go` e `internal/api/session.go` já têm métodos (`SetGem`, `GetGemID`, `WithGemID`) para configurar um Gem em uma sessão.
+  * **TUI de Gerenciamento:** O `internal/tui/gems_model.go` implementa um seletor TUI interativo para listar e selecionar Gems (usado pelo comando CLI `geminiweb gems list`).
+  * **Comandos CLI:** O `internal/commands/gems.go` já lida com o fluxo CLI (`gems list`, `gems create`, etc.).
+  * **Chat TUI:** O `internal/tui/model.go` é o núcleo do chat interativo, mas **não** possui o comando `/gems` implementado nem a lógica de transição para o seletor de Gems.
+
+**Limitação Atual:** O usuário precisa sair do chat TUI, executar `geminiweb gems list` e iniciar um **novo** chat para usar um Gem; não há como mudar dinamicamente.
+
+## 3\. Proposed Solution / Refactoring Strategy
+
+A estratégia consiste em integrar **a funcionalidade de seleção de Gems** do TUI existente como um overlay leve dentro do `Model` principal do chat (em `internal/tui/model.go`).  
+**Não** será usado o `GemsModel` como sub-modelo completo, pois ele é acoplado ao fluxo `RunGemsTUI`/`tea.NewProgram`. Em vez disso, a lógica de navegação, filtragem e renderização será replicada/adaptada diretamente no chat, mantendo a transição sem perda de contexto.
+
+### 3.1. High-Level Design / Architectural Overview
+
+O `internal/tui/model.go` será o orquestrador. Ele introduzirá um novo estado (`selectingGem = true`) para mostrar o seletor de Gems como um overlay.
+
+```mermaid
+graph TD
+    A[internal/tui/model.go]
+    C[internal/api/GeminiClientInterface]
+    D[internal/api/ChatSessionInterface]
+
+    A -- "handleKeyMsg /gems" --> A_SetState[A.selectingGem = true]
+    A_SetState --> A_LoadCmd[A.loadGemsForChat() (async)]
+    A_LoadCmd --> C
+    C -- FetchGems --> A
+    A -- "Gem selecionado" --> D_SetGem[D.SetGem(newID)]
+    D_SetGem --> A_UpdateHeader[A.activeGemName = newName]
+```
+
+### 3.2. Key Components / Modules
+
+| Componente | Localização | Modificação | Responsabilidades |
+| :--- | :--- | :--- | :--- |
+| **`Model` (Chat)** | `internal/tui/model.go` | **Principal (Extensão)** | Implementar o comando `/gems`, gerenciar o estado `selectingGem`, e orquestrar a exibição/esconder do seletor. Receber o resultado e atualizar a `session`. |
+| **`updateGemSelection`** | `internal/tui/model.go` | **Novo Método** | Lógica de atualização e renderização do seletor de Gems (incluindo navegação, filtragem, seleção) dentro do contexto do `Model` principal. |
+| **`gemsLoadedForChatMsg`** | `internal/tui/model.go` | **Novo Message Type** | Mensagem assíncrona para notificar o `Model` que os Gems foram carregados via `client.FetchGems()`. |
+| **`ChatSession`** | `internal/api/session.go` | **Existente** | O método `SetGem(gemID string)` já lida com a configuração do Gem no contexto da sessão (usado para gerar o payload correto). |
+| **`GemsModel` (referência)** | `internal/tui/gems_model.go` | **Sem integração direta** | Serve como referência de UX e lógica (navegação/filtragem); a implementação efetiva do overlay fica no `Model` principal. |
+
+### 3.3. Detailed Action Plan / Phases
+
+**Escala de esforço:** S = até ~0,5 dia, M = 1–2 dias, L = 3+ dias.
+
+#### Phase 1: Integração de Estado e Comando (High Priority)
+
+| Task | Rationale/Goal | Effort | Deliverable/Criteria for Completion |
+| :--- | :--- | :--- | :--- |
+| 1.1: **Adicionar Estado de Seleção** | Rastrear o modo de seleção de Gem. | S | Adicionar `selectingGem bool`, `gemsList []*models.Gem`, `gemsCursor int`, `gemsFilter string`, `gemsLoading bool`, `activeGemName string` a `internal/tui/model.go:Model`. |
+| 1.2: **Definir `gemsLoadedForChatMsg`** | Mensagem para carregar Gems de forma assíncrona. | S | Adicionar `gemsLoadedForChatMsg` struct a `internal/tui/model.go`. |
+| 1.3: **Implementar `loadGemsForChat()`** | Função para buscar Gems na API. | M | Novo método `loadGemsForChat()` em `internal/tui/model.go` que chama `client.FetchGems(false)`. |
+| 1.4: **Registrar `/gems` no `Update`** | Ativar o modo de seleção de Gem. | S | Adicionar `case "gems", "gem": m.selectingGem = true; return m, m.loadGemsForChat()` no `switch` de comandos em `internal/tui/model.go:Update`. |
+| 1.5: **Implementar `updateGemSelection()`** | Lógica de navegação/seleção de Gems como um sub-loop de `Update`. | M | Novo método `(m Model) updateGemSelection(msg tea.Msg)` para gerenciar a lógica da overlay de seleção. |
+| 1.6: **Implementar `renderGemSelector()`** | Visualização de seleção de Gems (overlay modal). | M | Novo método `(m Model) renderGemSelector()` para exibir a lista de Gems e o filtro. |
+
+#### Phase 2: Fluxo de Dados e UX (Medium Priority)
+
+| Task | Rationale/Goal | Effort | Deliverable/Criteria for Completion |
+| :--- | :--- | :--- | :--- |
+| 2.1: **Atualizar Sessão na Seleção** | Persistir a escolha do Gem. | S | No `updateGemSelection`, após a seleção, chamar `m.session.SetGem(selectedGem.ID)` e atualizar `m.activeGemName`. |
+| 2.2: **Exibir Gem Ativo no Cabeçalho** | Fornecer feedback visual constante. | S | Modificar `internal/tui/model.go:View` para incluir `m.activeGemName` no `headerStyle`. |
+| 2.3: **Resolver Gem Inicial** | Mostrar o Gem ativo já no início da sessão. | S | Ao criar o model, se `session.GetGemID()` != "", resolver o nome via cache (`client.Gems()/GetGem`) ou `FetchGems(false)` e definir `m.activeGemName`. Cobre Gem definido por `--gem` ou estado prévio na mesma execução. |
+| 2.4: **Tratamento de Cancelamento** | Permitir que o usuário saia do seletor com `Esc` sem alterar o Gem. | S | `updateGemSelection` deve resetar o estado `selectingGem` no `Esc`. |
+| 2.5: **Atualizar Ajuda/Docs** | Tornar o recurso descobrível. | S | Atualizar a ajuda do comando `chat` e/ou `README.md` para mencionar `/gems` e o indicador de Gem ativo no cabeçalho. |
+| 2.6: **Cobertura de Testes** | Evitar regressões no TUI. | S | Adicionar/ajustar testes em `internal/tui/model_test.go` para: abrir `/gems`, filtrar, selecionar, cancelar e resolver Gem inicial. |
+
+#### Phase 3: Refatoração e Robustez (Low Priority)
+
+| Task | Rationale/Goal | Effort | Deliverable/Criteria for Completion |
+| :--- | :--- | :--- | :--- |
+| 3.1: **Persistir GemID no Histórico (Opcional)** | Permitir retomar conversas com o mesmo Gem. | M | Adicionar `GemID` a `history.Conversation`, salvar ao trocar Gem e restaurar ao recriar/switchar sessão. Garantir compatibilidade com históricos antigos (campo opcional). |
+| 3.2: **Limpeza de Código** | Consolidar a implementação final. | S | Remover dependências indiretas do `GemsModel` e manter apenas a lógica necessária no `Model` principal, evitando acoplamento/circularidade. |
+
+### 3.4. Data Model Changes
+
+Nenhum. A interface `ChatSessionInterface` (em `internal/tui/model.go`) já expõe `SetGem(gemID string)` e `GetGemID() string`, e o `api.ChatSession` já implementa isso.
+
+### 3.5. API Design / Interface Changes
+
+**Interface Modificada/Revisada (em `internal/tui/model.go`):**
 
 ```go
-// Estado atual (internal/tui/model.go:70-80)
-type FullHistoryStore interface {
-    HistoryStoreInterface
-    ListConversations() ([]*history.Conversation, error)
-    GetConversation(id string) (*history.Conversation, error)
-    CreateConversation(model string) (*history.Conversation, error)
-    DeleteConversation(id string) error
-    ToggleFavorite(id string) (bool, error)
-    MoveConversation(id string, newIndex int) error
-    SwapConversations(id1, id2 string) error
-    ExportToMarkdown(id string) (string, error)  // Já existe
-    // ExportToJSON AUSENTE!
+type ChatSessionInterface interface {
+    // ... métodos existentes
+    SetGem(gemID string)
+    GetGemID() string
 }
+
+// Sem alteração real, apenas confirmação do que é exposto.
 ```
 
-**Correção**: O plano deve especificar que `ExportToJSON(id string) ([]byte, error)` precisa ser adicionado à interface.
+## 4\. Key Considerations & Risk Mitigation
 
-### 1.2. Assinatura de `ExportToJSON` Incorreta
+### 4.1. Technical Risks & Challenges
 
-**Problema**: O plano mostra a assinatura como `ExportToJSON(id string) ([]byte, error)`, mas não considera `ExportToJSONWithOptions` que permite incluir/excluir metadata e thoughts.
+| Risco | Descrição | Mitigação |
+| :--- | :--- | :--- |
+| **Re-autenticação** | A busca de Gems (`FetchGems`) pode falhar devido a cookies expirados. | A chamada a `FetchGems` usa o `GeminiClient`, que já possui auto-refresh de cookies via browser (`RefreshFromBrowser`). Se falhar, o erro deve ser propagado para o TUI. |
+| **Performance de Load** | O carregamento de todos os Gems (`FetchGems`) pode ser lento (chamada de rede). | A operação deve ser executada de forma assíncrona (`tea.Cmd`) para não bloquear a UI, com um indicador de carregamento (spinner) visível (`m.gemsLoading`). |
+| **UX de Overlay** | O seletor de Gems precisa ser renderizado como um overlay para não perturbar a interface do chat. | O `renderGemSelector()` renderizará a lista de Gems de forma centralizada e em uma caixa delimitada, com o `View` principal verificando `m.selectingGem` e renderizando o overlay por cima do chat (sem a biblioteca `bubbles/list` para manter o controle total do layout). |
 
-**Correção**: Decidir se o TUI deve expor opções de exportação ou usar valores padrão.
+### 4.2. Dependencies
 
-### 1.3. Padrão de Comandos Ignorado
+  * **Task 1.3:** Depende de `client.FetchGems(false)` (existe em `internal/api/gems.go`).
+  * **Task 1.5, 1.6, 2.1:** Depende da lógica de navegação e filtragem do `GemsModel` (será re-implementada/adaptada em `internal/tui/model.go` para ser leve).
 
-**Problema**: O plano não menciona que comandos existentes (`/file`, `/favorite`) já usam um padrão consistente de:
-1. Validar argumentos
-2. Expandir `~` para home directory
-3. Retornar `(tea.Model, tea.Cmd)` para operações assíncronas
+### 4.3. Non-Functional Requirements (NFRs) Addressed
 
-**Correção**: Seguir explicitamente o padrão de `handleFileCommand` (`internal/tui/model.go:707-738`).
+| NFR | Como o Plano Contribui |
+| :--- | :--- |
+| **Usabilidade** | Atalho `/gems` simplifica a troca de persona. O feedback visual (`m.activeGemName` no cabeçalho) mantém o contexto do usuário. |
+| **Performance** | O carregamento de Gems é assíncrono para não travar a UI (Task 1.3). |
+| **Manutenibilidade**| A lógica de seleção é isolada no método `updateGemSelection`, seguindo o padrão de sub-modelos do Bubble Tea, mantendo o `Model` do chat limpo. |
 
----
+## 5\. Success Metrics / Validation Criteria
 
-## 2. Lacunas Técnicas
+1.  O comando `/gems` é reconhecido e abre o seletor.
+2.  A lista de Gems é carregada de forma assíncrona, e um Gem pode ser selecionado com `Enter`.
+3.  Após a seleção, o seletor desaparece, e o nome do Gem aparece no cabeçalho do chat.
+4.  O GemID da `ChatSession` é atualizado corretamente, e o próximo `SendMessage` usa a nova persona.
+5.  Pressionar `Esc` no seletor fecha o overlay e retorna ao chat sem alterar o Gem ativo.
 
-### 2.1. Nenhum Plano de Testes
+## 6\. Assumptions Made
 
-**Problema Crítico**: O documento não menciona testes unitários ou de integração.
+  * O `GeminiClient` está inicializado e autenticado quando o chat é iniciado.
+  * A busca de Gems (`FetchGems`) é relativamente rápida; o overlay deve mostrar spinner enquanto carrega.
+  * Gems são carregados sob demanda ao abrir `/gems` e podem ser reusados de cache quando disponível; re-fetch é aceitável quando necessário.
 
-**Correção Proposta**:
-```
-Testes Necessários:
-├── TestExportCommand_ValidPath_Markdown
-├── TestExportCommand_ValidPath_JSON
-├── TestExportCommand_InvalidFormat
-├── TestExportCommand_NoConversation
-├── TestExportCommand_PathExpansion (~)
-├── TestExportCommand_PermissionDenied
-├── TestExportCommand_FileExists (comportamento?)
-└── TestExportResultMsg_HandledInUpdate
-```
+## 7\. Open Questions / Areas for Further Investigation
 
-### 2.2. Comportamento de Arquivo Existente Não Definido
-
-**Problema**: O que acontece se `/export chat.md` for executado e `chat.md` já existir?
-
-**Decisões Necessárias**:
-| Opção | Prós | Contras |
-|-------|------|---------|
-| Sobrescrever silenciosamente | Simples | Perda de dados potencial |
-| Adicionar sufixo numérico (`chat-1.md`) | Seguro | Proliferação de arquivos |
-| Falhar com erro | Explícito | UX ruim para atualização intencional |
-| Flag `--force` / `--overwrite` | Controle total | Complexidade do comando |
-
-**Recomendação**: Sobrescrever com aviso no feedback: `✓ Exported to chat.md (overwritten)`.
-
-### 2.3. Sanitização de Nome de Arquivo
-
-**Problema**: O plano menciona usar o título da conversa como nome padrão, mas não aborda:
-- Caracteres inválidos (`/`, `\`, `:`, `*`, `?`, `"`, `<`, `>`, `|`)
-- Nomes reservados no Windows (`CON`, `PRN`, `NUL`)
-- Títulos muito longos (>255 caracteres)
-
-**Correção Proposta**: Adicionar função `sanitizeFilename`:
-```go
-func sanitizeFilename(title string) string {
-    // Substituir caracteres inválidos por underscore
-    // Truncar para 200 caracteres
-    // Adicionar extensão apropriada
-}
-```
-
-### 2.4. Exportação de Conversa Não Salva
-
-**Problema**: O plano assume que `m.conversation != nil` significa que há um ID válido. Porém, uma conversa pode existir em memória mas ainda não ter sido salva (ex: usuário iniciou chat mas não enviou nenhuma mensagem).
-
-**Cenários não cobertos**:
-1. `m.conversation == nil` - Conversa não iniciada
-2. `m.conversation.ID == ""` - Conversa em memória, não persistida
-3. `m.conversation.Messages == nil` - Conversa vazia
-
-**Correção**: Implementar exportação direta da memória como fallback:
-```go
-if m.conversation == nil || m.conversation.ID == "" {
-    // Exportar m.messages diretamente, sem passar pelo store
-    return exportInMemoryConversation(m.messages, format, path)
-}
-```
-
-### 2.5. Diretório Padrão Não Especificado
-
-**Problema**: Se o usuário executar `/export chat.md` (sem caminho), onde o arquivo será salvo?
-
-**Opções**:
-| Opção | Comportamento |
-|-------|---------------|
-| CWD | Diretório atual do processo |
-| `~/.geminiweb/exports/` | Diretório dedicado |
-| `~/Downloads/` | Convenção de navegadores |
-
-**Recomendação**: CWD para caminhos relativos, com feedback mostrando caminho absoluto.
-
-### 2.6. Concorrência
-
-**Problema**: Não há proteção contra múltiplas exportações simultâneas.
-
-**Cenário**: Usuário executa `/export file1.md`, não espera, executa `/export file2.md`.
-
-**Correção**: Adicionar flag `m.exporting bool` ou usar o sistema de `m.loading` existente.
-
----
-
-## 3. Problemas de Design
-
-### 3.1. Sintaxe do Comando Ambígua
-
-**Problema**: O plano mostra `/export <filename> [-f json]` mas não especifica:
-- Ordem das flags: `/export -f json file.md` é válido?
-- Prioridade: Se `-f json` e `.md` conflitarem, qual vence?
-
-**Recomendação**: Definir claramente:
-```
-/export <path>           # Formato inferido pela extensão (.md padrão)
-/export <path> -f <fmt>  # Formato forçado, ignora extensão
-/export -f <fmt>         # Usa título como nome, formato especificado
-```
-
-### 3.2. Feedback via `m.err` é Anti-Pattern
-
-**Problema**: O plano sugere usar `m.err` para feedback de sucesso (`✓ Exported to...`). Isso mistura erros com mensagens de sucesso.
-
-**Estado Atual no Código**: Já existe esse anti-pattern para `/favorite`:
-```go
-// internal/tui/model.go:336
-m.err = fmt.Errorf("★ Added to favorites")  // <- Não é erro!
-```
-
-**Correção Proposta**: Introduzir campo `m.feedback string` separado de `m.err error`:
-```go
-type Model struct {
-    // ...
-    err      error   // Erros reais
-    feedback string  // Mensagens de sucesso (limpa após N segundos)
-}
-```
-
-### 3.3. Localização da Lógica
-
-**Problema**: O plano coloca toda a lógica em `internal/tui/model.go`, aumentando o tamanho do arquivo.
-
-**Estado Atual**: `model.go` já tem ~1600 linhas.
-
-**Alternativa**: Criar `internal/tui/export.go` para:
-- `exportResultMsg` struct
-- `exportCommand` function
-- `handleExportCommand` method
-
----
-
-## 4. Melhorias Propostas
-
-### 4.1. Estrutura de Mensagens Refatorada
-
-```go
-// internal/tui/messages.go (novo arquivo)
-type exportResultMsg struct {
-    path      string    // Caminho do arquivo exportado
-    format    string    // "markdown" ou "json"
-    size      int64     // Tamanho em bytes
-    overwrite bool      // Se sobrescreveu arquivo existente
-    err       error     // Erro, se houver
-}
-```
-
-### 4.2. Suporte a Exportação de Conversa em Memória
-
-```go
-func (m Model) handleExportCommand(args string) (tea.Model, tea.Cmd) {
-    path, format := parseExportArgs(args)
-
-    // Prioridade: conversa salva > conversa em memória
-    if m.conversation != nil && m.conversation.ID != "" {
-        return m, exportFromStore(m.fullHistoryStore, m.conversation.ID, format, path)
-    }
-
-    if len(m.messages) > 0 {
-        return m, exportFromMemory(m.messages, format, path)
-    }
-
-    m.err = fmt.Errorf("no conversation to export")
-    return m, nil
-}
-```
-
-### 4.3. Parser de Argumentos Robusto
-
-```go
-func parseExportArgs(args string) (path, format string, err error) {
-    // Suportar:
-    // /export file.md
-    // /export file.md -f json
-    // /export -f json file.md
-    // /export -f json (usa título como nome)
-
-    parts := strings.Fields(args)
-    // ... lógica de parsing
-}
-```
-
-### 4.4. Validação de Caminho Completa
-
-```go
-func validateExportPath(path string) (string, error) {
-    // 1. Expandir ~
-    // 2. Converter para absoluto
-    // 3. Verificar se diretório pai existe
-    // 4. Verificar permissões de escrita
-    // 5. Sanitizar nome do arquivo
-    // 6. Retornar caminho limpo
-}
-```
-
----
-
-## 5. Plano de Implementação Revisado
-
-### Fase 1: Infraestrutura (Prioridade: Alta)
-
-| # | Task | Arquivo | Descrição |
-|---|------|---------|-----------|
-| 1.1 | Adicionar `ExportToJSON` à interface | `internal/tui/model.go` | Incluir método na `FullHistoryStore` |
-| 1.2 | Criar `exportResultMsg` | `internal/tui/model.go` | Struct com `path`, `format`, `size`, `err` |
-| 1.3 | Criar `parseExportArgs` | `internal/tui/model.go` | Parser para `/export <path> [-f format]` |
-| 1.4 | Criar `validateExportPath` | `internal/tui/model.go` | Validação e sanitização de caminho |
-
-### Fase 2: Implementação Core (Prioridade: Alta)
-
-| # | Task | Arquivo | Descrição |
-|---|------|---------|-----------|
-| 2.1 | Criar `exportCommand` | `internal/tui/model.go` | tea.Cmd assíncrono para I/O |
-| 2.2 | Criar `handleExportCommand` | `internal/tui/model.go` | Handler do comando `/export` |
-| 2.3 | Adicionar case em `Update` | `internal/tui/model.go` | Processar `exportResultMsg` |
-| 2.4 | Registrar comando no switch | `internal/tui/model.go` | `case "export":` |
-
-### Fase 3: Robustez (Prioridade: Média)
-
-| # | Task | Descrição |
-|---|------|-----------|
-| 3.1 | Implementar `exportFromMemory` | Exportar sem ID (conversa não salva) |
-| 3.2 | Implementar `sanitizeFilename` | Limpar título para uso como nome |
-| 3.3 | Tratamento de arquivo existente | Sobrescrever com indicação no feedback |
-| 3.4 | Adicionar dica na status bar | `/export` na lista de comandos |
-
-### Fase 4: Testes (Prioridade: Alta)
-
-| # | Test | Cobertura |
-|---|------|-----------|
-| 4.1 | `TestParseExportArgs` | Todos os formatos de entrada |
-| 4.2 | `TestValidateExportPath` | Expansão, sanitização, permissões |
-| 4.3 | `TestExportCommand` | Sucesso markdown/json, erros |
-| 4.4 | `TestExportFromMemory` | Conversa não salva |
-
----
-
-## 6. Decisões Técnicas Pendentes
-
-| # | Questão | Recomendação | Justificativa |
-|---|---------|--------------|---------------|
-| 1 | Arquivo existente | Sobrescrever com indicação | Simples, evita proliferação |
-| 2 | Diretório padrão | CWD | Consistente com comportamento Unix |
-| 3 | Conversa não salva | Exportar da memória | UX melhor que erro |
-| 4 | Formato padrão (sem extensão) | Markdown | Mais legível |
-| 5 | Flag `-f` vs extensão | Flag tem prioridade | Explícito vence implícito |
-| 6 | Separar `m.feedback` de `m.err` | Sim, refatorar | Melhor semântica |
-
----
-
-## 7. Conclusão
-
-O plano original é um bom ponto de partida mas requer:
-
-1. **Correção de inconsistências** com o código atual (interface `FullHistoryStore`)
-2. **Adição de plano de testes** (crítico para qualidade)
-3. **Definição de comportamentos de borda** (arquivo existente, conversa não salva)
-4. **Sanitização de entrada** (path traversal, caracteres inválidos)
-5. **Separação semântica** de erros vs feedback
-
-Estimativa de esforço revisada: **2-3 dias** de desenvolvimento + **1 dia** de testes.
+| Questão | Decisão |
+| :--- | :--- |
+| Devo usar o `GemsModel` inteiro como sub-modelo? | **Não.** O `GemsModel` está acoplado ao `RunGemsTUI` (que chama `tea.NewProgram`). É melhor replicar a lógica de seleção/renderização diretamente em `internal/tui/model.go` (`updateGemSelection` e `renderGemSelector`) para um controle de overlay mais leve e mais granular. |
+| Como lidar com o estado do filtro de Gems? | Implementar uma filtragem simples por substring no nome/descrição, usando `m.gemsFilter` e atualizando `m.gemsCursor` (Task 1.5). |
+| Devo mostrar o prompt do Gem no seletor? | Apenas o nome e uma descrição truncada. O prompt completo será muito grande para um overlay rápido. |
