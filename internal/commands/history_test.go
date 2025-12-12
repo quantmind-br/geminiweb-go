@@ -162,8 +162,8 @@ func TestHistoryCommands_WithStore(t *testing.T) {
 	// Create a temporary directory for history
 	tmpDir := t.TempDir()
 	oldHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", oldHome)
+	_ = os.Setenv("HOME", tmpDir)
+	defer func() { _ = os.Setenv("HOME", oldHome) }()
 
 	// Create a store
 	store, err := history.NewStore(tmpDir)
@@ -239,8 +239,8 @@ func TestRunHistoryList_Empty(t *testing.T) {
 	// Create a temporary directory for history
 	tmpDir := t.TempDir()
 	oldHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", oldHome)
+	_ = os.Setenv("HOME", tmpDir)
+	defer func() { _ = os.Setenv("HOME", oldHome) }()
 
 	// Capture output
 	oldStdout := os.Stdout
@@ -276,8 +276,8 @@ func TestRunHistoryList_WithConversations(t *testing.T) {
 	// Create a temporary directory for history
 	tmpDir := t.TempDir()
 	oldHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", oldHome)
+	_ = os.Setenv("HOME", tmpDir)
+	defer func() { _ = os.Setenv("HOME", oldHome) }()
 
 	// Create conversations directly with DefaultStore
 	store, err := history.DefaultStore()
@@ -330,8 +330,8 @@ func TestRunHistoryShow_Success(t *testing.T) {
 	// Create a temporary directory for history
 	tmpDir := t.TempDir()
 	oldHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", oldHome)
+	_ = os.Setenv("HOME", tmpDir)
+	defer func() { _ = os.Setenv("HOME", oldHome) }()
 
 	// Create a conversation
 	store, err := history.DefaultStore()
@@ -373,8 +373,8 @@ func TestRunHistoryShow_WithAlias(t *testing.T) {
 	// Create a temporary directory for history
 	tmpDir := t.TempDir()
 	oldHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", oldHome)
+	_ = os.Setenv("HOME", tmpDir)
+	defer func() { _ = os.Setenv("HOME", oldHome) }()
 
 	// Create a conversation
 	store, err := history.DefaultStore()
@@ -416,8 +416,8 @@ func TestRunHistoryShow_WithNumericIndex(t *testing.T) {
 	// Create a temporary directory for history
 	tmpDir := t.TempDir()
 	oldHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", oldHome)
+	_ = os.Setenv("HOME", tmpDir)
+	defer func() { _ = os.Setenv("HOME", oldHome) }()
 
 	// Create a conversation
 	store, err := history.DefaultStore()
@@ -459,8 +459,8 @@ func TestRunHistoryDelete_Success(t *testing.T) {
 	// Create a temporary directory for history
 	tmpDir := t.TempDir()
 	oldHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", oldHome)
+	_ = os.Setenv("HOME", tmpDir)
+	defer func() { _ = os.Setenv("HOME", oldHome) }()
 
 	// Create a conversation
 	store, err := history.DefaultStore()
@@ -511,8 +511,8 @@ func TestRunHistoryDelete_WithAlias(t *testing.T) {
 	// Create a temporary directory for history
 	tmpDir := t.TempDir()
 	oldHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", oldHome)
+	_ = os.Setenv("HOME", tmpDir)
+	defer func() { _ = os.Setenv("HOME", oldHome) }()
 
 	// Create a conversation
 	store, err := history.DefaultStore()
@@ -563,8 +563,8 @@ func TestRunHistoryClear_Success(t *testing.T) {
 	// Create a temporary directory for history
 	tmpDir := t.TempDir()
 	oldHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", oldHome)
+	_ = os.Setenv("HOME", tmpDir)
+	defer func() { _ = os.Setenv("HOME", oldHome) }()
 
 	// Create conversations
 	store, err := history.DefaultStore()
@@ -621,8 +621,8 @@ func TestRunHistoryRename_Success(t *testing.T) {
 	// Create a temporary directory for history
 	tmpDir := t.TempDir()
 	oldHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", oldHome)
+	_ = os.Setenv("HOME", tmpDir)
+	defer func() { _ = os.Setenv("HOME", oldHome) }()
 
 	// Create a conversation
 	store, err := history.DefaultStore()
@@ -669,8 +669,8 @@ func TestRunHistoryFavorite_Toggle(t *testing.T) {
 	// Create a temporary directory for history
 	tmpDir := t.TempDir()
 	oldHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", oldHome)
+	_ = os.Setenv("HOME", tmpDir)
+	defer func() { _ = os.Setenv("HOME", oldHome) }()
 
 	// Create a conversation
 	store, err := history.DefaultStore()
@@ -745,8 +745,8 @@ func TestRunHistoryExport_Markdown(t *testing.T) {
 	// Create a temporary directory for history
 	tmpDir := t.TempDir()
 	oldHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", oldHome)
+	_ = os.Setenv("HOME", tmpDir)
+	defer func() { _ = os.Setenv("HOME", oldHome) }()
 
 	// Create a conversation with messages
 	store, err := history.DefaultStore()
@@ -797,8 +797,8 @@ func TestRunHistorySearch_TitleMatch(t *testing.T) {
 	// Create a temporary directory for history
 	tmpDir := t.TempDir()
 	oldHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", oldHome)
+	_ = os.Setenv("HOME", tmpDir)
+	defer func() { _ = os.Setenv("HOME", oldHome) }()
 
 	// Create conversations
 	store, err := history.DefaultStore()
@@ -824,7 +824,7 @@ func TestRunHistorySearch_TitleMatch(t *testing.T) {
 	err = runHistorySearch(historySearchCmd, []string{"API"})
 
 	// Restore stdout
-	w.Close()
+	_ = w.Close()
 	os.Stdout = oldStdout
 
 	if err != nil {
@@ -849,8 +849,8 @@ func TestRunHistorySearch_NoResults(t *testing.T) {
 	// Create a temporary directory for history
 	tmpDir := t.TempDir()
 	oldHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", oldHome)
+	_ = os.Setenv("HOME", tmpDir)
+	defer func() { _ = os.Setenv("HOME", oldHome) }()
 
 	// Create a conversation
 	store, err := history.DefaultStore()
@@ -859,7 +859,7 @@ func TestRunHistorySearch_NoResults(t *testing.T) {
 	}
 
 	conv, _ := store.CreateConversation("test-model")
-	store.UpdateTitle(conv.ID, "General Chat")
+	_ = store.UpdateTitle(conv.ID, "General Chat")
 
 	// Capture output
 	oldStdout := os.Stdout
@@ -873,7 +873,7 @@ func TestRunHistorySearch_NoResults(t *testing.T) {
 	err = runHistorySearch(historySearchCmd, []string{"xyz123nonexistent"})
 
 	// Restore stdout
-	w.Close()
+	_ = w.Close()
 	os.Stdout = oldStdout
 
 	if err != nil {
@@ -895,8 +895,8 @@ func TestRunHistoryList_Favorites(t *testing.T) {
 	// Create a temporary directory for history
 	tmpDir := t.TempDir()
 	oldHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", oldHome)
+	_ = os.Setenv("HOME", tmpDir)
+	defer func() { _ = os.Setenv("HOME", oldHome) }()
 
 	// Create conversations
 	store, err := history.DefaultStore()
@@ -909,7 +909,7 @@ func TestRunHistoryList_Favorites(t *testing.T) {
 	_ = store.SetFavorite(conv1.ID, true)
 
 	conv2, _ := store.CreateConversation("model-2")
-	store.UpdateTitle(conv2.ID, "Regular Chat")
+	_ = store.UpdateTitle(conv2.ID, "Regular Chat")
 
 	// Capture output
 	oldStdout := os.Stdout
@@ -924,7 +924,7 @@ func TestRunHistoryList_Favorites(t *testing.T) {
 	err = runHistoryList(historyListCmd, []string{})
 
 	// Restore stdout
-	w.Close()
+	_ = w.Close()
 	os.Stdout = oldStdout
 
 	if err != nil {

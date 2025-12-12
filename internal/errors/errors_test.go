@@ -204,8 +204,8 @@ func TestAuthError(t *testing.T) {
 
 	t.Run("with endpoint", func(t *testing.T) {
 		err := NewAuthErrorWithEndpoint("test", "https://example.com")
-		if err.GeminiError.Endpoint != "https://example.com" {
-			t.Errorf("Endpoint = %q, want %q", err.GeminiError.Endpoint, "https://example.com")
+		if err.Endpoint != "https://example.com" {
+			t.Errorf("Endpoint = %q, want %q", err.Endpoint, "https://example.com")
 		}
 	})
 
@@ -244,8 +244,8 @@ func TestAPIError(t *testing.T) {
 
 	t.Run("with code", func(t *testing.T) {
 		err := NewAPIErrorWithCode(ErrCodeUsageLimitExceeded, "endpoint")
-		if err.GeminiError.Code != ErrCodeUsageLimitExceeded {
-			t.Errorf("Code = %d, want %d", err.GeminiError.Code, ErrCodeUsageLimitExceeded)
+		if err.Code != ErrCodeUsageLimitExceeded {
+			t.Errorf("Code = %d, want %d", err.Code, ErrCodeUsageLimitExceeded)
 		}
 	})
 
@@ -282,8 +282,8 @@ func TestNetworkError(t *testing.T) {
 
 	t.Run("with endpoint", func(t *testing.T) {
 		err := NewNetworkErrorWithEndpoint("op", "https://example.com", nil)
-		if err.GeminiError.Endpoint != "https://example.com" {
-			t.Errorf("Endpoint = %q, want %q", err.GeminiError.Endpoint, "https://example.com")
+		if err.Endpoint != "https://example.com" {
+			t.Errorf("Endpoint = %q, want %q", err.Endpoint, "https://example.com")
 		}
 	})
 
@@ -329,8 +329,8 @@ func TestTimeoutError(t *testing.T) {
 	t.Run("with endpoint", func(t *testing.T) {
 		cause := &mockNetError{timeout: true}
 		err := NewTimeoutErrorWithEndpoint("https://example.com", cause)
-		if err.GeminiError.Endpoint != "https://example.com" {
-			t.Errorf("Endpoint = %q, want %q", err.GeminiError.Endpoint, "https://example.com")
+		if err.Endpoint != "https://example.com" {
+			t.Errorf("Endpoint = %q, want %q", err.Endpoint, "https://example.com")
 		}
 	})
 
@@ -381,8 +381,8 @@ func TestModelError(t *testing.T) {
 
 	t.Run("with code", func(t *testing.T) {
 		err := NewModelErrorWithCode(ErrCodeModelInconsistent)
-		if err.GeminiError.Code != ErrCodeModelInconsistent {
-			t.Errorf("Code = %d, want %d", err.GeminiError.Code, ErrCodeModelInconsistent)
+		if err.Code != ErrCodeModelInconsistent {
+			t.Errorf("Code = %d, want %d", err.Code, ErrCodeModelInconsistent)
 		}
 	})
 
@@ -673,8 +673,8 @@ func TestErrorWrapping(t *testing.T) {
 		if err.GeminiError == nil {
 			t.Error("AuthError.GeminiError should not be nil")
 		}
-		if err.GeminiError.HTTPStatus != 401 {
-			t.Errorf("AuthError.GeminiError.HTTPStatus = %d, want 401", err.GeminiError.HTTPStatus)
+		if err.HTTPStatus != 401 {
+			t.Errorf("AuthError.HTTPStatus = %d, want 401", err.HTTPStatus)
 		}
 	})
 
@@ -684,8 +684,8 @@ func TestErrorWrapping(t *testing.T) {
 		if err.GeminiError == nil {
 			t.Error("APIError.GeminiError should not be nil")
 		}
-		if err.GeminiError.HTTPStatus != 500 {
-			t.Errorf("APIError.GeminiError.HTTPStatus = %d, want 500", err.GeminiError.HTTPStatus)
+		if err.HTTPStatus != 500 {
+			t.Errorf("APIError.HTTPStatus = %d, want 500", err.HTTPStatus)
 		}
 	})
 
@@ -776,8 +776,8 @@ func TestUploadError(t *testing.T) {
 
 	t.Run("with status", func(t *testing.T) {
 		err := NewUploadErrorWithStatus("test.png", 404, "not found")
-		if err.GeminiError.HTTPStatus != 404 {
-			t.Errorf("HTTPStatus = %d, want 404", err.GeminiError.HTTPStatus)
+		if err.HTTPStatus != 404 {
+			t.Errorf("HTTPStatus = %d, want 404", err.HTTPStatus)
 		}
 		if !containsString(err.Error(), "HTTP 404") {
 			t.Errorf("Error() should contain 'HTTP 404', got %q", err.Error())
@@ -787,7 +787,7 @@ func TestUploadError(t *testing.T) {
 	t.Run("network error", func(t *testing.T) {
 		cause := errors.New("connection refused")
 		err := NewUploadNetworkError("large.md", cause)
-		if err.GeminiError.Cause != cause {
+		if err.Cause != cause {
 			t.Error("Cause should be set")
 		}
 		if !containsString(err.Error(), "connection refused") {
@@ -894,8 +894,8 @@ func TestGemError(t *testing.T) {
 		if err.GemName != "New Gem" {
 			t.Errorf("GemName = %q, want 'New Gem'", err.GemName)
 		}
-		if err.GeminiError.Operation != "create gem" {
-			t.Errorf("Operation = %q, want 'create gem'", err.GeminiError.Operation)
+		if err.Operation != "create gem" {
+			t.Errorf("Operation = %q, want 'create gem'", err.Operation)
 		}
 	})
 
@@ -904,8 +904,8 @@ func TestGemError(t *testing.T) {
 		if err.GemID != "gem-123" {
 			t.Errorf("GemID = %q, want 'gem-123'", err.GemID)
 		}
-		if err.GeminiError.Operation != "update gem" {
-			t.Errorf("Operation = %q, want 'update gem'", err.GeminiError.Operation)
+		if err.Operation != "update gem" {
+			t.Errorf("Operation = %q, want 'update gem'", err.Operation)
 		}
 	})
 
@@ -914,8 +914,8 @@ func TestGemError(t *testing.T) {
 		if err.GemID != "gem-456" {
 			t.Errorf("GemID = %q, want 'gem-456'", err.GemID)
 		}
-		if err.GeminiError.Operation != "delete gem" {
-			t.Errorf("Operation = %q, want 'delete gem'", err.GeminiError.Operation)
+		if err.Operation != "delete gem" {
+			t.Errorf("Operation = %q, want 'delete gem'", err.Operation)
 		}
 	})
 
@@ -924,8 +924,8 @@ func TestGemError(t *testing.T) {
 		if !containsString(err.Error(), "network error") {
 			t.Errorf("Error() should contain message, got %q", err.Error())
 		}
-		if err.GeminiError.Operation != "fetch gems" {
-			t.Errorf("Operation = %q, want 'fetch gems'", err.GeminiError.Operation)
+		if err.Operation != "fetch gems" {
+			t.Errorf("Operation = %q, want 'fetch gems'", err.Operation)
 		}
 	})
 
@@ -972,8 +972,8 @@ func TestGemError(t *testing.T) {
 	t.Run("endpoint is set to batch execute", func(t *testing.T) {
 		err := NewGemError("id", "name", "msg")
 		expected := "https://gemini.google.com/_/BardChatUi/data/batchexecute"
-		if err.GeminiError.Endpoint != expected {
-			t.Errorf("Endpoint = %q, want %q", err.GeminiError.Endpoint, expected)
+		if err.Endpoint != expected {
+			t.Errorf("Endpoint = %q, want %q", err.Endpoint, expected)
 		}
 	})
 }

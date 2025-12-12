@@ -330,26 +330,26 @@ func (e *APIError) Error() string {
 
 // StatusCode returns the HTTP status code (for backwards compatibility)
 func (e *APIError) StatusCode() int {
-	return e.GeminiError.HTTPStatus
+	return e.HTTPStatus
 }
 
 // Is allows comparison with other errors
 func (e *APIError) Is(target error) bool {
-	if target == ErrAuthFailed && e.GeminiError.HTTPStatus == 401 {
+	if target == ErrAuthFailed && e.HTTPStatus == 401 {
 		return true
 	}
-	if target == ErrRateLimited && (e.GeminiError.HTTPStatus == 429 || e.GeminiError.Code == ErrCodeUsageLimitExceeded) {
+	if target == ErrRateLimited && (e.HTTPStatus == 429 || e.Code == ErrCodeUsageLimitExceeded) {
 		return true
 	}
 	if t, ok := target.(*APIError); ok {
-		return e.GeminiError.HTTPStatus == t.GeminiError.HTTPStatus
+		return e.HTTPStatus == t.HTTPStatus
 	}
 	return false
 }
 
 // Unwrap returns the underlying error
 func (e *APIError) Unwrap() error {
-	return e.GeminiError.Cause
+	return e.Cause
 }
 
 // NetworkError represents a network-level failure
@@ -382,10 +382,10 @@ func NewNetworkErrorWithEndpoint(operation string, endpoint string, cause error)
 
 // Error implements the error interface
 func (e *NetworkError) Error() string {
-	if e.GeminiError.Cause != nil {
-		return fmt.Sprintf("network error during %s: %v", e.GeminiError.Operation, e.GeminiError.Cause)
+	if e.Cause != nil {
+		return fmt.Sprintf("network error during %s: %v", e.Operation, e.Cause)
 	}
-	return fmt.Sprintf("network error during %s", e.GeminiError.Operation)
+	return fmt.Sprintf("network error during %s", e.Operation)
 }
 
 // Is allows comparison with sentinel errors
@@ -393,7 +393,7 @@ func (e *NetworkError) Is(target error) bool {
 	if target == ErrNetworkFailure {
 		return true
 	}
-	if target == ErrTimeout && e.GeminiError.IsTimeout() {
+	if target == ErrTimeout && e.IsTimeout() {
 		return true
 	}
 	if _, ok := target.(*NetworkError); ok {
@@ -404,7 +404,7 @@ func (e *NetworkError) Is(target error) bool {
 
 // Unwrap returns the underlying cause
 func (e *NetworkError) Unwrap() error {
-	return e.GeminiError.Cause
+	return e.Cause
 }
 
 // TimeoutError represents a request timeout
@@ -436,10 +436,10 @@ func NewTimeoutErrorWithEndpoint(endpoint string, cause error) *TimeoutError {
 
 // Error implements the error interface
 func (e *TimeoutError) Error() string {
-	if e.GeminiError.Message == "" {
+	if e.Message == "" {
 		return "request timed out"
 	}
-	return fmt.Sprintf("request timed out: %s", e.GeminiError.Message)
+	return fmt.Sprintf("request timed out: %s", e.Message)
 }
 
 // Is allows comparison with sentinel errors
@@ -455,7 +455,7 @@ func (e *TimeoutError) Is(target error) bool {
 
 // Unwrap returns the underlying cause
 func (e *TimeoutError) Unwrap() error {
-	return e.GeminiError.Cause
+	return e.Cause
 }
 
 // UsageLimitError represents a usage limit exceeded error
@@ -476,10 +476,10 @@ func NewUsageLimitError(modelName string) *UsageLimitError {
 
 // Error implements the error interface
 func (e *UsageLimitError) Error() string {
-	if e.GeminiError.Message == "" {
+	if e.Message == "" {
 		return "usage limit exceeded"
 	}
-	return fmt.Sprintf("usage limit exceeded: %s", e.GeminiError.Message)
+	return fmt.Sprintf("usage limit exceeded: %s", e.Message)
 }
 
 // Is allows comparison with sentinel errors
@@ -495,7 +495,7 @@ func (e *UsageLimitError) Is(target error) bool {
 
 // Unwrap returns the underlying cause
 func (e *UsageLimitError) Unwrap() error {
-	return e.GeminiError.Cause
+	return e.Cause
 }
 
 // ModelError represents a model-related error
@@ -526,7 +526,7 @@ func NewModelErrorWithCode(code ErrorCode) *ModelError {
 
 // Error implements the error interface
 func (e *ModelError) Error() string {
-	return fmt.Sprintf("model error: %s", e.GeminiError.Message)
+	return fmt.Sprintf("model error: %s", e.Message)
 }
 
 // Is allows comparison with other ModelErrors
@@ -539,7 +539,7 @@ func (e *ModelError) Is(target error) bool {
 
 // Unwrap returns the underlying cause
 func (e *ModelError) Unwrap() error {
-	return e.GeminiError.Cause
+	return e.Cause
 }
 
 // BlockedError represents an IP block error
@@ -560,10 +560,10 @@ func NewBlockedError(message string) *BlockedError {
 
 // Error implements the error interface
 func (e *BlockedError) Error() string {
-	if e.GeminiError.Message == "" {
+	if e.Message == "" {
 		return "content blocked"
 	}
-	return fmt.Sprintf("blocked: %s", e.GeminiError.Message)
+	return fmt.Sprintf("blocked: %s", e.Message)
 }
 
 // Is allows comparison with other BlockedErrors
@@ -576,7 +576,7 @@ func (e *BlockedError) Is(target error) bool {
 
 // Unwrap returns the underlying cause
 func (e *BlockedError) Unwrap() error {
-	return e.GeminiError.Cause
+	return e.Cause
 }
 
 // ParseError represents a response parsing error
@@ -599,9 +599,9 @@ func NewParseError(message, path string) *ParseError {
 // Error implements the error interface
 func (e *ParseError) Error() string {
 	if e.Path != "" {
-		return fmt.Sprintf("parse error at %s: %s", e.Path, e.GeminiError.Message)
+		return fmt.Sprintf("parse error at %s: %s", e.Path, e.Message)
 	}
-	return fmt.Sprintf("parse error: %s", e.GeminiError.Message)
+	return fmt.Sprintf("parse error: %s", e.Message)
 }
 
 // Is allows comparison with sentinel errors
@@ -617,7 +617,7 @@ func (e *ParseError) Is(target error) bool {
 
 // Unwrap returns the underlying cause
 func (e *ParseError) Unwrap() error {
-	return e.GeminiError.Cause
+	return e.Cause
 }
 
 // PromptTooLongError represents an error when the prompt exceeds the model's context limit
@@ -638,7 +638,7 @@ func NewPromptTooLongError(modelName string) *PromptTooLongError {
 
 // Error implements the error interface
 func (e *PromptTooLongError) Error() string {
-	return fmt.Sprintf("prompt too long: %s", e.GeminiError.Message)
+	return fmt.Sprintf("prompt too long: %s", e.Message)
 }
 
 // Is allows comparison with other PromptTooLongErrors
@@ -651,7 +651,7 @@ func (e *PromptTooLongError) Is(target error) bool {
 
 // Unwrap returns the underlying cause
 func (e *PromptTooLongError) Unwrap() error {
-	return e.GeminiError.Cause
+	return e.Cause
 }
 
 // HandleErrorCode converts API error codes to appropriate errors
@@ -693,7 +693,7 @@ func IsAuthError(err error) bool {
 	// Check for APIError with 401 status
 	var apiErr *APIError
 	if errors.As(err, &apiErr) {
-		return apiErr.GeminiError.HTTPStatus == 401
+		return apiErr.HTTPStatus == 401
 	}
 
 	// Check for GeminiError with 401 status
@@ -770,12 +770,12 @@ func GetHTTPStatus(err error) int {
 
 	var apiErr *APIError
 	if errors.As(err, &apiErr) {
-		return apiErr.GeminiError.HTTPStatus
+		return apiErr.HTTPStatus
 	}
 
 	var authErr *AuthError
 	if errors.As(err, &authErr) {
-		return authErr.GeminiError.HTTPStatus
+		return authErr.HTTPStatus
 	}
 
 	return 0
@@ -794,7 +794,7 @@ func GetErrorCode(err error) ErrorCode {
 
 	var apiErr *APIError
 	if errors.As(err, &apiErr) {
-		return apiErr.GeminiError.Code
+		return apiErr.Code
 	}
 
 	return ErrCodeUnknown
@@ -813,22 +813,22 @@ func GetEndpoint(err error) string {
 
 	var apiErr *APIError
 	if errors.As(err, &apiErr) {
-		return apiErr.GeminiError.Endpoint
+		return apiErr.Endpoint
 	}
 
 	var authErr *AuthError
 	if errors.As(err, &authErr) {
-		return authErr.GeminiError.Endpoint
+		return authErr.Endpoint
 	}
 
 	var netErr *NetworkError
 	if errors.As(err, &netErr) {
-		return netErr.GeminiError.Endpoint
+		return netErr.Endpoint
 	}
 
 	var uploadErr *UploadError
 	if errors.As(err, &uploadErr) {
-		return uploadErr.GeminiError.Endpoint
+		return uploadErr.Endpoint
 	}
 
 	return ""
@@ -847,22 +847,22 @@ func GetResponseBody(err error) string {
 
 	var apiErr *APIError
 	if errors.As(err, &apiErr) {
-		return apiErr.GeminiError.Body
+		return apiErr.Body
 	}
 
 	var authErr *AuthError
 	if errors.As(err, &authErr) {
-		return authErr.GeminiError.Body
+		return authErr.Body
 	}
 
 	var netErr *NetworkError
 	if errors.As(err, &netErr) {
-		return netErr.GeminiError.Body
+		return netErr.Body
 	}
 
 	var uploadErr *UploadError
 	if errors.As(err, &uploadErr) {
-		return uploadErr.GeminiError.Body
+		return uploadErr.Body
 	}
 
 	return ""
@@ -917,16 +917,16 @@ func NewUploadNetworkError(fileName string, cause error) *UploadError {
 // Error implements the error interface
 func (e *UploadError) Error() string {
 	if e.FileName != "" {
-		if e.GeminiError.HTTPStatus > 0 {
+		if e.HTTPStatus > 0 {
 			return fmt.Sprintf("upload error for '%s': HTTP %d - %s",
-				e.FileName, e.GeminiError.HTTPStatus, e.GeminiError.Message)
+				e.FileName, e.HTTPStatus, e.Message)
 		}
-		if e.GeminiError.Cause != nil {
-			return fmt.Sprintf("upload error for '%s': %v", e.FileName, e.GeminiError.Cause)
+		if e.Cause != nil {
+			return fmt.Sprintf("upload error for '%s': %v", e.FileName, e.Cause)
 		}
-		return fmt.Sprintf("upload error for '%s': %s", e.FileName, e.GeminiError.Message)
+		return fmt.Sprintf("upload error for '%s': %s", e.FileName, e.Message)
 	}
-	return fmt.Sprintf("upload error: %s", e.GeminiError.Message)
+	return fmt.Sprintf("upload error: %s", e.Message)
 }
 
 // Is allows comparison with other errors
@@ -934,7 +934,7 @@ func (e *UploadError) Is(target error) bool {
 	if _, ok := target.(*UploadError); ok {
 		return true
 	}
-	if target == ErrNetworkFailure && e.GeminiError.Cause != nil {
+	if target == ErrNetworkFailure && e.Cause != nil {
 		return true
 	}
 	return false
@@ -942,7 +942,7 @@ func (e *UploadError) Is(target error) bool {
 
 // Unwrap returns the underlying cause
 func (e *UploadError) Unwrap() error {
-	return e.GeminiError.Cause
+	return e.Cause
 }
 
 // IsUploadError checks if an error is an upload error
@@ -999,16 +999,16 @@ func NewDownloadNetworkError(url string, cause error) *DownloadError {
 // Error implements the error interface
 func (e *DownloadError) Error() string {
 	if e.URL != "" {
-		if e.GeminiError.HTTPStatus > 0 {
+		if e.HTTPStatus > 0 {
 			return fmt.Sprintf("download error for '%s': HTTP %d - %s",
-				e.URL, e.GeminiError.HTTPStatus, e.GeminiError.Message)
+				e.URL, e.HTTPStatus, e.Message)
 		}
-		if e.GeminiError.Cause != nil {
-			return fmt.Sprintf("download error for '%s': %v", e.URL, e.GeminiError.Cause)
+		if e.Cause != nil {
+			return fmt.Sprintf("download error for '%s': %v", e.URL, e.Cause)
 		}
-		return fmt.Sprintf("download error for '%s': %s", e.URL, e.GeminiError.Message)
+		return fmt.Sprintf("download error for '%s': %s", e.URL, e.Message)
 	}
-	return fmt.Sprintf("download error: %s", e.GeminiError.Message)
+	return fmt.Sprintf("download error: %s", e.Message)
 }
 
 // Is allows comparison with other errors
@@ -1016,7 +1016,7 @@ func (e *DownloadError) Is(target error) bool {
 	if _, ok := target.(*DownloadError); ok {
 		return true
 	}
-	if target == ErrNetworkFailure && e.GeminiError.Cause != nil {
+	if target == ErrNetworkFailure && e.Cause != nil {
 		return true
 	}
 	return false
@@ -1024,7 +1024,7 @@ func (e *DownloadError) Is(target error) bool {
 
 // Unwrap returns the underlying cause
 func (e *DownloadError) Unwrap() error {
-	return e.GeminiError.Cause
+	return e.Cause
 }
 
 // IsDownloadError checks if an error is a download error
@@ -1130,12 +1130,12 @@ func NewGemFetchError(message string) *GemError {
 // Error implements the error interface
 func (e *GemError) Error() string {
 	if e.GemName != "" {
-		return fmt.Sprintf("gem error (%s): %s", e.GemName, e.GeminiError.Message)
+		return fmt.Sprintf("gem error (%s): %s", e.GemName, e.Message)
 	}
 	if e.GemID != "" {
-		return fmt.Sprintf("gem error (ID: %s): %s", e.GemID, e.GeminiError.Message)
+		return fmt.Sprintf("gem error (ID: %s): %s", e.GemID, e.Message)
 	}
-	return fmt.Sprintf("gem error: %s", e.GeminiError.Message)
+	return fmt.Sprintf("gem error: %s", e.Message)
 }
 
 // Is allows comparison with other errors
@@ -1148,7 +1148,7 @@ func (e *GemError) Is(target error) bool {
 
 // Unwrap returns the underlying cause
 func (e *GemError) Unwrap() error {
-	return e.GeminiError.Cause
+	return e.Cause
 }
 
 // IsGemError checks if an error is a gem error

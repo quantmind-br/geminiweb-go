@@ -1,150 +1,164 @@
-# Refactoring/Design Plan: Modo Interativo para Gerenciamento de Gems (Personas)
+# Plano de Refatoração/Design: Modo Interativo para Gerenciamento de Gems (Personas)
 
-## 1\. Executive Summary & Goals
+## 1. Resumo Executivo e Objetivos
 
-O objetivo primário é estender a funcionalidade de listagem de **Gems** (`geminiweb gems list`) do CLI para um **Modo Interativo** mais completo, permitindo que o usuário visualize, filtre e, crucialmente, **inicie um chat com o Gem selecionado** diretamente da interface TUI.
+O objetivo primário (já implementado nesta base) foi estender a funcionalidade de listagem de **Gems** (`geminiweb gems list`) para um modo interativo completo, permitindo que o usuário visualize, filtre e **inicie um chat com o Gem selecionado** diretamente da TUI.
 
-### Key Goals:
+### Objetivos principais
 
-1.  **Habilitar Chat Rápido:** Permitir que o usuário inicie uma sessão de chat com o Gem selecionado (tecla `c`) a partir da lista TUI.
-2.  **Melhorar a Descoberta (UX):** Apresentar a lista de Gems em um formato interativo (`TUI - Text User Interface`) com busca em tempo real e visualização de detalhes.
-3.  **Encapsular a Lógica de Seleção:** Isolar a TUI de seleção de Gems para ser reutilizada tanto pelo comando `gems list` quanto dentro da sessão de chat (`/gems`).
+1. **Habilitar chat rápido:** iniciar uma sessão de chat com o Gem selecionado (tecla `c`) a partir da lista TUI.
+2. **Melhorar a descoberta (UX):** lista interativa com busca em tempo real e visualização de detalhes.
+3. **Encapsular a lógica de seleção:** seletor reutilizável entre `gems list` e o comando `/gems` dentro do chat.
 
-## 2\. Current Situation Analysis
+> **Status atual:** objetivos 1–3 concluídos.
 
-O gerenciamento de Gems já existe, implementado em `internal/api/gems.go` e exposto no comando `internal/commands/gems.go`.
+## 2. Análise da Situação Atual
 
-  * **API Layer (`internal/api/gems.go`):** Possui métodos como `FetchGems`, `CreateGem`, `UpdateGem`, e `DeleteGem`, que utilizam o endpoint `batchexecute`. A estrutura `models.GemJar` armazena e permite a recuperação por ID ou nome.
-  * **Command Layer (`internal/commands/gems.go`):** O comando `gems list` usa `tui.RunGemsTUI` para abrir uma interface TUI interativa.
-  * **TUI Layer (`internal/tui/gems_model.go`):** A implementação atual (`GemsModel`) já carrega e lista os Gems, mas a lógica de transição para o chat e a infraestrutura de retorno do Gem selecionado **existem, mas precisam ser integradas** ao fluxo de inicialização do chat principal.
+O gerenciamento de Gems já existe em `internal/api/gems.go` e é exposto via `internal/commands/gems.go`. Hoje:
 
-O arquivo `internal/tui/gems_model.go` já define a estrutura `GemsTUIResult` e o fluxo de iniciar o chat com a tecla `c`, o que indica que a maior parte da fundação está pronta, mas o comando chamador precisa ser adaptado para aceitar o resultado e iniciar a sessão de chat.
+  * **Camada API (`internal/api/gems.go`):** `FetchGems`, `CreateGem`, `UpdateGem`, `DeleteGem`, usando `BatchExecute`; cache via `models.GemJar`.
+  * **Camada CLI (`internal/commands/gems.go`):** `runGemsList` chama `tui.RunGemsTUI` e interpreta `GemsTUIResult` para iniciar chat quando o usuário pressiona `c`.
+  * **TUI de listagem (`internal/tui/gems_model.go`):** lista, filtra (`/`), mostra detalhes e sinaliza início de chat via `GemsTUIResult`.
+  * **TUI do chat (`internal/tui/model.go`):** seletor inline acionado por `/gems` ou `Ctrl+G`, com filtro por digitação, navegação e aplicação do Gem ativo com `session.SetGem()` e `activeGemName`.
 
-## 3\. Proposed Solution / Refactoring Strategy
+Pontos ainda discutíveis:
 
-A estratégia se concentra em refatorar o fluxo de controle no pacote `internal/commands` e garantir que a lógica de inicialização de sessão utilize o Gem ID retornado pelo TUI.
+  * Ao iniciar chat a partir de `gems list`, o cliente vem de `createGemsClient()` com `WithAutoRefresh(false)` e o chat não integra histórico; validar se isso é aceitável ou se deve seguir o fluxo padrão do comando `chat`.
+  * Não há opção explícita de “sem Gem” no seletor do chat; dependemos de um Gem de sistema padrão para limpar a persona.
 
-### 3.1. High-Level Design / Architectural Overview
+## 3. Solução Implementada / Estratégia
 
-O fluxo será:
+A solução final mantém dois fluxos:
 
-1.  O comando `gems list` (ou `chat /gems`) chama o `tui.RunGemsTUI`.
-2.  O `GemsModel` gerencia a seleção e retorna `GemsTUIResult` contendo o `GemID`.
-3.  O `commands/gems.go` (ou `commands/chat.go` para `/gems`) recebe o resultado.
-4.  Se um `GemID` for retornado, o fluxo de inicialização de chat é invocado com esse ID.
+### 3.1. Visão Geral
 
-<!-- end list -->
+A) **`geminiweb gems list`**
+
+1. `runGemsList` chama `tui.RunGemsTUI`.
+2. `GemsModel` retorna `GemsTUIResult` com `GemID` quando `c` é pressionado.
+3. `runGemsList` cria `ChatSession` com `gemID` e inicia `tui.RunChatWithSession`.
+
+B) **Dentro do chat (`/gems` ou `Ctrl+G`)**
+
+1. `Model.Update` entra em `selectingGem` e dispara `loadGemsForChat`.
+2. `updateGemSelection` navega/filtra e, ao confirmar, aplica `session.SetGem(gemID)` e atualiza `activeGemName`.
 
 ```mermaid
 graph TD
-    subgraph "CLI/Commands"
+    subgraph "gems list"
         A[geminiweb gems list] --> B{tui.RunGemsTUI}
-        C[Chat TUI /gems] --> B
+        B --> C[GemsModel]
+        C --> D{GemsTUIResult}
+        D --> E[runGemsList cria sessão]
+        E --> F[tui.RunChatWithSession]
     end
 
-    subgraph "TUI"
-        B --> D[GemsModel]
-        D -- Seleção OK (GemID) --> E{Retorno: GemsTUIResult}
-    end
-
-    subgraph "Chat Initialization"
-        E --> F{Verificar GemID}
-        F -- GemID Válido --> G[api.NewClient]
-        G --> H[api.StartChatWithOptions(WithGemID)]
-        H --> I[tui.RunChatWithSession]
+    subgraph "chat"
+        G[/gems ou Ctrl+G] --> H[Model.selectingGem]
+        H --> I[loadGemsForChat]
+        I --> J[updateGemSelection]
+        J --> K[session.SetGem + activeGemName]
     end
 ```
 
-### 3.2. Key Components / Modules
+### 3.2. Componentes‑chave
 
-| Componente | Localização | Responsabilidades da Mudança |
+| Componente | Localização | Responsabilidades / Status |
 | :--- | :--- | :--- |
-| **`runGemsList`** | `internal/commands/gems.go` | Receber `GemsTUIResult` e iniciar a sessão de chat se `GemID` não for vazio. |
-| **`RunGemsTUI`** | `internal/tui/gems_model.go` | (Já implementado) Retornar `GemsTUIResult` com ID e nome do Gem para iniciar o chat. |
-| **`Model.Update`** | `internal/tui/model.go` | Implementar a lógica para lidar com o modo de seleção de Gems (`m.selectingGem`), incluindo filtragem e navegação, e aplicar o Gem ID à sessão de chat. |
-| **`loadGemsForChat`** | `internal/tui/model.go` | (Já implementado) Adicionar um comando para carregar os Gems quando `/gems` for digitado na sessão de chat principal. |
-| **`createChatSession`** | `internal/commands/session.go` | (Auxiliar) Garantir que a criação de sessão propague o `gemID` para `api.ChatSession`. |
+| **`runGemsList`** | `internal/commands/gems.go` | Integra `GemsTUIResult` e inicia chat com `GemID` (concluído). |
+| **`RunGemsTUI` / `GemsModel`** | `internal/tui/gems_model.go` | Lista, filtra e retorna Gem selecionado para chat (concluído). |
+| **`Model.Update` / `updateGemSelection` / `renderGemSelector`** | `internal/tui/model.go` | Seletor inline no chat via `/gems`/`Ctrl+G` (concluído). |
+| **`loadGemsForChat`** | `internal/tui/model.go` | Carrega e ordena gems para o seletor do chat (concluído). |
+| **`createChatSession`** | `internal/commands/session.go` | Propaga `gemID` para `api.ChatSession` (concluído). |
 
-### 3.3. Detailed Action Plan / Phases
+### 3.3. Plano de ações / fases
 
-#### Phase 1: Integrazione del comando `gems list` con Chat (High Priority)
+As fases 1–3 estão implementadas nesta base. Mantemos os itens originais com status e adicionamos um backlog opcional.
 
-| Task | Rationale/Goal | Effort | Deliverable/Criteria for Completion |
-| :--- | :--- | :--- | :--- |
-| 1.1: **Refatorar `runGemsList`** | Usar o resultado `GemsTUIResult` para iniciar o chat. | M | `runGemsList` chama `tui.RunGemsTUI` e, se um Gem for selecionado, passa o controle para o fluxo de inicialização de chat. |
-| 1.2: **Unificar Criação de Sessão** | Criar função auxiliar em `internal/commands` para centralizar a lógica de `api.NewClient` e `client.Init()`. | S | Nova função (e.g., `initClientAndSession(gemID, model)`) para evitar duplicação de código. |
-| 1.3: **Verificar Dependências do `chat`** | Garantir que `internal/commands/session.go:createChatSession` e `internal/commands/chat.go:runChat` suportem o GemID retornado e o propaguem corretamente. | S | Teste de integração: `geminiweb gems list` -\> `c` -\> Nova sessão iniciada com o Gem. |
+#### Fase 1: Integração do comando `gems list` com chat (concluída)
 
-#### Phase 2: Integração do comando `/gems` no TUI de Chat (Medium Priority)
+| Task | Objetivo | Esforço | Critério de conclusão | Status |
+| :--- | :--- | :--- | :--- | :--- |
+| 1.1: **Refatorar `runGemsList`** | Usar o resultado `GemsTUIResult` para iniciar o chat. | M | `runGemsList` chama `tui.RunGemsTUI` e inicia `tui.RunChatWithSession` quando há seleção. | Concluído |
+| 1.2: **Centralizar criação de cliente/sessão** | Evitar duplicação usando `createGemsClient` e `createChatSession`. | S | Fluxo de listagem e chat compartilham helpers de inicialização. | Concluído |
+| 1.3: **Validar fluxo end‑to‑end** | Garantir que o `GemID` seja propagado ao payload de geração. | S | Teste manual: `gems list` → `c` abre chat com Gem correto. | Concluído |
 
-*O TUI já possui os campos `selectingGem`, `gemsList`, `gemsCursor`, etc. no `internal/tui/model.go`.*
+#### Fase 2: Integração do comando `/gems` no TUI de chat (concluída)
 
-| Task | Rationale/Goal | Effort | Deliverable/Criteria for Completion |
-| :--- | :--- | :--- | :--- |
-| 2.1: **Adaptar `handleKeyMsg` (`internal/tui/model.go`)** | Adicionar a lógica para o comando `/gems` e o atalho `Ctrl+G` para transição para o modo `selectingGem`. | S | O chat TUI entra no modo de seleção de Gem. |
-| 2.2: **Adaptar `updateGemSelection` (`internal/tui/model.go`)** | Implementar a lógica de navegação/seleção (`up/down`, `enter`, filtro por digitação) no modo de seleção de Gem. | M | Seleção de Gem atualiza `m.session.SetGem(gemID)` e `m.activeGemName`. |
-| 2.3: **Refatorar `renderGemSelector` (`internal/tui/model.go`)** | Garantir que o overlay de seleção renderize corretamente a lista de Gems e o filtro. Reutilizar estilos do `config_model.go`. | M | Overlay de seleção de Gem funcional e responsivo. |
-| 2.4: **Atualizar Header do Chat** | Exibir o nome do Gem ativo (`m.activeGemName`) no cabeçalho do chat. | S | `Model.View()` exibe `📦 <Gem Name>` no cabeçalho quando um Gem está ativo. |
+| Task | Objetivo | Esforço | Critério de conclusão | Status |
+| :--- | :--- | :--- | :--- | :--- |
+| 2.1: **Ativar modo `selectingGem`** | Suportar `/gems` e atalho `Ctrl+G`. | S | Chat entra no seletor de Gem em overlay. | Concluído |
+| 2.2: **Navegação e filtro** | Implementar `up/down`, `enter` e filtro por digitação. | M | Seleção atualiza `session.SetGem(gemID)` e `activeGemName`. | Concluído |
+| 2.3: **Renderização do overlay** | Garantir lista responsiva e reutilização de estilos. | M | Overlay funcional em diferentes tamanhos de terminal. | Concluído |
+| 2.4: **Header do chat** | Mostrar Gem ativo no cabeçalho. | S | `Model.View()` exibe o Gem quando ativo. | Concluído |
 
-#### Phase 3: Melhorias de UX e Busca (Low Priority)
+#### Fase 3: Melhorias de UX e busca (concluída)
 
-| Task | Rationale/Goal | Effort | Deliverable/Criteria for Completion |
-| :--- | :--- | :--- | :--- |
-| 3.1: **Atualizar `GemsModel` com busca ativa** | Permitir busca em tempo real na lista de Gems enquanto o usuário digita. | S | Filtragem de Gems no `GemsModel` é imediata. |
-| 3.2: **Refinar `GemsModel.View`** | Melhorar a formatação da descrição na lista para evitar quebras de layout (tradução `truncateTitle`). | S | Listagem de Gems visualmente agradável e funcional em diferentes tamanhos de terminal. |
+| Task | Objetivo | Esforço | Critério de conclusão | Status |
+| :--- | :--- | :--- | :--- | :--- |
+| 3.1: **Busca ativa em `GemsModel`** | Filtrar em tempo real ao digitar. | S | Filtragem imediata na lista TUI. | Concluído |
+| 3.2: **Refino de visualização** | Evitar quebras de layout/truncar descrições. | S | Lista agradável em terminais pequenos. | Concluído |
 
-### 3.4. Data Model Changes
+#### Fase 4: Melhorias futuras / backlog (opcional)
 
-Não são necessárias alterações no modelo de dados persistente. A lógica se baseia nos modelos existentes:
+| Task | Objetivo | Esforço | Critério de conclusão | Status |
+| :--- | :--- | :--- | :--- | :--- |
+| 4.1: **Opção “Sem Gem” no seletor do chat** | Permitir limpar a persona ativa. | S | Seletor inclui item `<none>` que chama `session.SetGem("")` e limpa `activeGemName`. | Backlog |
+| 4.2: **Auto‑refresh no chat iniciado via `gems list`** | Evitar expiração de cookies em chats longos. | S | Chat iniciado por listagem usa `autoRefresh=true` (novo cliente ou reconfiguração). | Backlog |
+| 4.3: **Incluir gems ocultos no seletor do chat (config/flag)** | Paridade com `gems list --hidden`. | S | `loadGemsForChat` aceita `includeHidden=true` quando habilitado. | Backlog |
+| 4.4: **Testes de filtragem/transição de Gem** | Reduzir regressões. | M | Testes em `internal/tui` cobrindo filtro e retorno do TUI. | Backlog |
+
+### 3.4. Mudanças no Modelo de Dados
+
+Não são necessárias alterações no modelo de dados persistente. A lógica usa modelos existentes:
 
   * `models.Gem` (ID, Name, Prompt, Description).
-  * `models.GemJar` (Cache de Gems no cliente).
-  * `internal/api/session.go:ChatSession` (campo `gemID` já existe para contexto).
-  * `internal/tui/gems_model.go:GemsTUIResult` (já existe para retorno).
+  * `models.GemJar` (cache de Gems no cliente).
+  * `internal/api/session.go:ChatSession` (campo `gemID` já existe).
+  * `internal/tui/gems_model.go:GemsTUIResult` (retorno do TUI).
 
-### 3.5. API Design / Interface Changes
+### 3.5. Mudanças de API / Interfaces
 
-Não são necessárias alterações nas interfaces de API existentes (`GeminiClientInterface` ou `ChatSessionInterface`), pois o campo `GemID` e os métodos `SetGem` já existem.
+Não são necessárias alterações nas interfaces públicas existentes (`GeminiClientInterface` ou `ChatSessionInterface`), pois `GemID` e `SetGem` já são suportados.
 
-## 4\. Key Considerations & Risk Mitigation
+## 4. Considerações‑chave e Mitigação de Riscos
 
-### 4.1. Technical Risks & Challenges
+### 4.1. Riscos Técnicos
 
 | Risco | Descrição | Mitigação |
 | :--- | :--- | :--- |
-| **Reutilização de TUI** | Tentar reutilizar o `GemsModel` diretamente no `ChatModel` pode introduzir complexidade no ciclo de vida do Bubble Tea. | **Mitigação:** Em vez de incorporar o `GemsModel` no `ChatModel`, a nova estratégia é que o `ChatModel` **simule** a lógica de seleção de Gems (tarefa 2.2) em seu próprio método (`updateGemSelection`), evitando a complexidade de aninhar múltiplos *programas* ou *models* que não são totalmente independentes. |
-| **State Consistency** | Garantir que `m.session.SetGem()` em `internal/tui/model.go` se propague corretamente para as chamadas `GenerateContent`. | **Mitigação:** Verificação em `internal/tui/model.go:sendMessageWithAttachments` que o `GemID` seja lido de `m.session.GetGemID()` e passado para `api.GenerateOptions`. (O código atual de `api/session.go` já faz isso). |
-| **Tradução de Estado** | O `gems list` termina o programa TUI e inicia um novo. | **Mitigação:** O comando `gems list` deve encapsular a lógica de `client.Init()` e `client.Close()` para o novo chat, utilizando o GemID retornado como argumento de inicialização. |
+| **Reutilização de TUI** | Reutilizar `GemsModel` diretamente no `ChatModel` pode complicar o ciclo de vida do Bubble Tea. | Manter seletor inline separado no chat (`selectingGem`/`updateGemSelection`). |
+| **Consistência de estado** | Garantir que `session.SetGem()` se propague para `GenerateContent`. | `api/session.go` já lê `GetGemID()` e passa para `GenerateOptions`. |
+| **Troca de programa TUI** | `gems list` encerra um programa Bubble Tea e inicia outro. | Reuso do mesmo cliente e criação explícita de sessão com `gemID`. Validar auto‑refresh no backlog (4.2). |
 
-### 4.2. Dependencies
+### 4.2. Dependências
 
-  * **Phase 1** é independente.
-  * **Phase 2** depende da finalização da Fase 1 para a lógica de inicialização de chat.
-  * O trabalho é quase totalmente interno aos pacotes `internal/commands` e `internal/tui`, sem dependências externas.
+  * Fases 1–3 concluídas e independentes.
+  * Itens da Fase 4 são opcionais e independentes entre si.
 
-### 4.3. Non-Functional Requirements (NFRs) Addressed
+### 4.3. Requisitos Não‑Funcionais (NFRs)
 
-| NFR | Como o Plano Contribui |
+| NFR | Como o plano contribui |
 | :--- | :--- |
-| **Usabilidade (UX)** | A lista interativa (TUI) com busca e seleção de Gem para iniciar o chat é muito mais ergonômica do que copiar/colar IDs ou digitar o nome/ID na CLI. |
-| **Eficiência** | O atalho `c` permite iniciar a sessão de chat em dois toques a partir da lista de Gems. O `/gems` dentro do chat permite a troca de persona sem sair da sessão. |
-| **Descoberta** | A interface TUI expõe a lista completa de Gems, descrições e o tipo (sistema/customizado), facilitando a descoberta de novas personas. |
+| **Usabilidade (UX)** | Lista interativa com busca/seleção reduz atrito para descobrir e ativar Gems. |
+| **Eficiência** | `c` inicia chat direto da listagem; `/gems` troca persona sem sair da sessão. |
+| **Descoberta** | Descrições e tipo (system/custom) expostos na TUI facilitam explorar personas. |
 
-## 5\. Success Metrics / Validation Criteria
+## 5. Métricas de Sucesso / Validação
 
-1.  O comando `geminiweb gems list` abre o TUI, permite a navegação, e pressionar `c` em um Gem abre uma sessão de chat com o Gem correto ativado.
-2.  Dentro de uma sessão de chat, digitar `/gems` abre o seletor de Gem em overlay, e a seleção de um Gem atualiza o cabeçalho do chat e o contexto da sessão (`session.GetGemID()` retorna o ID correto).
-3.  A filtragem (digitação) no seletor de Gem (`GemsModel`) é em tempo real e não causa crashes ou lentidão perceptível.
+1. `geminiweb gems list` abre o TUI, permite navegar e `c` inicia chat com o Gem correto.
+2. Em uma sessão de chat, `/gems` (ou `Ctrl+G`) abre seletor, e a seleção atualiza contexto e cabeçalho.
+3. A filtragem no seletor é em tempo real e sem instabilidades.
 
-## 6\. Assumptions Made
+## 6. Premissas
 
-  * O Gem ID, uma vez definido na sessão de chat (`session.SetGem`), é incluído corretamente no payload JSON para o endpoint `/StreamGenerate`. (Verificado: `internal/api/generate.go:buildPayloadWithGem` já suporta `gemID`).
-  * O `GeminiClient` será inicializado e fechado corretamente em torno da nova sessão de chat iniciada a partir do `gems list`.
+  * O `gemID` definido em sessão é incluído no payload de `/StreamGenerate` (`internal/api/generate.go:buildPayloadWithGem`).
+  * O cliente é inicializado e fechado corretamente ao transicionar de listagem para chat.
 
-## 7\. Open Questions / Areas for Further Investigation
+## 7. Decisões e Pendências
 
-| Questão | Decisão |
+| Questão | Decisão / Status |
 | :--- | :--- |
-| O filtro no seletor de Gems deve ser persistente? | Não. O filtro deve ser *ad hoc* para a sessão de seleção. |
-| A TUI de Gems deve permitir criação/edição? | Não. Manter a modificação (create/update/delete) restrita aos comandos CLI explícitos para simplicidade e segurança. |
-| Deve haver um Gem "None" (sem persona)? | Sim. O Gem de sistema "default" ou "none" deve ser incluído na lista se o `FetchGems` retornar todos os tipos. |
+| O filtro no seletor de Gems deve ser persistente? | Não; o filtro é ad hoc e reseta ao sair do seletor. |
+| A TUI de Gems deve permitir criação/edição? | Não; create/update/delete ficam nos comandos CLI explícitos. |
+| Deve haver opção "None" (sem persona)? | Ainda não existe na UI; proposta no backlog (4.1). |

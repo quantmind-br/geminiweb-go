@@ -34,8 +34,8 @@ func TestRunImportCookies_FileNotFound(t *testing.T) {
 	// Create a temporary directory for config
 	tmpDir := t.TempDir()
 	oldHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", oldHome)
+	_ = os.Setenv("HOME", tmpDir)
+	defer func() { _ = os.Setenv("HOME", oldHome) }()
 
 	// Try to import from non-existent file
 	err := runImportCookies("/nonexistent/file.json")
@@ -53,8 +53,8 @@ func TestRunImportCookies_ValidSource(t *testing.T) {
 	// Create a temporary directory for config
 	tmpDir := t.TempDir()
 	oldHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", oldHome)
+	_ = os.Setenv("HOME", tmpDir)
+	defer func() { _ = os.Setenv("HOME", oldHome) }()
 
 	// Create a test cookies file with dict format
 	cookiesFile := filepath.Join(tmpDir, "cookies.json")
@@ -82,7 +82,7 @@ func TestRunImportCookies_ValidSource(t *testing.T) {
 	err = runImportCookies(cookiesFile)
 
 	// Restore stdout
-	w.Close()
+	_ = w.Close()
 	os.Stdout = oldStdout
 
 	if err != nil {
@@ -118,8 +118,8 @@ func TestRunImportCookies_ListFormat(t *testing.T) {
 	// Create a temporary directory for config
 	tmpDir := t.TempDir()
 	oldHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", oldHome)
+	_ = os.Setenv("HOME", tmpDir)
+	defer func() { _ = os.Setenv("HOME", oldHome) }()
 
 	// Create a test cookies file with list format
 	cookiesFile := filepath.Join(tmpDir, "cookies_list.json")
@@ -163,8 +163,8 @@ func TestRunImportCookies_OnlyPSID(t *testing.T) {
 	// Create a temporary directory for config
 	tmpDir := t.TempDir()
 	oldHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", oldHome)
+	_ = os.Setenv("HOME", tmpDir)
+	defer func() { _ = os.Setenv("HOME", oldHome) }()
 
 	// Create a test cookies file with only PSID
 	cookiesFile := filepath.Join(tmpDir, "cookies_psid_only.json")
@@ -209,8 +209,8 @@ func TestRunImportCookies_InvalidJSON(t *testing.T) {
 	// Create a temporary directory for config
 	tmpDir := t.TempDir()
 	oldHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", oldHome)
+	_ = os.Setenv("HOME", tmpDir)
+	defer func() { _ = os.Setenv("HOME", oldHome) }()
 
 	// Create a test cookies file with invalid JSON
 	cookiesFile := filepath.Join(tmpDir, "cookies_invalid.json")

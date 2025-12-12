@@ -111,8 +111,8 @@ func TestPersonaCommands_WithConfig(t *testing.T) {
 	// Create a temporary directory for config
 	tmpDir := t.TempDir()
 	oldHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", oldHome)
+	_ = os.Setenv("HOME", tmpDir)
+	defer func() { _ = os.Setenv("HOME", oldHome) }()
 
 	// Create personas directory
 	personasDir := filepath.Join(tmpDir, ".geminiweb")
@@ -204,8 +204,8 @@ func TestRunPersonaList_Integration(t *testing.T) {
 	// Create a temporary directory for personas
 	tmpDir := t.TempDir()
 	oldHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", oldHome)
+	_ = os.Setenv("HOME", tmpDir)
+	defer func() { _ = os.Setenv("HOME", oldHome) }()
 
 	// Create a test persona config
 	cfg := &config.PersonaConfig{
@@ -233,7 +233,7 @@ func TestRunPersonaList_Integration(t *testing.T) {
 	err := runPersonaList(personaListCmd, []string{})
 
 	// Restore stdout
-	w.Close()
+	_ = w.Close()
 	os.Stdout = oldStdout
 
 	if err != nil {
@@ -255,8 +255,8 @@ func TestRunPersonaShow_NotFound(t *testing.T) {
 	// Create a temporary directory for personas
 	tmpDir := t.TempDir()
 	oldHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", oldHome)
+	_ = os.Setenv("HOME", tmpDir)
+	defer func() { _ = os.Setenv("HOME", oldHome) }()
 
 	// Run with non-existent persona
 	err := runPersonaShow(personaShowCmd, []string{"nonexistent"})
@@ -270,8 +270,8 @@ func TestRunPersonaShow_Success(t *testing.T) {
 	// Create a temporary directory for personas
 	tmpDir := t.TempDir()
 	oldHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", oldHome)
+	_ = os.Setenv("HOME", tmpDir)
+	defer func() { _ = os.Setenv("HOME", oldHome) }()
 
 	// Create a test persona
 	persona := config.Persona{
@@ -293,7 +293,7 @@ func TestRunPersonaShow_Success(t *testing.T) {
 	err := runPersonaShow(personaShowCmd, []string{"test-show"})
 
 	// Restore stdout
-	w.Close()
+	_ = w.Close()
 	os.Stdout = oldStdout
 
 	if err != nil {
@@ -318,8 +318,8 @@ func TestRunPersonaAdd_Duplicate(t *testing.T) {
 	// Create a temporary directory for personas
 	tmpDir := t.TempDir()
 	oldHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", oldHome)
+	_ = os.Setenv("HOME", tmpDir)
+	defer func() { _ = os.Setenv("HOME", oldHome) }()
 
 	// Create a test persona
 	persona := config.Persona{
@@ -348,8 +348,8 @@ func TestRunPersonaDelete_NotFound(t *testing.T) {
 	// Create a temporary directory for personas
 	tmpDir := t.TempDir()
 	oldHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", oldHome)
+	_ = os.Setenv("HOME", tmpDir)
+	defer func() { _ = os.Setenv("HOME", oldHome) }()
 
 	// Try to delete non-existent persona
 	err := runPersonaDelete(personaDeleteCmd, []string{"nonexistent"})
@@ -363,8 +363,8 @@ func TestRunPersonaDelete_Success(t *testing.T) {
 	// Create a temporary directory for personas
 	tmpDir := t.TempDir()
 	oldHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", oldHome)
+	_ = os.Setenv("HOME", tmpDir)
+	defer func() { _ = os.Setenv("HOME", oldHome) }()
 
 	// Create a test persona
 	persona := config.Persona{
@@ -386,7 +386,7 @@ func TestRunPersonaDelete_Success(t *testing.T) {
 	err := runPersonaDelete(personaDeleteCmd, []string{"test-delete"})
 
 	// Restore stdout
-	w.Close()
+	_ = w.Close()
 	os.Stdout = oldStdout
 
 	if err != nil {
@@ -404,8 +404,8 @@ func TestRunPersonaSetDefault_NotFound(t *testing.T) {
 	// Create a temporary directory for personas
 	tmpDir := t.TempDir()
 	oldHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", oldHome)
+	_ = os.Setenv("HOME", tmpDir)
+	defer func() { _ = os.Setenv("HOME", oldHome) }()
 
 	// Try to set default for non-existent persona
 	err := runPersonaSetDefault(personaSetDefaultCmd, []string{"nonexistent"})
@@ -419,8 +419,8 @@ func TestRunPersonaSetDefault_Success(t *testing.T) {
 	// Create a temporary directory for personas
 	tmpDir := t.TempDir()
 	oldHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", oldHome)
+	_ = os.Setenv("HOME", tmpDir)
+	defer func() { _ = os.Setenv("HOME", oldHome) }()
 
 	// Create a test persona
 	persona := config.Persona{
@@ -442,7 +442,7 @@ func TestRunPersonaSetDefault_Success(t *testing.T) {
 	err := runPersonaSetDefault(personaSetDefaultCmd, []string{"test-default"})
 
 	// Restore stdout
-	w.Close()
+	_ = w.Close()
 	os.Stdout = oldStdout
 
 	if err != nil {
@@ -498,8 +498,8 @@ func TestRunPersonaAdd_NewPersonaSuccess(t *testing.T) {
 	// Create a temporary directory for personas
 	tmpDir := t.TempDir()
 	oldHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", oldHome)
+	_ = os.Setenv("HOME", tmpDir)
+	defer func() { _ = os.Setenv("HOME", oldHome) }()
 
 	// We can't easily override stdin in the function, so we'll test the config layer directly
 	// This test verifies that the function structure can handle a new persona
@@ -542,8 +542,8 @@ func TestRunPersonaAdd_GetPersonaError(t *testing.T) {
 	// Create a temporary directory for personas
 	tmpDir := t.TempDir()
 	oldHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", oldHome)
+	_ = os.Setenv("HOME", tmpDir)
+	defer func() { _ = os.Setenv("HOME", oldHome) }()
 
 	// Try to get a persona that doesn't exist
 	_, err := config.GetPersona("nonexistent-persona")
@@ -565,8 +565,8 @@ func TestRunPersonaAdd_EmptyInputs(t *testing.T) {
 	// Create a temporary directory for personas
 	tmpDir := t.TempDir()
 	oldHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", oldHome)
+	_ = os.Setenv("HOME", tmpDir)
+	defer func() { _ = os.Setenv("HOME", oldHome) }()
 
 	// Test with empty description
 	persona := config.Persona{
@@ -624,8 +624,8 @@ func TestRunPersonaAdd_MultilineSystemPrompt(t *testing.T) {
 	// Create a temporary directory for personas
 	tmpDir := t.TempDir()
 	oldHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", oldHome)
+	_ = os.Setenv("HOME", tmpDir)
+	defer func() { _ = os.Setenv("HOME", oldHome) }()
 
 	// Test with multiline system prompt
 	multilinePrompt := "You are a test assistant.\nYou can help with testing.\nYou provide helpful responses."
@@ -662,8 +662,8 @@ func TestRunPersonaAdd_SpecialCharacters(t *testing.T) {
 	// Create a temporary directory for personas
 	tmpDir := t.TempDir()
 	oldHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", oldHome)
+	_ = os.Setenv("HOME", tmpDir)
+	defer func() { _ = os.Setenv("HOME", oldHome) }()
 
 	// Test with special characters
 	persona := config.Persona{
@@ -697,8 +697,8 @@ func TestRunPersonaAdd_VeryLongInputs(t *testing.T) {
 	// Create a temporary directory for personas
 	tmpDir := t.TempDir()
 	oldHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", oldHome)
+	_ = os.Setenv("HOME", tmpDir)
+	defer func() { _ = os.Setenv("HOME", oldHome) }()
 
 	// Test with very long description
 	longDescription := strings.Repeat("This is a long description. ", 100)
@@ -752,8 +752,8 @@ func TestRunPersonaAdd_UpdateAfterAdd(t *testing.T) {
 	// Create a temporary directory for personas
 	tmpDir := t.TempDir()
 	oldHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", oldHome)
+	_ = os.Setenv("HOME", tmpDir)
+	defer func() { _ = os.Setenv("HOME", oldHome) }()
 
 	// Add a persona
 	persona := config.Persona{
@@ -799,8 +799,8 @@ func TestRunPersonaAddWithReader_Success(t *testing.T) {
 	// Setup temp home
 	tmpDir := t.TempDir()
 	oldHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", oldHome)
+	_ = os.Setenv("HOME", tmpDir)
+	defer func() { _ = os.Setenv("HOME", oldHome) }()
 
 	// Create reader with test input
 	input := "Test Persona\nYou are a helpful assistant.\n\n"
@@ -835,8 +835,8 @@ func TestRunPersonaAddWithReader_Duplicate(t *testing.T) {
 	// Setup temp home
 	tmpDir := t.TempDir()
 	oldHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", oldHome)
+	_ = os.Setenv("HOME", tmpDir)
+	defer func() { _ = os.Setenv("HOME", oldHome) }()
 
 	// Add first persona
 	err := config.AddPersona(config.Persona{
@@ -867,8 +867,8 @@ func TestRunPersonaAddWithReader_MultilinePrompt(t *testing.T) {
 	// Setup temp home
 	tmpDir := t.TempDir()
 	oldHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", oldHome)
+	_ = os.Setenv("HOME", tmpDir)
+	defer func() { _ = os.Setenv("HOME", oldHome) }()
 
 	// Create reader with multiline prompt
 	input := "Multi-line Persona\nLine 1\nLine 2\nLine 3\n"
@@ -896,8 +896,8 @@ func TestRunPersonaAddWithReader_SpecialCharacters(t *testing.T) {
 	// Setup temp home
 	tmpDir := t.TempDir()
 	oldHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", oldHome)
+	_ = os.Setenv("HOME", tmpDir)
+	defer func() { _ = os.Setenv("HOME", oldHome) }()
 
 	// Create reader with special characters
 	input := "Tëst Nàmé 日本語\nPrompt with émojis 🎉 and ünïcödë\n"

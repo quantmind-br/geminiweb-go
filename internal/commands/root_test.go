@@ -305,7 +305,7 @@ func TestRootCmd_StdinInput(t *testing.T) {
 	// Write test data to pipe
 	go func() {
 		_, _ = w.WriteString(testInput)
-		w.Close()
+		_ = w.Close()
 	}()
 
 	// Save original stdin and replace with pipe reader
@@ -485,7 +485,7 @@ func TestGetBrowserRefresh(t *testing.T) {
 		browserType, enabled := getBrowserRefresh()
 
 		// Restore stderr
-		w.Close()
+		_ = w.Close()
 		os.Stderr = oldStderr
 
 		// Check that it returns disabled
