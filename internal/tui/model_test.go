@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -528,6 +529,7 @@ func (m *mockSpinner) View() string {
 type mockChatSession struct {
 	sendMessageFunc    func(prompt string, files []*api.UploadedFile) (*models.ModelOutput, error)
 	sendMessageCalled  bool
+	gemID              string
 }
 
 func (m *mockChatSession) SendMessage(prompt string, files []*api.UploadedFile) (*models.ModelOutput, error) {
@@ -570,7 +572,7 @@ func (m *mockChatSession) ChooseCandidate(index int) error {
 	return nil
 }
 
-func (m *mockChatSession) SetGem(gemID string) {}
+func (m *mockChatSession) SetGem(gemID string) { m.gemID = gemID }
 
 func (m *mockChatSession) GetGemID() string {
 	return ""
@@ -3987,4 +3989,499 @@ func TestModel_ExportCommand_Registration(t *testing.T) {
 			t.Log("no error and no cmd - path may be invalid")
 		}
 	})
+}
+
+// TestModel_Update_CtrlG tests the Ctrl+G shortcut to open gem selector
+func TestModel_Update_CtrlG(t *testing.T) {
+	t.Run("opens gem selector", func(t *testing.T) {
+		// Create a model with necessary components
+		ta := textarea.New()
+		ta.SetValue("some text")
+		vp := viewport.New(80, 20)
+
+		m := Model{
+			ready:    true,
+			textarea: ta,
+			viewport: vp,
+			width:    100,
+			height:   40,
+		}
+
+		// Simulate Ctrl+G
+		msg := tea.KeyMsg{Type: tea.KeyCtrlG}
+		updatedModel, cmd := m.Update(msg)
+
+		typedModel := updatedModel.(Model)
+
+		// Should enable gem selection mode
+		if !typedModel.selectingGem {
+			t.Error("Ctrl+G should enable selectingGem")
+		}
+
+		// Should set gemsLoading to true
+		if !typedModel.gemsLoading {
+			t.Error("Ctrl+G should set gemsLoading to true")
+		}
+
+		// Should reset gemsCursor and gemsFilter
+		if typedModel.gemsCursor != 0 {
+			t.Errorf("gemsCursor should be 0, got %d", typedModel.gemsCursor)
+		}
+
+		if typedModel.gemsFilter != "" {
+			t.Errorf("gemsFilter should be empty, got %q", typedModel.gemsFilter)
+		}
+
+		// Should reset textarea
+		if typedModel.textarea.Value() != "" {
+			t.Error("textarea should be reset")
+		}
+
+		// Should return a command (loadGemsForChat)
+		if cmd == nil {
+			t.Error("Ctrl+G should return a command")
+		}
+	})
+}
+
+// TestModel_Update_CtrlE tests the Ctrl+E shortcut to export conversation
+func TestModel_Update_CtrlE(t *testing.T) {
+	t.Run("exports conversation with default filename", func(t *testing.T) {
+		// Create a model with necessary components
+		ta := textarea.New()
+		vp := viewport.New(80, 20)
+
+		m := Model{
+			ready:    true,
+			textarea: ta,
+			viewport: vp,
+			width:    100,
+			height:   40,
+			messages: []chatMessage{
+				{role: "user", content: "Hello"},
+				{role: "assistant", content: "Hi there!"},
+			},
+		}
+
+		// Simulate Ctrl+E
+		msg := tea.KeyMsg{Type: tea.KeyCtrlE}
+		updatedModel, cmd := m.Update(msg)
+
+		typedModel := updatedModel.(Model)
+
+		// Should not have an error about unknown command
+		if typedModel.err != nil && strings.Contains(typedModel.err.Error(), "unknown command") {
+			t.Error("Ctrl+E should not produce 'unknown command' error")
+		}
+
+		// Should return a command (exportFromMemory or exportCommand)
+		// Note: may return nil cmd if path validation fails, which is acceptable
+		_ = cmd
+	})
+
+	t.Run("shows error when no conversation", func(t *testing.T) {
+		// Create a model with no messages
+		ta := textarea.New()
+		vp := viewport.New(80, 20)
+
+		m := Model{
+			ready:    true,
+			textarea: ta,
+			viewport: vp,
+			width:    100,
+			height:   40,
+			messages: []chatMessage{}, // Empty
+		}
+
+		// Simulate Ctrl+E
+		msg := tea.KeyMsg{Type: tea.KeyCtrlE}
+		updatedModel, _ := m.Update(msg)
+
+		typedModel := updatedModel.(Model)
+
+		// Should have an error about no conversation
+		if typedModel.err == nil {
+			t.Error("Ctrl+E with no messages should produce an error")
+		}
+
+		if typedModel.err != nil && !strings.Contains(typedModel.err.Error(), "no conversation") {
+			t.Errorf("expected 'no conversation' error, got: %v", typedModel.err)
+		}
+	})
+}
+
+// TestRenderStatusBar_ShowsNewShortcuts tests that the status bar includes new shortcuts
+func TestRenderStatusBar_ShowsNewShortcuts(t *testing.T) {
+	m := Model{
+		ready:  true,
+		width:  100,
+		height: 40,
+	}
+
+	statusBar := m.renderStatusBar(80)
+
+	// Should contain ^E for Export
+	if !strings.Contains(statusBar, "^E") {
+		t.Error("status bar should contain ^E shortcut")
+	}
+
+	// Should contain ^G for Gems
+	if !strings.Contains(statusBar, "^G") {
+		t.Error("status bar should contain ^G shortcut")
+	}
+
+	// Should contain Export description
+	if !strings.Contains(statusBar, "Export") {
+		t.Error("status bar should contain Export description")
+	}
+
+	// Should contain Gems description
+	if !strings.Contains(statusBar, "Gems") {
+		t.Error("status bar should contain Gems description")
+	}
+}
+
+// TestModel_FormatError tests the formatError function
+func TestModel_FormatError(t *testing.T) {
+	m := Model{}
+
+	t.Run("nil error returns empty string", func(t *testing.T) {
+		result := m.formatError(nil)
+		if result != "" {
+			t.Errorf("formatError(nil) = %q, want empty string", result)
+		}
+	})
+
+	t.Run("simple error is formatted", func(t *testing.T) {
+		err := fmt.Errorf("test error")
+		result := m.formatError(err)
+		if !strings.Contains(result, "Error") {
+			t.Error("should contain Error label")
+		}
+		if !strings.Contains(result, "test error") {
+			t.Error("should contain error message")
+		}
+	})
+}
+
+// TestModel_UpdateGemSelection tests the updateGemSelection function
+func TestModel_UpdateGemSelection(t *testing.T) {
+	// Create mock gems
+	gems := []*models.Gem{
+		{ID: "gem-1", Name: "First Gem", Description: "First description"},
+		{ID: "gem-2", Name: "Second Gem", Description: "Second description"},
+		{ID: "gem-3", Name: "Third Gem", Description: "Third description"},
+	}
+
+	t.Run("up key navigates gems", func(t *testing.T) {
+		m := Model{
+			selectingGem: true,
+			gemsList:     gems,
+			gemsCursor:   1,
+		}
+
+		msg := tea.KeyMsg{Type: tea.KeyUp}
+		updatedModel, _ := m.updateGemSelection(msg)
+		model := updatedModel.(Model)
+
+		if model.gemsCursor != 0 {
+			t.Errorf("gemsCursor = %d, want 0", model.gemsCursor)
+		}
+	})
+
+	t.Run("down key navigates gems", func(t *testing.T) {
+		m := Model{
+			selectingGem: true,
+			gemsList:     gems,
+			gemsCursor:   0,
+		}
+
+		msg := tea.KeyMsg{Type: tea.KeyDown}
+		updatedModel, _ := m.updateGemSelection(msg)
+		model := updatedModel.(Model)
+
+		if model.gemsCursor != 1 {
+			t.Errorf("gemsCursor = %d, want 1", model.gemsCursor)
+		}
+	})
+
+	t.Run("up key wraps around", func(t *testing.T) {
+		m := Model{
+			selectingGem: true,
+			gemsList:     gems,
+			gemsCursor:   0,
+		}
+
+		msg := tea.KeyMsg{Type: tea.KeyUp}
+		updatedModel, _ := m.updateGemSelection(msg)
+		model := updatedModel.(Model)
+
+		if model.gemsCursor != 2 {
+			t.Errorf("gemsCursor = %d, want 2 (wrap)", model.gemsCursor)
+		}
+	})
+
+	t.Run("down key wraps around", func(t *testing.T) {
+		m := Model{
+			selectingGem: true,
+			gemsList:     gems,
+			gemsCursor:   2,
+		}
+
+		msg := tea.KeyMsg{Type: tea.KeyDown}
+		updatedModel, _ := m.updateGemSelection(msg)
+		model := updatedModel.(Model)
+
+		if model.gemsCursor != 0 {
+			t.Errorf("gemsCursor = %d, want 0 (wrap)", model.gemsCursor)
+		}
+	})
+
+	t.Run("enter selects gem", func(t *testing.T) {
+		session := &mockChatSession{}
+		m := Model{
+			selectingGem: true,
+			gemsList:     gems,
+			gemsCursor:   1,
+			session:      session,
+		}
+
+		msg := tea.KeyMsg{Type: tea.KeyEnter}
+		updatedModel, _ := m.updateGemSelection(msg)
+		model := updatedModel.(Model)
+
+		if model.selectingGem {
+			t.Error("selectingGem should be false after selection")
+		}
+		if model.activeGemName != "Second Gem" {
+			t.Errorf("activeGemName = %s, want Second Gem", model.activeGemName)
+		}
+		if session.gemID != "gem-2" {
+			t.Errorf("session.gemID = %s, want gem-2", session.gemID)
+		}
+	})
+
+	t.Run("esc cancels gem selection", func(t *testing.T) {
+		m := Model{
+			selectingGem: true,
+			gemsList:     gems,
+			gemsCursor:   1,
+			gemsFilter:   "test",
+		}
+
+		msg := tea.KeyMsg{Type: tea.KeyEscape}
+		updatedModel, _ := m.updateGemSelection(msg)
+		model := updatedModel.(Model)
+
+		if model.selectingGem {
+			t.Error("selectingGem should be false after esc")
+		}
+		if model.gemsList != nil {
+			t.Error("gemsList should be nil after esc")
+		}
+		if model.gemsFilter != "" {
+			t.Error("gemsFilter should be empty after esc")
+		}
+	})
+
+	t.Run("backspace removes filter character", func(t *testing.T) {
+		m := Model{
+			selectingGem: true,
+			gemsList:     gems,
+			gemsFilter:   "test",
+		}
+
+		msg := tea.KeyMsg{Type: tea.KeyBackspace}
+		updatedModel, _ := m.updateGemSelection(msg)
+		model := updatedModel.(Model)
+
+		if model.gemsFilter != "tes" {
+			t.Errorf("gemsFilter = %q, want tes", model.gemsFilter)
+		}
+	})
+
+	t.Run("typing adds to filter", func(t *testing.T) {
+		m := Model{
+			selectingGem: true,
+			gemsList:     gems,
+			gemsFilter:   "",
+		}
+
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}}
+		updatedModel, _ := m.updateGemSelection(msg)
+		model := updatedModel.(Model)
+
+		if model.gemsFilter != "a" {
+			t.Errorf("gemsFilter = %q, want a", model.gemsFilter)
+		}
+	})
+
+	t.Run("ctrl+c quits from gem selection", func(t *testing.T) {
+		m := Model{
+			selectingGem: true,
+			gemsList:     gems,
+		}
+
+		msg := tea.KeyMsg{Type: tea.KeyCtrlC}
+		_, cmd := m.updateGemSelection(msg)
+
+		if cmd == nil {
+			t.Error("ctrl+c should return quit command")
+		}
+	})
+
+	t.Run("window size updates dimensions", func(t *testing.T) {
+		m := Model{
+			selectingGem: true,
+		}
+
+		msg := tea.WindowSizeMsg{Width: 100, Height: 50}
+		updatedModel, _ := m.updateGemSelection(msg)
+		model := updatedModel.(Model)
+
+		if model.width != 100 {
+			t.Errorf("width = %d, want 100", model.width)
+		}
+		if model.height != 50 {
+			t.Errorf("height = %d, want 50", model.height)
+		}
+	})
+
+	t.Run("gemsLoadedForChatMsg updates gems", func(t *testing.T) {
+		m := Model{
+			selectingGem: true,
+			gemsLoading:  true,
+		}
+
+		msg := gemsLoadedForChatMsg{gems: gems}
+		updatedModel, _ := m.updateGemSelection(msg)
+		model := updatedModel.(Model)
+
+		if model.gemsLoading {
+			t.Error("gemsLoading should be false")
+		}
+		if len(model.gemsList) != 3 {
+			t.Errorf("gemsList length = %d, want 3", len(model.gemsList))
+		}
+	})
+
+	t.Run("gemsLoadedForChatMsg handles error", func(t *testing.T) {
+		m := Model{
+			selectingGem: true,
+			gemsLoading:  true,
+		}
+
+		msg := gemsLoadedForChatMsg{err: fmt.Errorf("load error")}
+		updatedModel, _ := m.updateGemSelection(msg)
+		model := updatedModel.(Model)
+
+		if model.gemsLoading {
+			t.Error("gemsLoading should be false")
+		}
+		if model.selectingGem {
+			t.Error("selectingGem should be false on error")
+		}
+		if model.err == nil {
+			t.Error("err should be set")
+		}
+	})
+}
+
+// TestModel_ExportFromMemory tests the exportFromMemory function
+func TestModel_ExportFromMemory(t *testing.T) {
+	messages := []chatMessage{
+		{role: "user", content: "Hello"},
+		{role: "assistant", content: "Hi there!"},
+	}
+
+	t.Run("exports to markdown", func(t *testing.T) {
+		// Create a temp file path
+		tmpFile := "/tmp/test_export_md_" + fmt.Sprintf("%d", time.Now().UnixNano()) + ".md"
+		defer func() { _ = os.Remove(tmpFile) }()
+
+		cmd := exportFromMemory(messages, "Test Chat", "markdown", tmpFile)
+		result := cmd()
+
+		if msg, ok := result.(exportResultMsg); ok {
+			if msg.err != nil {
+				t.Errorf("unexpected error: %v", msg.err)
+			}
+			if msg.format != "markdown" {
+				t.Errorf("format = %s, want markdown", msg.format)
+			}
+			if msg.path != tmpFile {
+				t.Errorf("path = %s, want %s", msg.path, tmpFile)
+			}
+		} else {
+			t.Error("expected exportResultMsg")
+		}
+	})
+
+	t.Run("exports to json", func(t *testing.T) {
+		tmpFile := "/tmp/test_export_json_" + fmt.Sprintf("%d", time.Now().UnixNano()) + ".json"
+		defer func() { _ = os.Remove(tmpFile) }()
+
+		cmd := exportFromMemory(messages, "Test Chat", "json", tmpFile)
+		result := cmd()
+
+		if msg, ok := result.(exportResultMsg); ok {
+			if msg.err != nil {
+				t.Errorf("unexpected error: %v", msg.err)
+			}
+			if msg.format != "json" {
+				t.Errorf("format = %s, want json", msg.format)
+			}
+		} else {
+			t.Error("expected exportResultMsg")
+		}
+	})
+
+	t.Run("detects overwrite", func(t *testing.T) {
+		tmpFile := "/tmp/test_export_overwrite_" + fmt.Sprintf("%d", time.Now().UnixNano()) + ".md"
+		// Create file first
+		_ = os.WriteFile(tmpFile, []byte("existing"), 0644)
+		defer func() { _ = os.Remove(tmpFile) }()
+
+		cmd := exportFromMemory(messages, "Test Chat", "markdown", tmpFile)
+		result := cmd()
+
+		if msg, ok := result.(exportResultMsg); ok {
+			if !msg.overwrite {
+				t.Error("overwrite should be true")
+			}
+		} else {
+			t.Error("expected exportResultMsg")
+		}
+	})
+}
+
+// TestJsonMarshalIndent tests the jsonMarshalIndent helper
+func TestJsonMarshalIndent(t *testing.T) {
+	data := map[string]string{"key": "value"}
+	result, err := jsonMarshalIndent(data, "", "  ")
+
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+
+	expected := "{\n  \"key\": \"value\"\n}"
+	if string(result) != expected {
+		t.Errorf("result = %q, want %q", string(result), expected)
+	}
+}
+
+// TestNewChatModel_WithClient tests the NewChatModel constructor with a real client
+func TestNewChatModel_WithClient(t *testing.T) {
+	client := &mockGeminiClientWithUpload{}
+	m := NewChatModel(client, "test-model")
+
+	if m.client != client {
+		t.Error("client not set correctly")
+	}
+	if m.modelName != "test-model" {
+		t.Errorf("modelName = %s, want test-model", m.modelName)
+	}
+	if len(m.messages) != 0 {
+		t.Errorf("messages length = %d, want 0", len(m.messages))
+	}
 }

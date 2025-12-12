@@ -260,6 +260,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Quit
 			}
 
+		case "ctrl+g":
+			// Shortcut to open gems selector (same as /gems)
+			m.textarea.Reset()
+			m.selectingGem = true
+			m.gemsLoading = true
+			m.gemsCursor = 0
+			m.gemsFilter = ""
+			return m, m.loadGemsForChat()
+
+		case "ctrl+e":
+			// Shortcut to export conversation (same as /export without args)
+			return m.handleExportCommand("")
+
 		case "enter":
 			if !m.loading {
 				rawInput := m.textarea.Value()
@@ -682,6 +695,8 @@ func (m Model) renderStatusBar(width int) string {
 	}{
 		{"Enter", "Send"},
 		{"\\+Enter", "Newline"},
+		{"^E", "Export"},
+		{"^G", "Gems"},
 		{"Esc", "Quit"},
 		{"↑↓", "Scroll"},
 	}
