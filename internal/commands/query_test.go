@@ -14,12 +14,6 @@ import (
 	"github.com/diogo/geminiweb/internal/render"
 )
 
-// mockConfig is a mock for config package functions
-type mockConfig struct {
-	loadCookiesFunc func() (*config.Cookies, error)
-	loadConfigFunc  func() (*config.Config, error)
-}
-
 // mockGeminiClient is a simple mock for testing
 type mockGeminiClient struct {
 	closed              bool
@@ -176,7 +170,7 @@ func TestRunQuery(t *testing.T) {
 
 	// Read captured output
 	var buf bytes.Buffer
-	buf.ReadFrom(r)
+	_, _ = buf.ReadFrom(r)
 	output := buf.String()
 
 	// The output might be empty due to how renderMarkdownToTerminal works
@@ -412,7 +406,7 @@ func TestRunQuery_OutputToFile(t *testing.T) {
 	}
 
 	// Clean up
-	os.Remove(tmpFile)
+	_ = os.Remove(tmpFile)
 }
 
 func TestRunQuery_WithThoughts(t *testing.T) {
@@ -445,7 +439,7 @@ func TestRunQuery_WithThoughts(t *testing.T) {
 
 	// Read output to verify thoughts are printed
 	var buf bytes.Buffer
-	buf.ReadFrom(r)
+	_, _ = buf.ReadFrom(r)
 	output := buf.String()
 
 	// The thoughts should be in the output (though styled with ANSI codes)
@@ -617,7 +611,7 @@ func TestRunQuery_AuthErrorReal(t *testing.T) {
 	defer os.Setenv("HOME", oldHome)
 
 	// Ensure no cookies exist
-	os.RemoveAll(tmpDir + "/.geminiweb")
+	_ = os.RemoveAll(tmpDir + "/.geminiweb")
 
 	// Set flags
 	oldImageFlag := imageFlag

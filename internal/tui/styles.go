@@ -10,9 +10,8 @@ import (
 // Color variables (updated from theme)
 var (
 	// Base colors
-	colorBackground lipgloss.Color
-	colorSurface    lipgloss.Color
-	colorBorder     lipgloss.Color
+	colorSurface lipgloss.Color
+	colorBorder  lipgloss.Color
 
 	// Accent colors
 	colorPrimary   lipgloss.Color
@@ -127,7 +126,6 @@ func UpdateTheme() {
 	theme := render.GetTUITheme()
 
 	// Update color variables
-	colorBackground = theme.Background
 	colorSurface = theme.Surface
 	colorBorder = theme.Border
 	colorPrimary = theme.Primary

@@ -92,11 +92,12 @@ func TestParseResponse(t *testing.T) {
 	makeBody := func(innerJSON string) []byte {
 		escaped := ""
 		for _, c := range innerJSON {
-			if c == '"' {
+			switch c {
+			case '"':
 				escaped += `\"`
-			} else if c == '\\' {
+			case '\\':
 				escaped += `\\`
-			} else {
+			default:
 				escaped += string(c)
 			}
 		}
@@ -253,11 +254,12 @@ func TestGenerateContent(t *testing.T) {
 	makeBody := func(innerJSON string) []byte {
 		escaped := ""
 		for _, c := range innerJSON {
-			if c == '"' {
+			switch c {
+			case '"':
 				escaped += `\"`
-			} else if c == '\\' {
+			case '\\':
 				escaped += `\\`
-			} else {
+			default:
 				escaped += string(c)
 			}
 		}
@@ -574,11 +576,12 @@ func TestGenerateContent_RetryOnAuthError(t *testing.T) {
 	makeBody := func(innerJSON string) []byte {
 		escaped := ""
 		for _, c := range innerJSON {
-			if c == '"' {
+			switch c {
+			case '"':
 				escaped += `\"`
-			} else if c == '\\' {
+			case '\\':
 				escaped += `\\`
-			} else {
+			default:
 				escaped += string(c)
 			}
 		}
@@ -758,11 +761,12 @@ func TestGenerateContent_WithImages(t *testing.T) {
 	makeBody := func(innerJSON string) []byte {
 		escaped := ""
 		for _, c := range innerJSON {
-			if c == '"' {
+			switch c {
+			case '"':
 				escaped += `\"`
-			} else if c == '\\' {
+			case '\\':
 				escaped += `\\`
-			} else {
+			default:
 				escaped += string(c)
 			}
 		}
@@ -912,11 +916,12 @@ func TestGenerateContent_DifferentErrorCodes(t *testing.T) {
 				innerJSON := `[null,["cid123","rid456","rcid789"],null,null,[["rcid789",["test response"]]]]`
 				escaped := ""
 				for _, c := range innerJSON {
-					if c == '"' {
+					switch c {
+					case '"':
 						escaped += `\"`
-					} else if c == '\\' {
+					case '\\':
 						escaped += `\\`
-					} else {
+					default:
 						escaped += string(c)
 					}
 				}
@@ -975,11 +980,12 @@ func TestGenerateContent_WithCustomModel(t *testing.T) {
 	makeBody := func(innerJSON string) []byte {
 		escaped := ""
 		for _, c := range innerJSON {
-			if c == '"' {
+			switch c {
+			case '"':
 				escaped += `\"`
-			} else if c == '\\' {
+			case '\\':
 				escaped += `\\`
-			} else {
+			default:
 				escaped += string(c)
 			}
 		}

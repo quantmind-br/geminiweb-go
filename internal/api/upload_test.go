@@ -250,7 +250,7 @@ func TestImageUploader_NewImageUploader(t *testing.T) {
 	uploader := NewImageUploader(client)
 
 	if uploader == nil {
-		t.Error("NewImageUploader returned nil")
+		t.Fatal("NewImageUploader returned nil")
 	}
 
 	if uploader.client != client {
@@ -665,7 +665,7 @@ func TestNewFileUploader(t *testing.T) {
 	uploader := NewFileUploader(client)
 
 	if uploader == nil {
-		t.Error("NewFileUploader returned nil")
+		t.Fatal("NewFileUploader returned nil")
 	}
 
 	if uploader.client != client {

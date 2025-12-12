@@ -39,6 +39,12 @@ type GeminiClientInterface interface {
 	UploadImage(filePath string) (*UploadedImage, error)
 	UploadFile(filePath string) (*UploadedFile, error)
 
+	// Image download
+	DownloadImage(img models.WebImage, opts ImageDownloadOptions) (string, error)
+	DownloadGeneratedImage(img models.GeneratedImage, opts ImageDownloadOptions) (string, error)
+	DownloadAllImages(output *models.ModelOutput, opts ImageDownloadOptions) ([]string, error)
+	DownloadSelectedImages(output *models.ModelOutput, indices []int, opts ImageDownloadOptions) ([]string, error)
+
 	// Browser refresh
 	RefreshFromBrowser() (bool, error)
 	IsBrowserRefreshEnabled() bool

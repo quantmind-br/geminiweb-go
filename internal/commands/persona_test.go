@@ -116,7 +116,7 @@ func TestPersonaCommands_WithConfig(t *testing.T) {
 
 	// Create personas directory
 	personasDir := filepath.Join(tmpDir, ".geminiweb")
-	os.MkdirAll(personasDir, 0o755)
+	_ = os.MkdirAll(personasDir, 0o755)
 
 	// Create a test persona config
 	personas := &config.PersonaConfig{
@@ -242,7 +242,7 @@ func TestRunPersonaList_Integration(t *testing.T) {
 
 	// Read output
 	var buf bytes.Buffer
-	buf.ReadFrom(r)
+	_, _ = buf.ReadFrom(r)
 	output := buf.String()
 
 	// Should contain the persona name
@@ -302,7 +302,7 @@ func TestRunPersonaShow_Success(t *testing.T) {
 
 	// Read output
 	var buf bytes.Buffer
-	buf.ReadFrom(r)
+	_, _ = buf.ReadFrom(r)
 	output := buf.String()
 
 	// Should contain persona details

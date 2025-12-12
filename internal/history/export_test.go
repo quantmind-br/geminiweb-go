@@ -15,9 +15,9 @@ func TestExportToMarkdown(t *testing.T) {
 	conv, _ := store.CreateConversation("gemini-2.5-flash")
 	// Note: AddMessage with role="user" and len(messages)==1 updates the title
 	// So we add messages first, then set the title we want
-	store.AddMessage(conv.ID, "user", "Hello, how are you?", "")
-	store.AddMessage(conv.ID, "assistant", "I'm doing well, thank you!", "Thinking about the response...")
-	store.UpdateTitle(conv.ID, "Test Conversation") // Set title after messages
+	_ = store.AddMessage(conv.ID, "user", "Hello, how are you?", "")
+	_ = store.AddMessage(conv.ID, "assistant", "I'm doing well, thank you!", "Thinking about the response...")
+	_ = store.UpdateTitle(conv.ID, "Test Conversation") // Set title after messages
 
 	// Export to Markdown
 	md, err := store.ExportToMarkdown(conv.ID)
@@ -55,7 +55,7 @@ func TestExportToMarkdown_WithoutThoughts(t *testing.T) {
 	store, _ := NewStore(tmpDir)
 
 	conv, _ := store.CreateConversation("test-model")
-	store.AddMessage(conv.ID, "assistant", "Response", "Secret thinking...")
+	_ = store.AddMessage(conv.ID, "assistant", "Response", "Secret thinking...")
 
 	// Export without thoughts
 	opts := DefaultExportOptions()
@@ -75,9 +75,9 @@ func TestExportToJSON(t *testing.T) {
 	store, _ := NewStore(tmpDir)
 
 	conv, _ := store.CreateConversation("gemini-2.5-flash")
-	store.UpdateMetadata(conv.ID, "cid123", "rid456", "rcid789")
-	store.AddMessage(conv.ID, "user", "Test message", "")
-	store.UpdateTitle(conv.ID, "JSON Test") // Set title after first message
+	_ = store.UpdateMetadata(conv.ID, "cid123", "rid456", "rcid789")
+	_ = store.AddMessage(conv.ID, "user", "Test message", "")
+	_ = store.UpdateTitle(conv.ID, "JSON Test") // Set title after first message
 
 	// Export to JSON
 	jsonData, err := store.ExportToJSON(conv.ID)
@@ -109,7 +109,7 @@ func TestExportToJSON_WithMetadata(t *testing.T) {
 	store, _ := NewStore(tmpDir)
 
 	conv, _ := store.CreateConversation("test-model")
-	store.UpdateMetadata(conv.ID, "cid123", "rid456", "rcid789")
+	_ = store.UpdateMetadata(conv.ID, "cid123", "rid456", "rcid789")
 
 	// Export with metadata
 	opts := DefaultExportOptions()
@@ -120,7 +120,7 @@ func TestExportToJSON_WithMetadata(t *testing.T) {
 	}
 
 	var exported map[string]interface{}
-	json.Unmarshal(jsonData, &exported)
+	_ = json.Unmarshal(jsonData, &exported)
 
 	if exported["cid"] != "cid123" {
 		t.Errorf("cid = %v, want cid123", exported["cid"])
@@ -135,8 +135,8 @@ func TestExportToJSON_Messages(t *testing.T) {
 	store, _ := NewStore(tmpDir)
 
 	conv, _ := store.CreateConversation("test-model")
-	store.AddMessage(conv.ID, "user", "Question", "")
-	store.AddMessage(conv.ID, "assistant", "Answer", "Thinking...")
+	_ = store.AddMessage(conv.ID, "user", "Question", "")
+	_ = store.AddMessage(conv.ID, "assistant", "Answer", "Thinking...")
 
 	jsonData, _ := store.ExportToJSON(conv.ID)
 
@@ -147,7 +147,7 @@ func TestExportToJSON_Messages(t *testing.T) {
 			Thoughts string `json:"thoughts,omitempty"`
 		} `json:"messages"`
 	}
-	json.Unmarshal(jsonData, &exported)
+	_ = json.Unmarshal(jsonData, &exported)
 
 	if len(exported.Messages) != 2 {
 		t.Fatalf("expected 2 messages, got %d", len(exported.Messages))
@@ -170,8 +170,8 @@ func TestSearchConversations_TitleMatch(t *testing.T) {
 
 	conv1, _ := store.CreateConversation("model-1")
 	conv2, _ := store.CreateConversation("model-2")
-	store.UpdateTitle(conv1.ID, "API Development")
-	store.UpdateTitle(conv2.ID, "Database Design")
+	_ = store.UpdateTitle(conv1.ID, "API Development")
+	_ = store.UpdateTitle(conv2.ID, "Database Design")
 
 	// Search for "API" (title only)
 	results, err := store.SearchConversations("API", false)
@@ -197,10 +197,10 @@ func TestSearchConversations_ContentMatch(t *testing.T) {
 
 	conv, _ := store.CreateConversation("test-model")
 	// Add a message that doesn't contain "endpoint" first
-	store.AddMessage(conv.ID, "user", "Starting a general chat", "")
+	_ = store.AddMessage(conv.ID, "user", "Starting a general chat", "")
 	// Then add a message that contains "endpoint"
-	store.AddMessage(conv.ID, "assistant", "How do I use the API endpoint?", "")
-	store.UpdateTitle(conv.ID, "General Chat") // Title without "endpoint"
+	_ = store.AddMessage(conv.ID, "assistant", "How do I use the API endpoint?", "")
+	_ = store.UpdateTitle(conv.ID, "General Chat") // Title without "endpoint"
 
 	// Search in titles only - should not find "endpoint"
 	results, _ := store.SearchConversations("endpoint", false)
@@ -231,7 +231,7 @@ func TestSearchConversations_CaseInsensitive(t *testing.T) {
 	store, _ := NewStore(tmpDir)
 
 	conv, _ := store.CreateConversation("test-model")
-	store.UpdateTitle(conv.ID, "API Development")
+	_ = store.UpdateTitle(conv.ID, "API Development")
 
 	// Search with different cases
 	tests := []string{"api", "API", "Api", "aPi"}
@@ -252,7 +252,7 @@ func TestSearchConversations_NoResults(t *testing.T) {
 	store, _ := NewStore(tmpDir)
 
 	conv, _ := store.CreateConversation("test-model")
-	store.UpdateTitle(conv.ID, "General Chat")
+	_ = store.UpdateTitle(conv.ID, "General Chat")
 
 	results, err := store.SearchConversations("xyz123nonexistent", true)
 	if err != nil {
@@ -269,8 +269,8 @@ func TestSearchConversations_TitleMatchPriority(t *testing.T) {
 	store, _ := NewStore(tmpDir)
 
 	conv, _ := store.CreateConversation("test-model")
-	store.UpdateTitle(conv.ID, "API Chat")
-	store.AddMessage(conv.ID, "user", "Tell me about the API", "")
+	_ = store.UpdateTitle(conv.ID, "API Chat")
+	_ = store.AddMessage(conv.ID, "user", "Tell me about the API", "")
 
 	// Title matches - should stop there, not search content
 	results, _ := store.SearchConversations("API", true)

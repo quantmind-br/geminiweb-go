@@ -177,7 +177,7 @@ func (u *FileUploader) uploadStream(
 	if err != nil {
 		return nil, apierrors.NewUploadNetworkError(fileName, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 200 && resp.StatusCode != 201 {
 		bodyBytes, _ := io.ReadAll(resp.Body)
@@ -334,7 +334,7 @@ func (u *ImageUploader) uploadStream(
 	if err != nil {
 		return nil, apierrors.NewUploadNetworkError(fileName, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 200 && resp.StatusCode != 201 {
 		bodyBytes, _ := io.ReadAll(resp.Body)

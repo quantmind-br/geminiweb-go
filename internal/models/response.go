@@ -25,9 +25,10 @@ type GeneratedImage struct {
 
 // ModelOutput represents the complete API response from Gemini
 type ModelOutput struct {
-	Metadata   []string // [cid, rid, rcid]
-	Candidates []Candidate
-	Chosen     int // Index of selected candidate
+	Metadata            []string // [cid, rid, rcid]
+	Candidates          []Candidate
+	Chosen              int  // Index of selected candidate
+	IsExtensionResponse bool // True if response came from an extension (@Gmail, @YouTube, etc.)
 }
 
 // Text returns the chosen candidate's text
@@ -63,6 +64,17 @@ func (m *ModelOutput) RCID() string {
 	return m.Candidates[m.Chosen].RCID
 }
 
+// ChosenCandidate returns a pointer to the chosen candidate
+func (m *ModelOutput) ChosenCandidate() *Candidate {
+	if len(m.Candidates) == 0 {
+		return nil
+	}
+	if m.Chosen >= len(m.Candidates) {
+		return &m.Candidates[0]
+	}
+	return &m.Candidates[m.Chosen]
+}
+
 // Images returns all images from the chosen candidate (web + generated)
 func (m *ModelOutput) Images() []WebImage {
 	if len(m.Candidates) == 0 {
@@ -75,11 +87,7 @@ func (m *ModelOutput) Images() []WebImage {
 
 	// Convert generated images to WebImage format
 	for _, img := range candidate.GeneratedImages {
-		images = append(images, WebImage{
-			URL:   img.URL,
-			Title: img.Title,
-			Alt:   img.Alt,
-		})
+		images = append(images, WebImage(img))
 	}
 
 	return images

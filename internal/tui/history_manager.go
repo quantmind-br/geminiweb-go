@@ -451,8 +451,7 @@ func (m HistoryManagerModel) renderHeader(width int) string {
 	title := configTitleStyle.Render("Conversation Manager")
 
 	// Filter tabs
-	allTab := "All"
-	favTab := "★ Favorites"
+	var allTab, favTab string
 	if m.filter == FilterAll {
 		allTab = configMenuSelectedStyle.Render("[All]")
 		favTab = hintStyle.Render("[★ Favorites]")

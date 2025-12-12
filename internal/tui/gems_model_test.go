@@ -68,6 +68,18 @@ func (m *mockGemsClient) GetGem(id, name string) *models.Gem {
 func (m *mockGemsClient) BatchExecute(requests []api.RPCData) ([]api.BatchResponse, error) {
 	return nil, nil
 }
+func (m *mockGemsClient) DownloadImage(img models.WebImage, opts api.ImageDownloadOptions) (string, error) {
+	return "", nil
+}
+func (m *mockGemsClient) DownloadGeneratedImage(img models.GeneratedImage, opts api.ImageDownloadOptions) (string, error) {
+	return "", nil
+}
+func (m *mockGemsClient) DownloadAllImages(output *models.ModelOutput, opts api.ImageDownloadOptions) ([]string, error) {
+	return nil, nil
+}
+func (m *mockGemsClient) DownloadSelectedImages(output *models.ModelOutput, indices []int, opts api.ImageDownloadOptions) ([]string, error) {
+	return nil, nil
+}
 
 // createTestGems creates a test GemJar with sample gems
 func createTestGems() *models.GemJar {

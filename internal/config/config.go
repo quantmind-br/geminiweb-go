@@ -23,7 +23,8 @@ type Config struct {
 	AutoClose       bool           `json:"auto_close"`
 	Verbose         bool           `json:"verbose"`
 	CopyToClipboard bool           `json:"copy_to_clipboard"`
-	TUITheme        string         `json:"tui_theme,omitempty"` // TUI color theme
+	TUITheme        string         `json:"tui_theme,omitempty"`    // TUI color theme
+	DownloadDir     string         `json:"download_dir,omitempty"` // Directory for saving images
 	Markdown        MarkdownConfig `json:"markdown,omitempty"`
 }
 
@@ -40,12 +41,14 @@ func DefaultMarkdownConfig() MarkdownConfig {
 
 // DefaultConfig returns the default configuration
 func DefaultConfig() Config {
+	homeDir, _ := os.UserHomeDir()
 	return Config{
 		DefaultModel:    "gemini-2.5-flash",
 		AutoClose:       true,
 		Verbose:         false,
 		CopyToClipboard: false,
 		TUITheme:        "tokyonight",
+		DownloadDir:     filepath.Join(homeDir, ".geminiweb", "images"),
 		Markdown:        DefaultMarkdownConfig(),
 	}
 }
@@ -91,6 +94,25 @@ func GetCookiesPath() (string, error) {
 		return "", err
 	}
 	return filepath.Join(configDir, "cookies.json"), nil
+}
+
+// GetDownloadDir returns the download directory from config, creating it if necessary
+func GetDownloadDir(cfg Config) (string, error) {
+	dir := cfg.DownloadDir
+	if dir == "" {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("failed to get home directory: %w", err)
+		}
+		dir = filepath.Join(homeDir, ".geminiweb", "images")
+	}
+
+	// Ensure directory exists
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", fmt.Errorf("failed to create download directory: %w", err)
+	}
+
+	return dir, nil
 }
 
 // LoadConfig loads the configuration from disk

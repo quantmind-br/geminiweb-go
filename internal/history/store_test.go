@@ -114,7 +114,7 @@ func TestStore_AddMessage_UpdatesTitle(t *testing.T) {
 	conv, _ := store.CreateConversation("test-model")
 	originalTitle := conv.Title
 
-	store.AddMessage(conv.ID, "user", "What is Go programming?", "")
+	_ = store.AddMessage(conv.ID, "user", "What is Go programming?", "")
 
 	updated, _ := store.GetConversation(conv.ID)
 	if updated.Title == originalTitle {
@@ -133,7 +133,7 @@ func TestStore_AddMessage_TruncatesLongTitle(t *testing.T) {
 	conv, _ := store.CreateConversation("test-model")
 
 	longMessage := "This is a very long message that should be truncated when used as a title because it exceeds the maximum length"
-	store.AddMessage(conv.ID, "user", longMessage, "")
+	_ = store.AddMessage(conv.ID, "user", longMessage, "")
 
 	updated, _ := store.GetConversation(conv.ID)
 	if len(updated.Title) > 60 { // 50 chars + "..."
@@ -147,7 +147,7 @@ func TestStore_AddMessage_WithThoughts(t *testing.T) {
 
 	conv, _ := store.CreateConversation("test-model")
 
-	store.AddMessage(conv.ID, "assistant", "Response", "Thinking about this...")
+	_ = store.AddMessage(conv.ID, "assistant", "Response", "Thinking about this...")
 
 	updated, _ := store.GetConversation(conv.ID)
 	if updated.Messages[0].Thoughts != "Thinking about this..." {
@@ -210,11 +210,11 @@ func TestStore_ListConversations(t *testing.T) {
 	store, _ := NewStore(tmpDir)
 
 	// Create multiple conversations
-	store.CreateConversation("model-1")
+	_, _ = store.CreateConversation("model-1")
 	time.Sleep(10 * time.Millisecond)
-	store.CreateConversation("model-2")
+	_, _ = store.CreateConversation("model-2")
 	time.Sleep(10 * time.Millisecond)
-	store.CreateConversation("model-3")
+	_, _ = store.CreateConversation("model-3")
 
 	conversations, err := store.ListConversations()
 	if err != nil {
@@ -266,9 +266,9 @@ func TestStore_ClearAll(t *testing.T) {
 	tmpDir := t.TempDir()
 	store, _ := NewStore(tmpDir)
 
-	store.CreateConversation("model-1")
-	store.CreateConversation("model-2")
-	store.CreateConversation("model-3")
+	_, _ = store.CreateConversation("model-1")
+	_, _ = store.CreateConversation("model-2")
+	_, _ = store.CreateConversation("model-3")
 
 	err := store.ClearAll()
 	if err != nil {
@@ -351,8 +351,8 @@ func TestGetHistoryDir(t *testing.T) {
 func TestDefaultStore(t *testing.T) {
 	oldHome := os.Getenv("HOME")
 	tmpDir := t.TempDir()
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", oldHome)
+	_ = os.Setenv("HOME", tmpDir)
+	defer func() { _ = os.Setenv("HOME", oldHome) }()
 
 	store, err := DefaultStore()
 	if err != nil {
@@ -360,7 +360,7 @@ func TestDefaultStore(t *testing.T) {
 	}
 
 	if store == nil {
-		t.Error("DefaultStore() returned nil")
+		t.Fatal("DefaultStore() returned nil")
 	}
 
 	// Verify the store uses the correct directory
@@ -391,7 +391,7 @@ func TestClearAll_RemovesOnlyJSONFiles(t *testing.T) {
 	store, _ := NewStore(tmpDir)
 
 	// Create a conversation
-	store.CreateConversation("test-model")
+	_, _ = store.CreateConversation("test-model")
 
 	// Create a non-JSON file that should not be touched
 	otherFile := filepath.Join(tmpDir, "history", "other.txt")

@@ -257,10 +257,10 @@ func NewAuthErrorWithEndpoint(message string, endpoint string) *AuthError {
 
 // Error implements the error interface
 func (e *AuthError) Error() string {
-	if e.GeminiError.Message == "" {
+	if e.Message == "" {
 		return "authentication failed: cookies may have expired"
 	}
-	return fmt.Sprintf("authentication failed: %s", e.GeminiError.Message)
+	return fmt.Sprintf("authentication failed: %s", e.Message)
 }
 
 // Is allows comparison with sentinel errors
@@ -276,7 +276,7 @@ func (e *AuthError) Is(target error) bool {
 
 // Unwrap returns the underlying GeminiError
 func (e *AuthError) Unwrap() error {
-	return e.GeminiError.Cause
+	return e.Cause
 }
 
 // APIError represents an API request failure
@@ -311,21 +311,21 @@ func NewAPIErrorWithCode(code ErrorCode, endpoint string) *APIError {
 // NewAPIErrorWithBody creates an APIError with the response body
 func NewAPIErrorWithBody(statusCode int, endpoint, message, body string) *APIError {
 	e := NewAPIError(statusCode, endpoint, message)
-	e.GeminiError.WithBody(body)
+	_ = e.WithBody(body)
 	return e
 }
 
 // Error implements the error interface
 func (e *APIError) Error() string {
-	if e.GeminiError.HTTPStatus > 0 {
-		if e.GeminiError.Body != "" {
+	if e.HTTPStatus > 0 {
+		if e.Body != "" {
 			return fmt.Sprintf("API error [%d] at %s: %s (body: %s)",
-				e.GeminiError.HTTPStatus, e.GeminiError.Endpoint, e.GeminiError.Message, e.GeminiError.Body)
+				e.HTTPStatus, e.Endpoint, e.Message, e.Body)
 		}
 		return fmt.Sprintf("API error [%d] at %s: %s",
-			e.GeminiError.HTTPStatus, e.GeminiError.Endpoint, e.GeminiError.Message)
+			e.HTTPStatus, e.Endpoint, e.Message)
 	}
-	return fmt.Sprintf("API error at %s: %s", e.GeminiError.Endpoint, e.GeminiError.Message)
+	return fmt.Sprintf("API error at %s: %s", e.Endpoint, e.Message)
 }
 
 // StatusCode returns the HTTP status code (for backwards compatibility)
@@ -897,7 +897,7 @@ func NewUploadErrorWithStatus(fileName string, statusCode int, body string) *Upl
 		},
 		FileName: fileName,
 	}
-	e.GeminiError.WithBody(body)
+	_ = e.WithBody(body)
 	return e
 }
 
@@ -953,6 +953,88 @@ func IsUploadError(err error) bool {
 
 	var uploadErr *UploadError
 	return errors.As(err, &uploadErr)
+}
+
+// DownloadError represents an error during image download
+type DownloadError struct {
+	*GeminiError
+	URL string
+}
+
+// NewDownloadError creates a new DownloadError
+func NewDownloadError(message, url string) *DownloadError {
+	return &DownloadError{
+		GeminiError: &GeminiError{
+			Operation: "download image",
+			Message:   message,
+		},
+		URL: url,
+	}
+}
+
+// NewDownloadErrorWithStatus creates a DownloadError with HTTP status
+func NewDownloadErrorWithStatus(url string, statusCode int) *DownloadError {
+	return &DownloadError{
+		GeminiError: &GeminiError{
+			HTTPStatus: statusCode,
+			Operation:  "download image",
+			Message:    fmt.Sprintf("download failed with status %d", statusCode),
+		},
+		URL: url,
+	}
+}
+
+// NewDownloadNetworkError creates a DownloadError for network failures
+func NewDownloadNetworkError(url string, cause error) *DownloadError {
+	return &DownloadError{
+		GeminiError: &GeminiError{
+			Operation: "download image",
+			Message:   "network request failed",
+			Cause:     cause,
+		},
+		URL: url,
+	}
+}
+
+// Error implements the error interface
+func (e *DownloadError) Error() string {
+	if e.URL != "" {
+		if e.GeminiError.HTTPStatus > 0 {
+			return fmt.Sprintf("download error for '%s': HTTP %d - %s",
+				e.URL, e.GeminiError.HTTPStatus, e.GeminiError.Message)
+		}
+		if e.GeminiError.Cause != nil {
+			return fmt.Sprintf("download error for '%s': %v", e.URL, e.GeminiError.Cause)
+		}
+		return fmt.Sprintf("download error for '%s': %s", e.URL, e.GeminiError.Message)
+	}
+	return fmt.Sprintf("download error: %s", e.GeminiError.Message)
+}
+
+// Is allows comparison with other errors
+func (e *DownloadError) Is(target error) bool {
+	if _, ok := target.(*DownloadError); ok {
+		return true
+	}
+	if target == ErrNetworkFailure && e.GeminiError.Cause != nil {
+		return true
+	}
+	return false
+}
+
+// Unwrap returns the underlying cause
+func (e *DownloadError) Unwrap() error {
+	return e.GeminiError.Cause
+}
+
+// IsDownloadError checks if an error is a download error
+func IsDownloadError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	var downloadErr *DownloadError
+	return errors.As(err, &downloadErr)
 }
 
 // GemError represents errors specific to gem operations

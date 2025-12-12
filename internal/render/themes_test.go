@@ -68,7 +68,7 @@ func TestWriteThemeToTempFile(t *testing.T) {
 	}
 
 	// Clean up
-	defer os.Remove(path)
+	defer func() { _ = os.Remove(path) }()
 
 	// Verify file exists and has content
 	data, err := os.ReadFile(path)

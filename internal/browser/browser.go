@@ -124,7 +124,7 @@ func extractFromBrowser(ctx context.Context, browser SupportedBrowser) (*Extract
 				browserName = name
 			}
 		} else {
-			store.Close()
+			_ = store.Close()
 		}
 	}
 
@@ -136,11 +136,11 @@ func extractFromBrowser(ctx context.Context, browser SupportedBrowser) (*Extract
 	var lastErr error
 	for _, store := range matchingStores {
 		result, err := extractCookiesFromStore(ctx, store, browserName, store.Profile())
-		store.Close()
+		_ = store.Close()
 		if err == nil {
 			// Close remaining stores
 			for _, s := range matchingStores {
-				s.Close()
+				_ = s.Close()
 			}
 			return result, nil
 		}
@@ -238,7 +238,7 @@ func ListAvailableBrowsers() []string {
 			browsers = append(browsers, name)
 			seen[name] = true
 		}
-		store.Close()
+		_ = store.Close()
 	}
 
 	return browsers

@@ -309,6 +309,35 @@ func runQuery(prompt string, rawOutput bool) error {
 		spin.stopWithSuccess("Done")
 	}
 
+	// Download images if --save-images flag is set
+	if saveImagesFlag != "" && output != nil {
+		allImages := output.Images()
+		if len(allImages) > 0 {
+			if !rawOutput {
+				spin = newSpinner("Downloading images")
+				spin.start()
+			}
+
+			opts := api.ImageDownloadOptions{
+				Directory: saveImagesFlag,
+				FullSize:  true,
+			}
+			paths, err := client.DownloadAllImages(output, opts)
+			if err != nil {
+				if !rawOutput {
+					spin.stopWithError()
+					fmt.Fprintf(os.Stderr, "Warning: failed to save some images: %v\n", err)
+				}
+			} else if len(paths) > 0 {
+				if !rawOutput {
+					spin.stopWithSuccess(fmt.Sprintf("Saved %d images to %s", len(paths), saveImagesFlag))
+				}
+			} else if !rawOutput {
+				spin.stopWithSuccess("No images to download")
+			}
+		}
+	}
+
 	text := output.Text()
 
 	// Raw output mode: output only the raw text

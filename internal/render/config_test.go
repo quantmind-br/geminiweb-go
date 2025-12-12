@@ -8,10 +8,10 @@ import (
 func TestLoadOptionsFromConfig(t *testing.T) {
 	// Clear any environment variable
 	origStyle := os.Getenv("GLAMOUR_STYLE")
-	os.Unsetenv("GLAMOUR_STYLE")
+	_ = os.Unsetenv("GLAMOUR_STYLE")
 	defer func() {
 		if origStyle != "" {
-			os.Setenv("GLAMOUR_STYLE", origStyle)
+			_ = os.Setenv("GLAMOUR_STYLE", origStyle)
 		}
 	}()
 
@@ -28,8 +28,8 @@ func TestLoadOptionsFromConfig(t *testing.T) {
 
 func TestLoadOptionsFromConfig_EnvOverride(t *testing.T) {
 	// Set environment variable
-	os.Setenv("GLAMOUR_STYLE", "light")
-	defer os.Unsetenv("GLAMOUR_STYLE")
+	_ = os.Setenv("GLAMOUR_STYLE", "light")
+	defer func() { _ = os.Unsetenv("GLAMOUR_STYLE") }()
 
 	opts := LoadOptionsFromConfig()
 
@@ -40,10 +40,10 @@ func TestLoadOptionsFromConfig_EnvOverride(t *testing.T) {
 
 func TestLoadOptionsFromConfigWithWidth(t *testing.T) {
 	origStyle := os.Getenv("GLAMOUR_STYLE")
-	os.Unsetenv("GLAMOUR_STYLE")
+	_ = os.Unsetenv("GLAMOUR_STYLE")
 	defer func() {
 		if origStyle != "" {
-			os.Setenv("GLAMOUR_STYLE", origStyle)
+			_ = os.Setenv("GLAMOUR_STYLE", origStyle)
 		}
 	}()
 
@@ -56,10 +56,10 @@ func TestLoadOptionsFromConfigWithWidth(t *testing.T) {
 
 func TestLoadOptionsFromConfig_ValidOptions(t *testing.T) {
 	origStyle := os.Getenv("GLAMOUR_STYLE")
-	os.Unsetenv("GLAMOUR_STYLE")
+	_ = os.Unsetenv("GLAMOUR_STYLE")
 	defer func() {
 		if origStyle != "" {
-			os.Setenv("GLAMOUR_STYLE", origStyle)
+			_ = os.Setenv("GLAMOUR_STYLE", origStyle)
 		}
 	}()
 

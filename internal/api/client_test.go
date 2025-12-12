@@ -465,9 +465,7 @@ func TestGeminiClient_ConcurrentAccess(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			token := client.GetAccessToken()
-			if token == "" {
-				// This is expected before Init
-			}
+			_ = token // Token is expected to be empty before Init
 		}()
 	}
 
@@ -629,13 +627,13 @@ func TestGeminiClient_WithAutoRefresh(t *testing.T) {
 
 			if tt.wantEnabled {
 				// When auto-refresh is enabled, rotator should be created in Init
-				client.Init()
+				_ = client.Init()
 				// Note: We can't directly test the rotator without exposing it
 				// But the presence is tested through behavior
 			} else {
 				// When auto-refresh is disabled, rotator should not be created
 				client.autoRefresh = false
-				client.Init()
+				_ = client.Init()
 				if client.rotator != nil {
 					t.Error("Rotator should be nil when auto-refresh is disabled")
 				}

@@ -216,9 +216,9 @@ func TestHistoryCommands_WithStore(t *testing.T) {
 	}
 
 	// Test ClearAll
-	store.CreateConversation("model-1")
-	store.CreateConversation("model-2")
-	store.CreateConversation("model-3")
+	_, _ = store.CreateConversation("model-1")
+	_, _ = store.CreateConversation("model-2")
+	_, _ = store.CreateConversation("model-3")
 
 	err = store.ClearAll()
 	if err != nil {
@@ -251,7 +251,7 @@ func TestRunHistoryList_Empty(t *testing.T) {
 	err := runHistoryList(historyListCmd, []string{})
 
 	// Restore stdout
-	w.Close()
+	_ = w.Close()
 	os.Stdout = oldStdout
 
 	if err != nil {
@@ -287,10 +287,10 @@ func TestRunHistoryList_WithConversations(t *testing.T) {
 
 	// Create test conversations
 	conv1, _ := store.CreateConversation("gemini-2.5-flash")
-	store.AddMessage(conv1.ID, "user", "First message", "")
+	_ = store.AddMessage(conv1.ID, "user", "First message", "")
 
 	conv2, _ := store.CreateConversation("gemini-2.5-pro")
-	store.AddMessage(conv2.ID, "user", "Second message", "")
+	_ = store.AddMessage(conv2.ID, "user", "Second message", "")
 
 	// Capture output
 	oldStdout := os.Stdout
@@ -301,7 +301,7 @@ func TestRunHistoryList_WithConversations(t *testing.T) {
 	err = runHistoryList(historyListCmd, []string{})
 
 	// Restore stdout
-	w.Close()
+	_ = w.Close()
 	os.Stdout = oldStdout
 
 	if err != nil {
@@ -340,7 +340,7 @@ func TestRunHistoryShow_Success(t *testing.T) {
 	}
 
 	conv, _ := store.CreateConversation("test-model")
-	store.AddMessage(conv.ID, "user", "test message", "")
+	_ = store.AddMessage(conv.ID, "user", "test message", "")
 
 	// Capture output
 	oldStdout := os.Stdout
@@ -351,7 +351,7 @@ func TestRunHistoryShow_Success(t *testing.T) {
 	err = runHistoryShow(historyShowCmd, []string{conv.ID})
 
 	// Restore stdout
-	w.Close()
+	_ = w.Close()
 	os.Stdout = oldStdout
 
 	if err != nil {
@@ -383,7 +383,7 @@ func TestRunHistoryShow_WithAlias(t *testing.T) {
 	}
 
 	conv, _ := store.CreateConversation("test-model")
-	store.AddMessage(conv.ID, "user", "test message", "")
+	_ = store.AddMessage(conv.ID, "user", "test message", "")
 
 	// Capture output
 	oldStdout := os.Stdout
@@ -394,7 +394,7 @@ func TestRunHistoryShow_WithAlias(t *testing.T) {
 	err = runHistoryShow(historyShowCmd, []string{"@last"})
 
 	// Restore stdout
-	w.Close()
+	_ = w.Close()
 	os.Stdout = oldStdout
 
 	if err != nil {
@@ -426,7 +426,7 @@ func TestRunHistoryShow_WithNumericIndex(t *testing.T) {
 	}
 
 	conv, _ := store.CreateConversation("test-model")
-	store.AddMessage(conv.ID, "user", "test message", "")
+	_ = store.AddMessage(conv.ID, "user", "test message", "")
 
 	// Capture output
 	oldStdout := os.Stdout
@@ -437,7 +437,7 @@ func TestRunHistoryShow_WithNumericIndex(t *testing.T) {
 	err = runHistoryShow(historyShowCmd, []string{"1"})
 
 	// Restore stdout
-	w.Close()
+	_ = w.Close()
 	os.Stdout = oldStdout
 
 	if err != nil {
@@ -483,7 +483,7 @@ func TestRunHistoryDelete_Success(t *testing.T) {
 	err = runHistoryDelete(historyDeleteCmd, []string{conv.ID})
 
 	// Restore stdout
-	w.Close()
+	_ = w.Close()
 	os.Stdout = oldStdout
 
 	if err != nil {
@@ -535,7 +535,7 @@ func TestRunHistoryDelete_WithAlias(t *testing.T) {
 	err = runHistoryDelete(historyDeleteCmd, []string{"@last"})
 
 	// Restore stdout
-	w.Close()
+	_ = w.Close()
 	os.Stdout = oldStdout
 
 	if err != nil {
@@ -572,9 +572,9 @@ func TestRunHistoryClear_Success(t *testing.T) {
 		t.Fatalf("Failed to create store: %v", err)
 	}
 
-	store.CreateConversation("model-1")
-	store.CreateConversation("model-2")
-	store.CreateConversation("model-3")
+	_, _ = store.CreateConversation("model-1")
+	_, _ = store.CreateConversation("model-2")
+	_, _ = store.CreateConversation("model-3")
 
 	// Capture output
 	oldStdout := os.Stdout
@@ -589,7 +589,7 @@ func TestRunHistoryClear_Success(t *testing.T) {
 	err = runHistoryClear(historyClearCmd, []string{})
 
 	// Restore stdout
-	w.Close()
+	_ = w.Close()
 	os.Stdout = oldStdout
 
 	if err != nil {
@@ -641,7 +641,7 @@ func TestRunHistoryRename_Success(t *testing.T) {
 	err = runHistoryRename(historyRenameCmd, []string{conv.ID, "New Title"})
 
 	// Restore stdout
-	w.Close()
+	_ = w.Close()
 	os.Stdout = oldStdout
 
 	if err != nil {
@@ -689,7 +689,7 @@ func TestRunHistoryFavorite_Toggle(t *testing.T) {
 	err = runHistoryFavorite(historyFavoriteCmd, []string{conv.ID})
 
 	// Restore stdout
-	w.Close()
+	_ = w.Close()
 	os.Stdout = oldStdout
 
 	if err != nil {
@@ -718,7 +718,7 @@ func TestRunHistoryFavorite_Toggle(t *testing.T) {
 
 	err = runHistoryFavorite(historyFavoriteCmd, []string{conv.ID})
 
-	w.Close()
+	_ = w.Close()
 	os.Stdout = oldStdout
 
 	if err != nil {
@@ -755,9 +755,9 @@ func TestRunHistoryExport_Markdown(t *testing.T) {
 	}
 
 	conv, _ := store.CreateConversation("test-model")
-	store.AddMessage(conv.ID, "user", "Hello", "")
-	store.AddMessage(conv.ID, "assistant", "Hi there!", "")
-	store.UpdateTitle(conv.ID, "Test Export")
+	_ = store.AddMessage(conv.ID, "user", "Hello", "")
+	_ = store.AddMessage(conv.ID, "assistant", "Hi there!", "")
+	_ = store.UpdateTitle(conv.ID, "Test Export")
 
 	// Capture output
 	oldStdout := os.Stdout
@@ -772,7 +772,7 @@ func TestRunHistoryExport_Markdown(t *testing.T) {
 	err = runHistoryExport(historyExportCmd, []string{conv.ID})
 
 	// Restore stdout
-	w.Close()
+	_ = w.Close()
 	os.Stdout = oldStdout
 
 	if err != nil {
@@ -807,10 +807,10 @@ func TestRunHistorySearch_TitleMatch(t *testing.T) {
 	}
 
 	conv1, _ := store.CreateConversation("test-model")
-	store.UpdateTitle(conv1.ID, "API Development Chat")
+	_ = store.UpdateTitle(conv1.ID, "API Development Chat")
 
 	conv2, _ := store.CreateConversation("test-model")
-	store.UpdateTitle(conv2.ID, "Database Design")
+	_ = store.UpdateTitle(conv2.ID, "Database Design")
 
 	// Capture output
 	oldStdout := os.Stdout
@@ -905,8 +905,8 @@ func TestRunHistoryList_Favorites(t *testing.T) {
 	}
 
 	conv1, _ := store.CreateConversation("model-1")
-	store.UpdateTitle(conv1.ID, "Favorite Chat")
-	store.SetFavorite(conv1.ID, true)
+	_ = store.UpdateTitle(conv1.ID, "Favorite Chat")
+	_ = store.SetFavorite(conv1.ID, true)
 
 	conv2, _ := store.CreateConversation("model-2")
 	store.UpdateTitle(conv2.ID, "Regular Chat")

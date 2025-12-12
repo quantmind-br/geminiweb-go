@@ -95,7 +95,7 @@ func TestChatSession_Getters(t *testing.T) {
 
 	t.Run("GetMetadata returns empty initially", func(t *testing.T) {
 		metadata := session.GetMetadata()
-		if metadata != nil && len(metadata) != 0 {
+		if len(metadata) != 0 {
 			t.Errorf("GetMetadata() length = %d, want 0", len(metadata))
 		}
 	})

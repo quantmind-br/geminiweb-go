@@ -168,7 +168,7 @@ func TestListConversations_PopulatesComputedFields(t *testing.T) {
 	conv, _ := store.CreateConversation("test-model")
 
 	// Mark as favorite
-	store.SetFavorite(conv.ID, true)
+	_ = store.SetFavorite(conv.ID, true)
 
 	// List conversations
 	conversations, err := store.ListConversations()
@@ -195,7 +195,7 @@ func TestDeleteConversation_RemovesFromMeta(t *testing.T) {
 
 	// Create and favorite a conversation
 	conv, _ := store.CreateConversation("test-model")
-	store.SetFavorite(conv.ID, true)
+	_ = store.SetFavorite(conv.ID, true)
 
 	// Delete the conversation
 	err := store.DeleteConversation(conv.ID)
@@ -244,7 +244,7 @@ func TestMetaPersistence(t *testing.T) {
 	// Create store and add conversations
 	store1, _ := NewStore(tmpDir)
 	conv, _ := store1.CreateConversation("test-model")
-	store1.SetFavorite(conv.ID, true)
+	_ = store1.SetFavorite(conv.ID, true)
 
 	// Create new store instance (simulating restart)
 	store2, _ := NewStore(tmpDir)
@@ -265,7 +265,7 @@ func TestOrphanedMetaCleanup(t *testing.T) {
 
 	// Create a conversation
 	conv, _ := store.CreateConversation("test-model")
-	store.SetFavorite(conv.ID, true)
+	_ = store.SetFavorite(conv.ID, true)
 
 	// Manually delete the conversation file (simulating corruption)
 	convPath := store.conversationPath(conv.ID)
@@ -296,8 +296,8 @@ func TestClearAll_ClearsMeta(t *testing.T) {
 	// Create conversations and mark as favorites
 	conv1, _ := store.CreateConversation("model-1")
 	conv2, _ := store.CreateConversation("model-2")
-	store.SetFavorite(conv1.ID, true)
-	store.SetFavorite(conv2.ID, true)
+	_ = store.SetFavorite(conv1.ID, true)
+	_ = store.SetFavorite(conv2.ID, true)
 
 	// Clear all
 	err := store.ClearAll()

@@ -239,13 +239,13 @@ func TestRootCmd_FileInput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp file: %v", err)
 	}
-	defer os.Remove(tmpFile.Name())
+	defer func() { _ = os.Remove(tmpFile.Name()) }()
 
 	testContent := "Hello, world!"
 	if _, err := tmpFile.WriteString(testContent); err != nil {
 		t.Fatalf("Failed to write to temp file: %v", err)
 	}
-	tmpFile.Close()
+	_ = tmpFile.Close()
 
 	// Test file flag
 	cmd := &cobra.Command{
@@ -304,7 +304,7 @@ func TestRootCmd_StdinInput(t *testing.T) {
 
 	// Write test data to pipe
 	go func() {
-		w.WriteString(testInput)
+		_, _ = w.WriteString(testInput)
 		w.Close()
 	}()
 
@@ -537,11 +537,8 @@ func TestExecuteWrapper(t *testing.T) {
 
 	t.Run("function_exists", func(t *testing.T) {
 		// Just verify the function exists and has the right signature
-		var executeFunc func()
-		executeFunc = Execute
-
-		if executeFunc == nil {
-			t.Error("Execute function should exist")
-		}
+		// Assigning to a variable confirms the type matches
+		executeFunc := Execute
+		_ = executeFunc // Use the variable to confirm assignment succeeded
 	})
 }

@@ -171,22 +171,23 @@ func (m ConfigModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case "up", "k":
-			if m.view == viewMain {
+			switch m.view {
+			case viewMain:
 				m.cursor--
 				if m.cursor < 0 {
 					m.cursor = menuItemCount - 1
 				}
-			} else if m.view == viewModelSelect {
+			case viewModelSelect:
 				m.modelCursor--
 				if m.modelCursor < 0 {
 					m.modelCursor = len(config.AvailableModels()) - 1
 				}
-			} else if m.view == viewThemeSelect {
+			case viewThemeSelect:
 				m.themeCursor--
 				if m.themeCursor < 0 {
 					m.themeCursor = len(render.ThemeNames()) - 1
 				}
-			} else if m.view == viewTUIThemeSelect {
+			case viewTUIThemeSelect:
 				m.tuiThemeCursor--
 				if m.tuiThemeCursor < 0 {
 					m.tuiThemeCursor = len(render.TUIThemeNames()) - 1
@@ -194,22 +195,23 @@ func (m ConfigModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case "down", "j":
-			if m.view == viewMain {
+			switch m.view {
+			case viewMain:
 				m.cursor++
 				if m.cursor >= menuItemCount {
 					m.cursor = 0
 				}
-			} else if m.view == viewModelSelect {
+			case viewModelSelect:
 				m.modelCursor++
 				if m.modelCursor >= len(config.AvailableModels()) {
 					m.modelCursor = 0
 				}
-			} else if m.view == viewThemeSelect {
+			case viewThemeSelect:
 				m.themeCursor++
 				if m.themeCursor >= len(render.ThemeNames()) {
 					m.themeCursor = 0
 				}
-			} else if m.view == viewTUIThemeSelect {
+			case viewTUIThemeSelect:
 				m.tuiThemeCursor++
 				if m.tuiThemeCursor >= len(render.TUIThemeNames()) {
 					m.tuiThemeCursor = 0
@@ -226,7 +228,8 @@ func (m ConfigModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // handleSelect handles menu item selection
 func (m ConfigModel) handleSelect() (tea.Model, tea.Cmd) {
-	if m.view == viewMain {
+	switch m.view {
+	case viewMain:
 		switch m.cursor {
 		case menuDefaultModel:
 			m.view = viewModelSelect
@@ -282,7 +285,8 @@ func (m ConfigModel) handleSelect() (tea.Model, tea.Cmd) {
 		case menuExit:
 			return m, tea.Quit
 		}
-	} else if m.view == viewModelSelect {
+
+	case viewModelSelect:
 		models := config.AvailableModels()
 		m.config.DefaultModel = models[m.modelCursor]
 		if err := config.SaveConfig(m.config); err != nil {
@@ -292,7 +296,8 @@ func (m ConfigModel) handleSelect() (tea.Model, tea.Cmd) {
 		}
 		m.view = viewMain
 		return m, clearFeedback(m.feedbackTimeout)
-	} else if m.view == viewThemeSelect {
+
+	case viewThemeSelect:
 		themes := render.ThemeNames()
 		m.config.Markdown.Style = themes[m.themeCursor]
 		if err := config.SaveConfig(m.config); err != nil {
@@ -302,7 +307,8 @@ func (m ConfigModel) handleSelect() (tea.Model, tea.Cmd) {
 		}
 		m.view = viewMain
 		return m, clearFeedback(m.feedbackTimeout)
-	} else if m.view == viewTUIThemeSelect {
+
+	case viewTUIThemeSelect:
 		tuiThemes := render.TUIThemeNames()
 		selectedTheme := tuiThemes[m.tuiThemeCursor]
 		m.config.TUITheme = selectedTheme
@@ -357,10 +363,17 @@ func (m ConfigModel) View() string {
 		cookiesStatus = configStatusErrorStyle.Render("✗ not found")
 	}
 
+	downloadDir := m.config.DownloadDir
+	if downloadDir == "" {
+		downloadDir = m.configDir + "/images"
+	}
+	downloadPath := configPathStyle.Render(downloadDir)
+
 	pathsContent := lipgloss.JoinVertical(lipgloss.Left,
 		pathsTitle,
-		fmt.Sprintf("   Config:  %s", configPath),
-		fmt.Sprintf("   Cookies: %s  %s", cookiesPath, cookiesStatus),
+		fmt.Sprintf("   Config:    %s", configPath),
+		fmt.Sprintf("   Cookies:   %s  %s", cookiesPath, cookiesStatus),
+		fmt.Sprintf("   Downloads: %s", downloadPath),
 	)
 	pathsPanel := configPanelStyle.Width(contentWidth).Render(pathsContent)
 	sections = append(sections, pathsPanel)

@@ -20,6 +20,7 @@ var (
 	imageFlag          string
 	browserRefreshFlag string
 	gemFlag            string
+	saveImagesFlag     string
 
 	// Version info (set at build time)
 	Version   = "0.1.0"
@@ -107,6 +108,7 @@ func init() {
 	rootCmd.Flags().StringVarP(&fileFlag, "file", "f", "", "Read prompt from file")
 	rootCmd.Flags().StringVarP(&imageFlag, "image", "i", "", "Path to image file to include")
 	rootCmd.Flags().StringVar(&gemFlag, "gem", "", "Use a gem (by ID or name) - server-side persona")
+	rootCmd.Flags().StringVar(&saveImagesFlag, "save-images", "", "Save response images to specified directory")
 	rootCmd.Flags().BoolP("version", "v", false, "Show version and exit")
 
 	// Add subcommands

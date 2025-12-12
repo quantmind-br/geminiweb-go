@@ -195,12 +195,13 @@ func TestExtractCookiesFromStore(t *testing.T) {
 
 	defer func() {
 		for _, store := range stores {
-			store.Close()
+			_ = store.Close()
 		}
 	}()
 
-	// Test with first available store
-	for _, store := range stores {
+	// Test with first available store only
+	if len(stores) > 0 {
+		store := stores[0]
 		result, err := extractCookiesFromStore(ctx, store, store.Browser(), store.Profile())
 		// We expect either success (if Gemini cookies exist) or specific error
 		if err != nil {
@@ -217,6 +218,5 @@ func TestExtractCookiesFromStore(t *testing.T) {
 				t.Error("extractCookiesFromStore returned empty BrowserName in result")
 			}
 		}
-		break // Test with just one store
 	}
 }

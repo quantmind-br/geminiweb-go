@@ -86,30 +86,6 @@ func (s *Store) saveMeta(meta *HistoryMeta) error {
 	return nil
 }
 
-// ensureInMeta ensures a conversation is tracked in metadata
-// If the conversation is not in meta, it adds it to the end of the order
-func (s *Store) ensureInMeta(conv *Conversation) error {
-	meta, err := s.loadMeta()
-	if err != nil {
-		return err
-	}
-
-	// Check if already in meta
-	if _, exists := meta.Meta[conv.ID]; exists {
-		return nil
-	}
-
-	// Add to meta
-	meta.Order = append(meta.Order, conv.ID)
-	meta.Meta[conv.ID] = &ConversationMeta{
-		ID:         conv.ID,
-		Title:      conv.Title,
-		IsFavorite: false,
-	}
-
-	return s.saveMeta(meta)
-}
-
 // removeFromMeta removes a conversation from metadata
 func (s *Store) removeFromMeta(id string) error {
 	meta, err := s.loadMeta()

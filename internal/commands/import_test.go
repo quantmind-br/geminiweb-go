@@ -91,7 +91,7 @@ func TestRunImportCookies_ValidSource(t *testing.T) {
 
 	// Read output
 	var buf bytes.Buffer
-	buf.ReadFrom(r)
+	_, _ = buf.ReadFrom(r)
 	output := buf.String()
 
 	// Should contain success message

@@ -143,8 +143,8 @@ func TestGetCookiesPath(t *testing.T) {
 func TestSaveConfig(t *testing.T) {
 	tmpDir := t.TempDir()
 	oldHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", oldHome)
+	_ = os.Setenv("HOME", tmpDir)
+	defer func() { _ = os.Setenv("HOME", oldHome) }()
 
 	cfg := Config{
 		DefaultModel: "gemini-3.0-pro",
@@ -194,12 +194,12 @@ func TestSaveConfig(t *testing.T) {
 func TestLoadConfig_WithExistingFile(t *testing.T) {
 	tmpDir := t.TempDir()
 	oldHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", oldHome)
+	_ = os.Setenv("HOME", tmpDir)
+	defer func() { _ = os.Setenv("HOME", oldHome) }()
 
 	// Create config directory and file
 	configDir := filepath.Join(tmpDir, ".geminiweb")
-	os.MkdirAll(configDir, 0o755)
+	_ = os.MkdirAll(configDir, 0o755)
 
 	configPath := filepath.Join(configDir, "config.json")
 	originalCfg := Config{
@@ -232,12 +232,12 @@ func TestLoadConfig_WithExistingFile(t *testing.T) {
 func TestLoadConfig_InvalidJSON(t *testing.T) {
 	tmpDir := t.TempDir()
 	oldHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", oldHome)
+	_ = os.Setenv("HOME", tmpDir)
+	defer func() { _ = os.Setenv("HOME", oldHome) }()
 
 	// Create config directory and file with invalid JSON
 	configDir := filepath.Join(tmpDir, ".geminiweb")
-	os.MkdirAll(configDir, 0o755)
+	_ = os.MkdirAll(configDir, 0o755)
 
 	configPath := filepath.Join(configDir, "config.json")
 	invalidJSON := `{"invalid": json content`

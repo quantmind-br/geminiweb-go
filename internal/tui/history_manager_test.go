@@ -764,7 +764,7 @@ func TestHistoryManagerModel_Result(t *testing.T) {
 		m.selectedConv = store.conversations[0]
 		conv, quit := m.Result()
 		if conv == nil {
-			t.Error("conv should not be nil")
+			t.Fatal("conv should not be nil")
 		}
 		if conv.ID != "conv-1" {
 			t.Errorf("conv.ID = %s, want conv-1", conv.ID)

@@ -216,14 +216,14 @@ func TestCookieListItem_Fields(t *testing.T) {
 func setupCookiesTestEnv(t *testing.T) (tmpDir string, cleanup func()) {
 	tmpDir = t.TempDir()
 	oldHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
+	_ = os.Setenv("HOME", tmpDir)
 
 	// Create the config directory
 	configDir := filepath.Join(tmpDir, ".geminiweb")
-	os.MkdirAll(configDir, 0o755)
+	_ = os.MkdirAll(configDir, 0o755)
 
 	cleanup = func() {
-		os.Setenv("HOME", oldHome)
+		_ = os.Setenv("HOME", oldHome)
 	}
 	return tmpDir, cleanup
 }

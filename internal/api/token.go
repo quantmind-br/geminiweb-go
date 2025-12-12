@@ -55,8 +55,8 @@ func GetAccessToken(client tls_client.HttpClient, cookies *config.Cookies) (stri
 						"Google has temporarily blocked access (too many requests)",
 						models.EndpointInit,
 					)
-					authErr.GeminiError.HTTPStatus = resp.StatusCode
-					authErr.GeminiError.WithBody(fmt.Sprintf(
+					authErr.HTTPStatus = resp.StatusCode
+					_ = authErr.WithBody(fmt.Sprintf(
 						"Redirect to blocking page: %s\n\nTo resolve:\n1. Open your browser and visit: https://gemini.google.com/app\n2. Solve any CAPTCHA if presented\n3. Try again after a few minutes",
 						location,
 					))
@@ -67,8 +67,8 @@ func GetAccessToken(client tls_client.HttpClient, cookies *config.Cookies) (stri
 					fmt.Sprintf("unexpected redirect (status: %d)", resp.StatusCode),
 					models.EndpointInit,
 				)
-				authErr.GeminiError.HTTPStatus = resp.StatusCode
-				authErr.GeminiError.WithBody(fmt.Sprintf("Redirect to: %s", location))
+				authErr.HTTPStatus = resp.StatusCode
+				_ = authErr.WithBody(fmt.Sprintf("Redirect to: %s", location))
 				return "", authErr
 			}
 		}
@@ -93,8 +93,8 @@ func GetAccessToken(client tls_client.HttpClient, cookies *config.Cookies) (stri
 			fmt.Sprintf("failed to fetch access token, status: %d", resp.StatusCode),
 			models.EndpointInit,
 		)
-		authErr.GeminiError.HTTPStatus = resp.StatusCode
-		authErr.GeminiError.WithBody(string(errorBody))
+		authErr.HTTPStatus = resp.StatusCode
+		_ = authErr.WithBody(string(errorBody))
 		return "", authErr
 	}
 

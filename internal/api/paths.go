@@ -4,7 +4,8 @@ package api
 // GJSON paths for extracting values from Gemini responses.
 // These centralize the "magic indices" from the Python implementation.
 const (
-	// Response body paths
+	// Response body paths - standard response structure
+	// Normal responses have body at index 0: response[0][2]
 	PathBody      = "2"
 	PathCandList  = "4"
 	PathMetadata  = "1"
@@ -13,6 +14,11 @@ const (
 	// Alternative error path - used when API returns simple error format
 	// e.g., [["wrb.fr",null,null,null,null,[3]],...]  - error code at position 0.5.0
 	PathAltErrorCode = "0.5.0"
+
+	// Extension response paths - when using @Gmail, @YouTube, etc.
+	// Extension responses have body at index 4 instead of 0: response[4][2]
+	// This is a shift in the response structure when extensions are active
+	PathExtensionBodyOffset = 4
 
 	// Candidate paths (relative to candidate object)
 	PathCandRCID      = "0"

@@ -28,9 +28,9 @@ func TestRunAutoLogin_Timeout(t *testing.T) {
 	// Override the temp directory used by config
 	originalHome := os.Getenv("HOME")
 	defer func() {
-		os.Setenv("HOME", originalHome)
+		_ = os.Setenv("HOME", originalHome)
 	}()
-	os.Setenv("HOME", tmpDir)
+	_ = os.Setenv("HOME", tmpDir)
 
 	// Test with auto browser selection and very short timeout
 	// This should fail with timeout or "browser not found" error
@@ -50,9 +50,9 @@ func TestRunAutoLogin_ValidBrowser(t *testing.T) {
 	// Override the temp directory used by config
 	originalHome := os.Getenv("HOME")
 	defer func() {
-		os.Setenv("HOME", originalHome)
+		_ = os.Setenv("HOME", originalHome)
 	}()
-	os.Setenv("HOME", tmpDir)
+	_ = os.Setenv("HOME", tmpDir)
 
 	// Test with valid browser name but expect failure due to no actual browser
 	// This tests that the function handles the case gracefully
@@ -100,7 +100,7 @@ func TestTruncateValue(t *testing.T) {
 func TestGetAutoLoginCmd(t *testing.T) {
 	cmd := GetAutoLoginCmd()
 	if cmd == nil {
-		t.Error("GetAutoLoginCmd() returned nil")
+		t.Fatal("GetAutoLoginCmd() returned nil")
 	}
 	if cmd.Use != "auto-login" {
 		t.Errorf("GetAutoLoginCmd() use = %q, want %q", cmd.Use, "auto-login")

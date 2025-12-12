@@ -6,19 +6,6 @@ import (
 	"github.com/diogo/geminiweb/internal/models"
 )
 
-// mockGeminiClientForSession is a mock of api.GeminiClient for testing session functions
-type mockGeminiClientForSession struct {
-	fetchGemsFunc func(includeHidden bool) (*models.GemJar, error)
-	gemsJar       *models.GemJar
-}
-
-func (m *mockGeminiClientForSession) FetchGems(includeHidden bool) (*models.GemJar, error) {
-	if m.fetchGemsFunc != nil {
-		return m.fetchGemsFunc(includeHidden)
-	}
-	return m.gemsJar, nil
-}
-
 func TestResolveGemFlag_EmptyFlag(t *testing.T) {
 	// When gemFlag is empty, should return empty ResolvedGem without error
 	resolved, err := resolveGemFlag(nil, "")

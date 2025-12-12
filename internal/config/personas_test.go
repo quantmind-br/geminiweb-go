@@ -175,14 +175,14 @@ func TestFormatSystemPrompt_EmptySystemPrompt(t *testing.T) {
 func setupTestConfig(t *testing.T) (string, func()) {
 	tmpDir := t.TempDir()
 	oldHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
+	_ = os.Setenv("HOME", tmpDir)
 
 	// Create config directory
 	configDir := filepath.Join(tmpDir, ".geminiweb")
-	os.MkdirAll(configDir, 0o755)
+	_ = os.MkdirAll(configDir, 0o755)
 
 	cleanup := func() {
-		os.Setenv("HOME", oldHome)
+		_ = os.Setenv("HOME", oldHome)
 	}
 
 	return tmpDir, cleanup
@@ -361,7 +361,7 @@ func TestDeletePersona(t *testing.T) {
 	defer cleanup()
 
 	// Add a persona first
-	AddPersona(Persona{Name: "todelete"})
+	_ = AddPersona(Persona{Name: "todelete"})
 
 	err := DeletePersona("todelete")
 	if err != nil {

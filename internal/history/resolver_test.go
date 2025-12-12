@@ -31,7 +31,7 @@ func TestResolver_ResolveAtLast(t *testing.T) {
 	}
 
 	// Move conv1 to the top of the order
-	store.MoveConversation(conv1.ID, 0)
+	_ = store.MoveConversation(conv1.ID, 0)
 	id, _ = resolver.Resolve("@last")
 	if id != conv1.ID {
 		t.Errorf("@last after move = %s, want %s", id, conv1.ID)
@@ -44,7 +44,7 @@ func TestResolver_ResolveAtFirst(t *testing.T) {
 
 	conv1, _ := store.CreateConversation("model-1")
 	time.Sleep(10 * time.Millisecond)
-	store.CreateConversation("model-2")
+	_, _ = store.CreateConversation("model-2")
 
 	resolver := NewResolver(store)
 
@@ -96,7 +96,7 @@ func TestResolver_ResolveNumericIndex_OutOfRange(t *testing.T) {
 	tmpDir := t.TempDir()
 	store, _ := NewStore(tmpDir)
 
-	store.CreateConversation("model-1")
+	_, _ = store.CreateConversation("model-1")
 
 	resolver := NewResolver(store)
 
@@ -148,7 +148,7 @@ func TestResolver_ResolveSubstring(t *testing.T) {
 	store, _ := NewStore(tmpDir)
 
 	conv, _ := store.CreateConversation("test-model")
-	store.UpdateTitle(conv.ID, "API Development Discussion")
+	_ = store.UpdateTitle(conv.ID, "API Development Discussion")
 
 	resolver := NewResolver(store)
 
@@ -173,7 +173,7 @@ func TestResolver_ResolveSubstring_NoMatch(t *testing.T) {
 	store, _ := NewStore(tmpDir)
 
 	conv, _ := store.CreateConversation("test-model")
-	store.UpdateTitle(conv.ID, "API Development")
+	_ = store.UpdateTitle(conv.ID, "API Development")
 
 	resolver := NewResolver(store)
 
@@ -189,8 +189,8 @@ func TestResolver_ResolveSubstring_MultipleMatches(t *testing.T) {
 
 	conv1, _ := store.CreateConversation("model-1")
 	conv2, _ := store.CreateConversation("model-2")
-	store.UpdateTitle(conv1.ID, "API v1 Discussion")
-	store.UpdateTitle(conv2.ID, "API v2 Discussion")
+	_ = store.UpdateTitle(conv1.ID, "API v1 Discussion")
+	_ = store.UpdateTitle(conv2.ID, "API v2 Discussion")
 
 	resolver := NewResolver(store)
 
@@ -233,7 +233,7 @@ func TestResolver_ResolveWithInfo(t *testing.T) {
 	store, _ := NewStore(tmpDir)
 
 	conv, _ := store.CreateConversation("test-model")
-	store.UpdateTitle(conv.ID, "Test Title")
+	_ = store.UpdateTitle(conv.ID, "Test Title")
 
 	resolver := NewResolver(store)
 

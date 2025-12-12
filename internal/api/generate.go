@@ -247,6 +247,14 @@ func buildPayloadWithGem(prompt string, metadata []string, files []*UploadedFile
 }
 
 // parseResponse parses the Gemini API response
+// It handles both normal responses and extension responses (@Gmail, @YouTube, etc.)
+//
+// Response structure:
+// - Normal responses: body at response[0][2] (index 0)
+// - Extension responses: body at response[4][2] (index 4, PathExtensionBodyOffset)
+//
+// The function iterates through all indices to find the first one with valid content,
+// which automatically handles both normal and extension response formats.
 func parseResponse(body []byte, modelName string) (*models.ModelOutput, error) {
 	// Response is streaming with multiple JSON chunks separated by size prefixes
 	// We need to find the chunk that contains the actual response with candidates
@@ -255,6 +263,7 @@ func parseResponse(body []byte, modelName string) (*models.ModelOutput, error) {
 	var responseBody gjson.Result
 	var bodyIndex int
 	var lastError error
+	var isExtensionResponse bool
 
 	// Iterate through all valid JSON lines to find one with candidates
 	for _, line := range lines {
@@ -306,6 +315,8 @@ func parseResponse(body []byte, modelName string) (*models.ModelOutput, error) {
 					if hasContent {
 						responseBody = bodyJSON
 						bodyIndex = int(key.Int())
+						// Check if this is an extension response (body found at offset 4+)
+						isExtensionResponse = bodyIndex >= PathExtensionBodyOffset
 						return false
 					}
 				}
@@ -427,9 +438,10 @@ func parseResponse(body []byte, modelName string) (*models.ModelOutput, error) {
 	_ = bodyIndex // Used for generated image parsing in extended version
 
 	return &models.ModelOutput{
-		Metadata:   metadata,
-		Candidates: candidates,
-		Chosen:     0,
+		Metadata:            metadata,
+		Candidates:          candidates,
+		Chosen:              0,
+		IsExtensionResponse: isExtensionResponse,
 	}, nil
 }
 

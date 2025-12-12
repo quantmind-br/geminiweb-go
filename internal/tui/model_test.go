@@ -471,60 +471,6 @@ func TestErrMsg_Struct(t *testing.T) {
 	}
 }
 
-// Helper function to create a textarea for testing
-func createTestTextarea(value string) tea.Model {
-	ta := createTestTextareaImpl(value)
-	return ta
-}
-
-// Since textarea.New() would panic in test without proper init, we create a minimal mock
-func createTestTextareaImpl(value string) tea.Model {
-	// Return a minimal tea.Model that responds to Update
-	return &mockTextarea{value: value}
-}
-
-// mockTextarea is a minimal mock of textarea.Model
-type mockTextarea struct {
-	value   string
-	focused bool
-}
-
-func (m *mockTextarea) Init() tea.Cmd {
-	return nil
-}
-
-func (m *mockTextarea) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	return m, nil
-}
-
-func (m *mockTextarea) View() string {
-	return m.value
-}
-
-// Helper function to create a spinner for testing
-func createTestSpinner() tea.Model {
-	// Create a minimal spinner mock that responds to Init and Tick
-	return &mockSpinner{}
-}
-
-// mockSpinner is a minimal mock of spinner.Model
-type mockSpinner struct{}
-
-func (m *mockSpinner) Init() tea.Cmd {
-	return func() tea.Msg {
-		return spinner.TickMsg{}
-	}
-}
-
-func (m *mockSpinner) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	return m, nil
-}
-
-func (m *mockSpinner) View() string {
-	return "..."
-}
-
-
 // mockChatSession is a mock of *api.ChatSession for testing
 type mockChatSession struct {
 	sendMessageFunc    func(prompt string, files []*api.UploadedFile) (*models.ModelOutput, error)
@@ -2932,10 +2878,22 @@ func (m *mockGeminiClientWithUpload) CreateGem(name, prompt, description string)
 func (m *mockGeminiClientWithUpload) UpdateGem(gemID, name, prompt, description string) (*models.Gem, error) {
 	return nil, nil
 }
-func (m *mockGeminiClientWithUpload) DeleteGem(gemID string) error    { return nil }
-func (m *mockGeminiClientWithUpload) Gems() *models.GemJar            { return nil }
+func (m *mockGeminiClientWithUpload) DeleteGem(gemID string) error      { return nil }
+func (m *mockGeminiClientWithUpload) Gems() *models.GemJar              { return nil }
 func (m *mockGeminiClientWithUpload) GetGem(id, name string) *models.Gem { return nil }
 func (m *mockGeminiClientWithUpload) BatchExecute(requests []api.RPCData) ([]api.BatchResponse, error) {
+	return nil, nil
+}
+func (m *mockGeminiClientWithUpload) DownloadImage(img models.WebImage, opts api.ImageDownloadOptions) (string, error) {
+	return "", nil
+}
+func (m *mockGeminiClientWithUpload) DownloadGeneratedImage(img models.GeneratedImage, opts api.ImageDownloadOptions) (string, error) {
+	return "", nil
+}
+func (m *mockGeminiClientWithUpload) DownloadAllImages(output *models.ModelOutput, opts api.ImageDownloadOptions) ([]string, error) {
+	return nil, nil
+}
+func (m *mockGeminiClientWithUpload) DownloadSelectedImages(output *models.ModelOutput, indices []int, opts api.ImageDownloadOptions) ([]string, error) {
 	return nil, nil
 }
 

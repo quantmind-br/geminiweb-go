@@ -51,6 +51,12 @@ type (
 		overwrite bool   // If file was overwritten
 		err       error  // Error, if any
 	}
+	// downloadImagesResultMsg is sent when image download completes
+	downloadImagesResultMsg struct {
+		paths []string // Paths to downloaded images
+		count int      // Number of images downloaded
+		err   error    // Error, if any
+	}
 )
 
 // ChatSessionInterface defines the interface for chat session operations needed by the TUI
@@ -131,6 +137,15 @@ type Model struct {
 
 	// File attachments (for /file and /image commands)
 	attachments []*api.UploadedFile
+
+	// Image download state (for /save command)
+	selectingImages bool
+	imageSelector   ImageSelectorModel
+	lastOutput      *models.ModelOutput // Store last response for image access
+	downloadDir     string              // Directory for saving images
+
+	// Extension state
+	detectedExtension models.Extension // Extension detected in prompt (e.g., @Gmail)
 
 	// Dimensions
 	width  int
@@ -216,6 +231,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Handle history selection mode
 	if m.selectingHistory {
 		return m.updateHistorySelection(msg)
+	}
+
+	// Handle image selection mode (for /save command)
+	if m.selectingImages {
+		return m.updateImageSelection(msg)
 	}
 
 	switch msg := msg.(type) {
@@ -379,6 +399,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					case "export":
 						return m.handleExportCommand(parsed.Args)
 
+					case "save", "download":
+						return m.handleSaveCommand(parsed.Args)
+
 					default:
 						// Unknown command - show error but don't send as message
 						m.err = fmt.Errorf("unknown command: /%s", parsed.Command)
@@ -408,6 +431,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.animationFrame = 0
 				userMsg := m.textarea.Value()
 				m.textarea.Reset()
+
+				// Detect extensions in the prompt
+				if ext, found := models.DetectExtension(userMsg); found {
+					m.detectedExtension = ext
+				} else {
+					m.detectedExtension = ""
+				}
 
 				// Send message with attachments
 				cmd = m.sendMessageWithAttachments(userMsg)
@@ -463,8 +493,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.err = fmt.Errorf("%s", feedback)
 		}
 
+	case downloadImagesResultMsg:
+		if msg.err != nil {
+			m.err = msg.err
+		} else if msg.count > 0 {
+			m.err = fmt.Errorf("✓ Downloaded %d image(s) to %s", msg.count, m.imageSelector.TargetDir())
+		} else {
+			m.err = fmt.Errorf("no images were downloaded")
+		}
+
 	case responseMsg:
 		m.loading = false
+		m.lastOutput = msg.output // Store for /save command
 		responseText := msg.output.Text()
 		thoughts := msg.output.Thoughts()
 		images := msg.output.Images()
@@ -528,6 +568,11 @@ func (m Model) View() string {
 	// If selecting history, show the history selector overlay
 	if m.selectingHistory {
 		return m.renderHistorySelector()
+	}
+
+	// If selecting images, show the image selector overlay
+	if m.selectingImages {
+		return m.imageSelector.View()
 	}
 
 	var sections []string
@@ -702,6 +747,16 @@ func (m Model) renderStatusBar(width int) string {
 	}
 
 	var items []string
+
+	// Show extension indicator if one was detected
+	if m.detectedExtension != "" {
+		extIndicator := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#7dcfff")). // Cyan color for extension
+			Bold(true).
+			Render(string(m.detectedExtension))
+		items = append(items, extIndicator)
+	}
+
 	for _, s := range shortcuts {
 		item := lipgloss.JoinHorizontal(
 			lipgloss.Center,
@@ -833,6 +888,67 @@ func (m Model) handleExportCommand(args string) (tea.Model, tea.Cmd) {
 
 	m.err = fmt.Errorf("no conversation to export")
 	return m, nil
+}
+
+// handleSaveCommand handles the /save command to download images
+func (m Model) handleSaveCommand(args string) (tea.Model, tea.Cmd) {
+	m.textarea.Reset()
+
+	// Check if we have a last response with images
+	if m.lastOutput == nil {
+		m.err = fmt.Errorf("no images to save - send a message first")
+		return m, nil
+	}
+
+	images := m.lastOutput.Images()
+	if len(images) == 0 {
+		m.err = fmt.Errorf("no images in the last response")
+		return m, nil
+	}
+
+	// Determine target directory
+	targetDir := m.downloadDir
+	if args != "" {
+		targetDir = strings.TrimSpace(args)
+	}
+	if targetDir == "" {
+		// Use default from config
+		homeDir, _ := os.UserHomeDir()
+		targetDir = filepath.Join(homeDir, ".geminiweb", "images")
+	}
+
+	// Open image selector
+	m.selectingImages = true
+	m.imageSelector = NewImageSelectorModel(images, targetDir)
+	m.imageSelector.width = m.width
+	m.imageSelector.height = m.height
+	m.imageSelector.ready = true
+
+	return m, nil
+}
+
+// downloadSelectedImages creates a command to download selected images
+func (m Model) downloadSelectedImages(indices []int, targetDir string) tea.Cmd {
+	return func() tea.Msg {
+		if m.lastOutput == nil {
+			return downloadImagesResultMsg{err: fmt.Errorf("no output available")}
+		}
+
+		opts := api.ImageDownloadOptions{
+			Directory: targetDir,
+			FullSize:  true,
+		}
+
+		paths, err := m.client.DownloadSelectedImages(m.lastOutput, indices, opts)
+		if err != nil {
+			return downloadImagesResultMsg{err: err}
+		}
+
+		return downloadImagesResultMsg{
+			paths: paths,
+			count: len(paths),
+		}
+	}
 }
 
 // uploadFile creates a command to upload a file
@@ -1674,6 +1790,45 @@ func (m Model) updateHistorySelection(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		}
+	}
+
+	return m, nil
+}
+
+// updateImageSelection handles input when selecting images for download
+func (m Model) updateImageSelection(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		m.imageSelector.width = msg.Width
+		m.imageSelector.height = msg.Height
+
+	case tea.KeyMsg:
+		// Update the image selector
+		var cmd tea.Cmd
+		m.imageSelector, cmd = m.imageSelector.Update(msg)
+
+		// Check if selection is complete
+		if m.imageSelector.IsConfirmed() {
+			m.selectingImages = false
+
+			if m.imageSelector.IsCancelled() {
+				// User cancelled
+				return m, cmd
+			}
+
+			// User confirmed - start download
+			indices := m.imageSelector.SelectedIndices()
+			if len(indices) == 0 {
+				m.err = fmt.Errorf("no images selected")
+				return m, cmd
+			}
+
+			return m, m.downloadSelectedImages(indices, m.imageSelector.TargetDir())
+		}
+
+		return m, cmd
 	}
 
 	return m, nil

@@ -89,7 +89,7 @@ func TestGeminiError(t *testing.T) {
 		for i := range longBody {
 			longBody[i] = 'a'
 		}
-		err.WithBody(string(longBody))
+		_ = err.WithBody(string(longBody))
 		// maxBodyLen is 1000, so truncated body should be ~1000 + truncation marker
 		if len(err.Body) <= 1000 {
 			t.Errorf("Body should be truncated around 1000 chars, got %d", len(err.Body))

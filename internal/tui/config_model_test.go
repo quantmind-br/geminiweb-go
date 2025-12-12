@@ -699,7 +699,7 @@ func TestConfigModel_cookiesExistDetection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp file: %v", err)
 	}
-	f.Close()
+	_ = f.Close()
 
 	// Note: Testing cookiesExist detection requires mocking file system operations
 	// which is beyond the scope of this unit test. The functionality is tested
@@ -720,9 +720,8 @@ func TestConfigModel_feedbackClearMsg(t *testing.T) {
 	msg := feedbackClearMsg{}
 
 	// The message should be instantiatable without panic
-	if msg == (feedbackClearMsg{}) {
-		// This is expected - zero value is valid
-	}
+	// Zero value is valid - just verify type exists
+	_ = msg
 }
 
 func TestRunConfig(t *testing.T) {
