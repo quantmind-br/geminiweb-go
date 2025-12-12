@@ -31,6 +31,7 @@ type BatchResponse struct {
 	Identifier string // Identifier que foi enviado na requisição
 	Data       string // JSON string com os dados da resposta
 	Error      error  // Erro se houver falha nesta operação específica
+	Found      bool   // Indica se o identifier foi encontrado na resposta do servidor
 }
 
 // BatchExecute executa múltiplas chamadas RPC em uma única requisição HTTP
@@ -59,6 +60,19 @@ func (c *GeminiClient) BatchExecute(requests []RPCData) ([]BatchResponse, error)
 		return nil, fmt.Errorf("failed to marshal batch payload: %w", err)
 	}
 
+	// Construct URL with rpcids
+	rpcIDs := make([]string, len(requests))
+	for i, req := range requests {
+		rpcIDs[i] = req.RPCID
+	}
+	u, err := url.Parse(models.EndpointBatchExec)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse batch endpoint URL: %w", err)
+	}
+	q := u.Query()
+	q.Set("rpcids", strings.Join(rpcIDs, ","))
+	u.RawQuery = q.Encode()
+
 	// Criar form data (igual ao generate)
 	form := url.Values{}
 	form.Set("at", c.GetAccessToken())
@@ -66,7 +80,7 @@ func (c *GeminiClient) BatchExecute(requests []RPCData) ([]BatchResponse, error)
 
 	req, err := http.NewRequest(
 		http.MethodPost,
-		models.EndpointBatchExec,
+		u.String(),
 		strings.NewReader(form.Encode()),
 	)
 	if err != nil {
@@ -77,12 +91,17 @@ func (c *GeminiClient) BatchExecute(requests []RPCData) ([]BatchResponse, error)
 	for key, value := range models.DefaultHeaders() {
 		req.Header.Set(key, value)
 	}
+	// Add generic gem header
+	for key, value := range models.GeminiGenericHeader {
+		req.Header.Set(key, value)
+	}
 
-	// Set cookies
+	// Set cookies (using Snapshot for atomic read)
 	cookies := c.GetCookies()
-	req.AddCookie(&http.Cookie{Name: "__Secure-1PSID", Value: cookies.Secure1PSID})
-	if cookies.Secure1PSIDTS != "" {
-		req.AddCookie(&http.Cookie{Name: "__Secure-1PSIDTS", Value: cookies.Secure1PSIDTS})
+	psid, psidts := cookies.Snapshot()
+	req.AddCookie(&http.Cookie{Name: "__Secure-1PSID", Value: psid})
+	if psidts != "" {
+		req.AddCookie(&http.Cookie{Name: "__Secure-1PSIDTS", Value: psidts})
 	}
 
 	resp, err := c.httpClient.Do(req)
@@ -202,6 +221,7 @@ func parseBatchResponse(body []byte, requests []RPCData) ([]BatchResponse, error
 			for i, resp := range responses {
 				if resp.Identifier == identifier {
 					responses[i].Data = data
+					responses[i].Found = true
 					break
 				}
 			}

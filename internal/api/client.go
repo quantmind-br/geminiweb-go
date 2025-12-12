@@ -398,39 +398,52 @@ func (c *GeminiClient) initialBrowserRefresh(browserType browser.SupportedBrowse
 // RefreshFromBrowser attempts to refresh cookies by extracting them from the browser
 // Returns true if cookies were successfully refreshed
 func (c *GeminiClient) RefreshFromBrowser() (bool, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
+	// PHASE 1: Check preconditions with read lock
+	c.mu.RLock()
 	if !c.browserRefresh {
+		c.mu.RUnlock()
 		return false, fmt.Errorf("browser refresh is not enabled")
 	}
-
-	// Rate limit browser refresh attempts
 	if time.Since(c.lastBrowserRefresh) < c.browserRefreshMinWait {
-		return false, fmt.Errorf("browser refresh attempted too recently, wait %v", c.browserRefreshMinWait-time.Since(c.lastBrowserRefresh))
+		waitTime := c.browserRefreshMinWait - time.Since(c.lastBrowserRefresh)
+		c.mu.RUnlock()
+		return false, fmt.Errorf("browser refresh attempted too recently, wait %v", waitTime)
 	}
+	browserType := c.browserRefreshType
+	extractor := c.browserExtractor
+	c.mu.RUnlock()
 
+	// PHASE 2: Network operations WITHOUT lock
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	// Use injected extractor if available, otherwise use default implementation
 	var result *browser.ExtractResult
 	var err error
-
-	if c.browserExtractor != nil {
-		result, err = c.browserExtractor.ExtractGeminiCookies(ctx, c.browserRefreshType)
+	if extractor != nil {
+		result, err = extractor.ExtractGeminiCookies(ctx, browserType)
 	} else {
-		result, err = browser.ExtractGeminiCookies(ctx, c.browserRefreshType)
+		result, err = browser.ExtractGeminiCookies(ctx, browserType)
 	}
 
 	if err != nil {
+		// Update timestamp even on error for rate limiting
+		c.mu.Lock()
 		c.lastBrowserRefresh = time.Now()
+		c.mu.Unlock()
 		return false, fmt.Errorf("failed to extract cookies from browser: %w", err)
 	}
 
-	// Update cookies
-	c.cookies.Secure1PSID = result.Cookies.Secure1PSID
-	c.cookies.Secure1PSIDTS = result.Cookies.Secure1PSIDTS
+	// PHASE 3: Update state with write lock
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	// Re-check rate limit (double-check locking pattern)
+	if time.Since(c.lastBrowserRefresh) < c.browserRefreshMinWait {
+		return false, fmt.Errorf("browser refresh completed by another goroutine")
+	}
+
+	// Update cookies atomically
+	c.cookies.SetBoth(result.Cookies.Secure1PSID, result.Cookies.Secure1PSIDTS)
 	c.lastBrowserRefresh = time.Now()
 
 	// Save updated cookies to disk
@@ -440,6 +453,7 @@ func (c *GeminiClient) RefreshFromBrowser() (bool, error) {
 	}
 
 	// Re-fetch access token with new cookies
+	// Note: This HTTP request is still under lock, but it's short
 	token, err := GetAccessToken(c.httpClient, c.cookies)
 	if err != nil {
 		return false, fmt.Errorf("failed to get access token with new cookies: %w", err)

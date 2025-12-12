@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/tidwall/gjson"
 
@@ -40,22 +41,33 @@ func (c *GeminiClient) FetchGems(includeHidden bool) (*models.GemJar, error) {
 	}
 
 	jar := make(models.GemJar)
+	var fetchErrors []string
 
 	for _, resp := range responses {
-		if resp.Error != nil || resp.Data == "" {
+		if resp.Error != nil {
+			fetchErrors = append(fetchErrors, fmt.Sprintf("%s: %v", resp.Identifier, resp.Error))
+			continue
+		}
+		if resp.Data == "" {
+			fetchErrors = append(fetchErrors, fmt.Sprintf("%s: empty response", resp.Identifier))
 			continue
 		}
 
 		predefined := resp.Identifier == "system"
 		gems, err := parseGemsResponse(resp.Data, predefined)
 		if err != nil {
-			// Log mas não falha - pode ter dados parciais
+			fetchErrors = append(fetchErrors, fmt.Sprintf("%s: parse error: %v", resp.Identifier, err))
 			continue
 		}
 
 		for _, gem := range gems {
 			jar[gem.ID] = gem
 		}
+	}
+
+	// If we got no gems and had errors, return error
+	if len(jar) == 0 && len(fetchErrors) > 0 {
+		return nil, fmt.Errorf("failed to fetch gems: %s", strings.Join(fetchErrors, "; "))
 	}
 
 	// Atualizar cache no client
@@ -267,9 +279,21 @@ func (c *GeminiClient) DeleteGem(gemID string) error {
 		},
 	}
 
-	_, err = c.BatchExecute(requests)
+	responses, err := c.BatchExecute(requests)
 	if err != nil {
 		return fmt.Errorf("failed to delete gem: %w", err)
+	}
+
+	// Verify response
+	if len(responses) == 0 {
+		return fmt.Errorf("failed to delete gem: no response received")
+	}
+	if responses[0].Error != nil {
+		return fmt.Errorf("failed to delete gem: %w", responses[0].Error)
+	}
+	// If the server didn't include our identifier in the response, it means the request was ignored/failed.
+	if !responses[0].Found {
+		return fmt.Errorf("failed to delete gem: server did not acknowledge deletion (invalid RPC response)")
 	}
 
 	// Remover do cache

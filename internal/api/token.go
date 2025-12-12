@@ -28,10 +28,11 @@ func GetAccessToken(client tls_client.HttpClient, cookies *config.Cookies) (stri
 		req.Header.Set(key, value)
 	}
 
-	// Set cookies
-	req.AddCookie(&http.Cookie{Name: "__Secure-1PSID", Value: cookies.Secure1PSID})
-	if cookies.Secure1PSIDTS != "" {
-		req.AddCookie(&http.Cookie{Name: "__Secure-1PSIDTS", Value: cookies.Secure1PSIDTS})
+	// Set cookies (using Snapshot for atomic read)
+	psid, psidts := cookies.Snapshot()
+	req.AddCookie(&http.Cookie{Name: "__Secure-1PSID", Value: psid})
+	if psidts != "" {
+		req.AddCookie(&http.Cookie{Name: "__Secure-1PSIDTS", Value: psidts})
 	}
 
 	resp, err := client.Do(req)

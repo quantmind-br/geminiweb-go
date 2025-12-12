@@ -278,8 +278,19 @@ func (m GemsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.feedback = fmt.Sprintf("Deleted gem '%s'", msg.gemName)
 			m.view = gemsViewList
 			m.selectedGem = nil
-			// Reload gems
-			return m, tea.Batch(m.loadGems(), clearGemsFeedback(m.feedbackTimeout))
+
+			// Optimistically remove from local list to avoid eventual consistency issues
+			// (Reloading immediately often brings the deleted gem back)
+			var newAllGems []*models.Gem
+			for _, g := range m.allGems {
+				if g.ID != msg.gemID {
+					newAllGems = append(newAllGems, g)
+				}
+			}
+			m.allGems = newAllGems
+			m.filterGems()
+
+			return m, clearGemsFeedback(m.feedbackTimeout)
 		}
 		return m, clearGemsFeedback(m.feedbackTimeout)
 

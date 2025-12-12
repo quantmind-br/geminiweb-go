@@ -180,8 +180,12 @@ func (u *FileUploader) uploadStream(
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 200 && resp.StatusCode != 201 {
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		return nil, apierrors.NewUploadErrorWithStatus(fileName, resp.StatusCode, string(bodyBytes))
+		bodyBytes, readErr := io.ReadAll(resp.Body)
+		bodyStr := "(unable to read response body)"
+		if readErr == nil {
+			bodyStr = string(bodyBytes)
+		}
+		return nil, apierrors.NewUploadErrorWithStatus(fileName, resp.StatusCode, bodyStr)
 	}
 
 	// Response is plain text containing the file identifier
@@ -337,8 +341,12 @@ func (u *ImageUploader) uploadStream(
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 200 && resp.StatusCode != 201 {
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		return nil, apierrors.NewUploadErrorWithStatus(fileName, resp.StatusCode, string(bodyBytes))
+		bodyBytes, readErr := io.ReadAll(resp.Body)
+		bodyStr := "(unable to read response body)"
+		if readErr == nil {
+			bodyStr = string(bodyBytes)
+		}
+		return nil, apierrors.NewUploadErrorWithStatus(fileName, resp.StatusCode, bodyStr)
 	}
 
 	// Response is plain text containing the file identifier

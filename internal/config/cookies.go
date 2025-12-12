@@ -4,12 +4,43 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sync"
 )
 
 // Cookies represents the authentication cookies
 type Cookies struct {
-	Secure1PSID   string `json:"__Secure-1PSID"`
-	Secure1PSIDTS string `json:"__Secure-1PSIDTS,omitempty"`
+	mu            sync.RWMutex `json:"-"` // Not serialized
+	Secure1PSID   string       `json:"__Secure-1PSID"`
+	Secure1PSIDTS string       `json:"__Secure-1PSIDTS,omitempty"`
+}
+
+// GetSecure1PSID returns the __Secure-1PSID cookie in a thread-safe manner
+func (c *Cookies) GetSecure1PSID() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.Secure1PSID
+}
+
+// GetSecure1PSIDTS returns the __Secure-1PSIDTS cookie in a thread-safe manner
+func (c *Cookies) GetSecure1PSIDTS() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.Secure1PSIDTS
+}
+
+// Snapshot returns both cookies atomically (for serialization or HTTP requests)
+func (c *Cookies) Snapshot() (psid, psidts string) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.Secure1PSID, c.Secure1PSIDTS
+}
+
+// SetBoth updates both cookies atomically
+func (c *Cookies) SetBoth(psid, psidts string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.Secure1PSID = psid
+	c.Secure1PSIDTS = psidts
 }
 
 // CookieListItem represents a cookie in browser export format
@@ -136,8 +167,10 @@ func ValidateCookies(cookies *Cookies) error {
 	return nil
 }
 
-// ToMap converts cookies to a map for HTTP requests
+// ToMap converts cookies to a map for HTTP requests (thread-safe)
 func (c *Cookies) ToMap() map[string]string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	m := map[string]string{
 		"__Secure-1PSID": c.Secure1PSID,
 	}
@@ -147,7 +180,9 @@ func (c *Cookies) ToMap() map[string]string {
 	return m
 }
 
-// Update1PSIDTS updates the PSIDTS cookie value
+// Update1PSIDTS updates the PSIDTS cookie value (thread-safe)
 func (c *Cookies) Update1PSIDTS(value string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.Secure1PSIDTS = value
 }

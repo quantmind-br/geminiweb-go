@@ -108,8 +108,11 @@ func (c *GeminiClient) downloadImageURL(url, title string, opts ImageDownloadOpt
 		return "", apierrors.NewDownloadError("failed to save file: "+err.Error(), url)
 	}
 
-	// Return absolute path
-	absPath, _ := filepath.Abs(destPath)
+	// Return absolute path (fallback to relative path if Abs fails)
+	absPath, err := filepath.Abs(destPath)
+	if err != nil {
+		return destPath, nil
+	}
 	return absPath, nil
 }
 

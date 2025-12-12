@@ -132,16 +132,25 @@ func extractFromBrowser(ctx context.Context, browser SupportedBrowser) (*Extract
 		return nil, fmt.Errorf("browser %s not found or no cookie store available", browser)
 	}
 
-	// Try each store/profile until we find the cookies
-	var lastErr error
-	for _, store := range matchingStores {
-		result, err := extractCookiesFromStore(ctx, store, browserName, store.Profile())
-		_ = store.Close()
-		if err == nil {
-			// Close remaining stores
-			for _, s := range matchingStores {
+	// Track which stores have been closed to avoid double-close
+	closedStores := make(map[int]bool)
+	defer func() {
+		// Ensure all matching stores are closed on exit
+		for i, s := range matchingStores {
+			if !closedStores[i] {
 				_ = s.Close()
 			}
+		}
+	}()
+
+	// Try each store/profile until we find the cookies
+	var lastErr error
+	for i, store := range matchingStores {
+		result, err := extractCookiesFromStore(ctx, store, browserName, store.Profile())
+		_ = store.Close()
+		closedStores[i] = true
+
+		if err == nil {
 			return result, nil
 		}
 		lastErr = err

@@ -58,6 +58,11 @@ var (
 
 	// DefaultModel is the recommended default
 	DefaultModel = Model30Pro
+
+	// GeminiGenericHeader is the header used for generic Gem operations
+	GeminiGenericHeader = map[string]string{
+		"x-goog-ext-525001261-jspb": `[1,null,null,null,null,null,null,null,[4]]`,
+	}
 )
 
 // AllModels returns a list of all available models

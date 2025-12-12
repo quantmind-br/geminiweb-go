@@ -110,11 +110,12 @@ func (c *GeminiClient) doGenerateContent(prompt string, opts *GenerateOptions) (
 		req.Header.Set(key, value)
 	}
 
-	// Set cookies
+	// Set cookies (using Snapshot for atomic read)
 	cookies := c.GetCookies()
-	req.AddCookie(&http.Cookie{Name: "__Secure-1PSID", Value: cookies.Secure1PSID})
-	if cookies.Secure1PSIDTS != "" {
-		req.AddCookie(&http.Cookie{Name: "__Secure-1PSIDTS", Value: cookies.Secure1PSIDTS})
+	psid, psidts := cookies.Snapshot()
+	req.AddCookie(&http.Cookie{Name: "__Secure-1PSID", Value: psid})
+	if psidts != "" {
+		req.AddCookie(&http.Cookie{Name: "__Secure-1PSIDTS", Value: psidts})
 	}
 
 	resp, err := c.httpClient.Do(req)

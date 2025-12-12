@@ -42,16 +42,29 @@ var gemsCmd = &cobra.Command{
 	Long: `Gems are custom personas stored on Google's servers.
 Unlike local personas, gems sync across devices with your Google account.
 
-COMMANDS:
-  list     Browse gems interactively (press 'c' to start chat)
-  create   Create a new gem
-  update   Update an existing gem
-  delete   Delete a gem
-  show     Show gem details
+INTERACTIVE MODE (default):
+  Run 'geminiweb gems' to open the interactive gems manager where you can:
+  - Browse and search all gems
+  - Create new custom gems
+  - Edit existing gems
+  - Delete gems
+  - Start a chat with any gem
+
+KEYBOARD SHORTCUTS (interactive mode):
+  ↑↓       Navigate gems list
+  /        Search/filter gems
+  n        Create new gem
+  e        Edit selected gem
+  d        Delete selected gem
+  c        Start chat with selected gem
+  y        Copy gem ID to clipboard
+  Enter    View gem details
+  q        Quit
 
 QUICK START:
-  geminiweb gems list        # Browse and chat with gems
+  geminiweb gems             # Open interactive gems manager
   geminiweb chat --gem code  # Start chat with a gem directly`,
+	RunE: runGemsInteractive,
 }
 
 var gemsListCmd = &cobra.Command{
@@ -123,6 +136,33 @@ func init() {
 	gemsUpdateCmd.Flags().StringVarP(&gemDescription, "description", "d", "", "New description")
 	gemsUpdateCmd.Flags().StringVarP(&gemPromptFile, "file", "f", "", "Read prompt from file")
 	gemsUpdateCmd.Flags().StringVarP(&gemName, "name", "n", "", "New name for the gem")
+}
+
+// runGemsInteractive runs the interactive gems menu (default when no subcommand)
+func runGemsInteractive(cmd *cobra.Command, args []string) error {
+	client, err := createGemsClient()
+	if err != nil {
+		return err
+	}
+
+	// Launch the interactive TUI for gems with full functionality
+	result, err := tui.RunGemsTUI(client, gemsIncludeHidden)
+	if err != nil {
+		client.Close()
+		return err
+	}
+
+	// Check if user wants to start chat with a gem
+	if result.GemID != "" {
+		modelName := getModel()
+		model := models.ModelFromName(modelName)
+		session := createChatSession(client, result.GemID, model)
+		defer client.Close()
+		return tui.RunChatWithSession(client, session, modelName)
+	}
+
+	client.Close()
+	return nil
 }
 
 func runGemsList(cmd *cobra.Command, args []string) error {

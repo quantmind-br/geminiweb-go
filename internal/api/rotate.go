@@ -44,10 +44,11 @@ func RotateCookies(client tls_client.HttpClient, cookies *config.Cookies) (strin
 		req.Header.Set(key, value)
 	}
 
-	// Set cookies
-	req.AddCookie(&http.Cookie{Name: "__Secure-1PSID", Value: cookies.Secure1PSID})
-	if cookies.Secure1PSIDTS != "" {
-		req.AddCookie(&http.Cookie{Name: "__Secure-1PSIDTS", Value: cookies.Secure1PSIDTS})
+	// Set cookies (using Snapshot for atomic read)
+	psid, psidts := cookies.Snapshot()
+	req.AddCookie(&http.Cookie{Name: "__Secure-1PSID", Value: psid})
+	if psidts != "" {
+		req.AddCookie(&http.Cookie{Name: "__Secure-1PSIDTS", Value: psidts})
 	}
 
 	resp, err := client.Do(req)
@@ -82,6 +83,9 @@ func RotateCookies(client tls_client.HttpClient, cookies *config.Cookies) (strin
 	return "", nil
 }
 
+// RotatorErrorCallback is called when a cookie rotation error occurs
+type RotatorErrorCallback func(error)
+
 // CookieRotator manages background cookie rotation
 type CookieRotator struct {
 	client   tls_client.HttpClient
@@ -90,44 +94,72 @@ type CookieRotator struct {
 	stopCh   chan struct{}
 	running  bool
 	mu       sync.Mutex
+	onError  RotatorErrorCallback // Optional callback for rotation errors
+}
+
+// RotatorOption configures the CookieRotator
+type RotatorOption func(*CookieRotator)
+
+// WithErrorCallback sets a callback for rotation errors
+func WithErrorCallback(fn RotatorErrorCallback) RotatorOption {
+	return func(r *CookieRotator) {
+		r.onError = fn
+	}
 }
 
 // NewCookieRotator creates a new cookie rotator
-func NewCookieRotator(client tls_client.HttpClient, cookies *config.Cookies, interval time.Duration) *CookieRotator {
-	return &CookieRotator{
+func NewCookieRotator(client tls_client.HttpClient, cookies *config.Cookies, interval time.Duration, opts ...RotatorOption) *CookieRotator {
+	r := &CookieRotator{
 		client:   client,
 		cookies:  cookies,
 		interval: interval,
-		stopCh:   make(chan struct{}),
+		// stopCh will be created in Start()
 	}
+	for _, opt := range opts {
+		opt(r)
+	}
+	return r
 }
 
 // Start begins background cookie rotation
 func (r *CookieRotator) Start() {
 	r.mu.Lock()
+	defer r.mu.Unlock()
+
 	if r.running {
-		r.mu.Unlock()
 		return
 	}
+
+	// Create new channel in each Start() to allow restart after Stop()
+	r.stopCh = make(chan struct{})
 	r.running = true
-	r.mu.Unlock()
+
+	// Capture values to avoid race with Stop()
+	client := r.client
+	cookies := r.cookies
+	interval := r.interval
+	stopCh := r.stopCh
+	onError := r.onError
 
 	go func() {
-		ticker := time.NewTicker(r.interval)
+		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 
 		for {
 			select {
 			case <-ticker.C:
-				newToken, err := RotateCookies(r.client, r.cookies)
+				newToken, err := RotateCookies(client, cookies)
 				if err != nil {
-					// Log error but continue
+					// Report error via callback if configured
+					if onError != nil {
+						onError(fmt.Errorf("cookie rotation failed: %w", err))
+					}
 					continue
 				}
 				if newToken != "" {
-					r.cookies.Update1PSIDTS(newToken)
+					cookies.Update1PSIDTS(newToken)
 				}
-			case <-r.stopCh:
+			case <-stopCh:
 				return
 			}
 		}
@@ -135,12 +167,14 @@ func (r *CookieRotator) Start() {
 }
 
 // Stop halts background cookie rotation
+// Safe to call multiple times - subsequent calls are no-ops
 func (r *CookieRotator) Stop() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if r.running {
+	if r.running && r.stopCh != nil {
 		close(r.stopCh)
+		r.stopCh = nil
 		r.running = false
 	}
 }

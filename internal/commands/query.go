@@ -70,6 +70,7 @@ type spinner struct {
 	done    chan struct{}
 	mu      sync.Mutex
 	frame   int
+	stopped bool // Flag to prevent double-close
 }
 
 // newSpinner creates a new animated spinner
@@ -148,9 +149,19 @@ func (s *spinner) render() {
 	fmt.Fprintf(os.Stderr, "\r\033[K%s %s %s %s", spinnerChar, bar.String(), msg, dots.String())
 }
 
+// stopOnce safely closes the stop channel only once
+func (s *spinner) stopOnce() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.stopped {
+		close(s.stop)
+		s.stopped = true
+	}
+}
+
 // stopWithSuccess stops the spinner and shows success message
 func (s *spinner) stopWithSuccess(message string) {
-	close(s.stop)
+	s.stopOnce()
 	<-s.done
 
 	checkmark := lipgloss.NewStyle().Foreground(colorSuccess).Bold(true).Render("✓")
@@ -160,7 +171,7 @@ func (s *spinner) stopWithSuccess(message string) {
 
 // stopWithError stops the spinner and shows error
 func (s *spinner) stopWithError() {
-	close(s.stop)
+	s.stopOnce()
 	<-s.done
 }
 
