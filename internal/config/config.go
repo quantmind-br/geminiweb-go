@@ -71,7 +71,8 @@ func EnsureConfigDir() (string, error) {
 		return "", err
 	}
 
-	if err := os.MkdirAll(configDir, 0o755); err != nil {
+	// Use 0o700 for sensitive directories (contains cookies and config)
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
 		return "", fmt.Errorf("failed to create config directory: %w", err)
 	}
 
@@ -107,8 +108,8 @@ func GetDownloadDir(cfg Config) (string, error) {
 		dir = filepath.Join(homeDir, ".geminiweb", "images")
 	}
 
-	// Ensure directory exists
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	// Ensure directory exists (0o700 for privacy - downloaded images may be sensitive)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", fmt.Errorf("failed to create download directory: %w", err)
 	}
 
@@ -153,7 +154,8 @@ func SaveConfig(cfg Config) error {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
 
-	if err := os.WriteFile(configPath, data, 0o644); err != nil {
+	// Use 0o600 for sensitive files (config may contain preferences)
+	if err := os.WriteFile(configPath, data, 0o600); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
 

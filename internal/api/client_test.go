@@ -1301,16 +1301,18 @@ func TestGeminiClient_InitialBrowserRefresh(t *testing.T) {
 	})
 
 	t.Run("uses_auto_browser_when_type_not_set", func(t *testing.T) {
-		// Create client without setting browserRefreshType
-		client, err := NewClient(nil)
+		// Create client with browser refresh enabled but without setting specific browser type
+		// This tests that when browserRefresh is enabled but browserRefreshType is empty,
+		// it uses "auto" as the browser type
+		client, err := NewClient(nil, WithBrowserRefresh(browser.BrowserAuto))
 		if err != nil {
 			t.Fatalf("NewClient() failed: %v", err)
 		}
 
-		// Verify browserRefreshType is empty
-		if client.browserRefreshType != "" {
-			t.Errorf("browserRefreshType should be empty, got: %s", client.browserRefreshType)
-		}
+		// Since we set BrowserAuto, browserRefreshType should be "auto"
+		// but the test is about what happens when browserRefreshType is empty
+		// Let's manually clear it to test the fallback behavior
+		client.browserRefreshType = ""
 
 		// Create mock loader that fails to trigger browser refresh
 		client.cookieLoader = func() (*config.Cookies, error) {
@@ -1336,7 +1338,7 @@ func TestGeminiClient_InitialBrowserRefresh(t *testing.T) {
 
 		_ = client.Init()
 
-		// Should have used "auto" as the browser type
+		// Should have used "auto" as the browser type (fallback when browserRefreshType is empty)
 		if capturedBrowserType != browser.BrowserAuto {
 			t.Errorf("Expected browser type 'auto', got: %s", capturedBrowserType)
 		}

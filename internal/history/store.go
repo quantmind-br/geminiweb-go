@@ -47,7 +47,8 @@ type Store struct {
 // NewStore creates a new history store
 func NewStore(baseDir string) (*Store, error) {
 	historyDir := filepath.Join(baseDir, "history")
-	if err := os.MkdirAll(historyDir, 0o755); err != nil {
+	// Use 0o700 for sensitive directories (history contains conversation data)
+	if err := os.MkdirAll(historyDir, 0o700); err != nil {
 		return nil, fmt.Errorf("failed to create history directory: %w", err)
 	}
 
@@ -360,7 +361,8 @@ func (s *Store) saveConversation(conv *Conversation) error {
 	}
 
 	path := s.conversationPath(conv.ID)
-	if err := os.WriteFile(path, data, 0o644); err != nil {
+	// Use 0o600 for sensitive files (conversations contain user data)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
 		return fmt.Errorf("failed to write conversation: %w", err)
 	}
 

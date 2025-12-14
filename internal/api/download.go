@@ -241,17 +241,29 @@ func (c *GeminiClient) DownloadSelectedImages(output *models.ModelOutput, indice
 		return nil, nil
 	}
 
-	allImages := output.Images()
+	webCount := len(candidate.WebImages)
+	totalImages := webCount + len(candidate.GeneratedImages)
+
 	var paths []string
 	var lastError error
 
 	for _, idx := range indices {
-		if idx < 0 || idx >= len(allImages) {
+		if idx < 0 || idx >= totalImages {
 			continue
 		}
 
-		img := allImages[idx]
-		path, err := c.DownloadImage(img, opts)
+		var path string
+		var err error
+
+		if idx < webCount {
+			// Download web image
+			path, err = c.DownloadImage(candidate.WebImages[idx], opts)
+		} else {
+			// Download generated image (with FullSize support)
+			genIdx := idx - webCount
+			path, err = c.DownloadGeneratedImage(candidate.GeneratedImages[genIdx], opts)
+		}
+
 		if err != nil {
 			lastError = err
 			continue

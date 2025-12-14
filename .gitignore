@@ -67,3 +67,13 @@ debug.test
 *.cpu
 *.mem
 *.trace
+
+# Sensitive data - NEVER commit these
+requests/
+request*.txt
+logs/
+
+# AI planning documents (ephemeral)
+PLAN.md
+TASKS.md
+/history/

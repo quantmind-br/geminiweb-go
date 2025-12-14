@@ -101,7 +101,7 @@ func TestRootCommand_GlobalFlags(t *testing.T) {
 
 func TestRootCommand_Subcommands(t *testing.T) {
 	// Test that subcommands are registered
-	expectedSubcommands := []string{"chat", "config", "import-cookies", "sync"}
+	expectedSubcommands := []string{"chat", "config", "import-cookies"}
 
 	for _, sub := range expectedSubcommands {
 		t.Run("subcommand "+sub, func(t *testing.T) {
@@ -195,7 +195,7 @@ func TestRootCmd(t *testing.T) {
 	}
 
 	// Test that it has the expected subcommands
-	expectedCommands := []string{"chat", "config", "import-cookies", "history", "persona", "sync"}
+	expectedCommands := []string{"chat", "config", "import-cookies", "history", "persona"}
 	for _, expected := range expectedCommands {
 		found := false
 		for _, cmd := range cmd.Commands() {

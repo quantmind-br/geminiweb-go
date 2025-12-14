@@ -79,7 +79,8 @@ func (s *Store) saveMeta(meta *HistoryMeta) error {
 	}
 
 	path := s.metaPath()
-	if err := os.WriteFile(path, data, 0o644); err != nil {
+	// Use 0o600 for sensitive files (meta contains conversation metadata)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
 		return fmt.Errorf("failed to write meta file: %w", err)
 	}
 

@@ -129,7 +129,8 @@ func SavePersonas(config *PersonaConfig) error {
 		return fmt.Errorf("failed to marshal personas: %w", err)
 	}
 
-	return os.WriteFile(path, data, 0o644)
+	// Use 0o600 for user data (personas may contain custom system prompts)
+	return os.WriteFile(path, data, 0o600)
 }
 
 // GetPersona returns a persona by name

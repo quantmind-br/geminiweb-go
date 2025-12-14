@@ -37,6 +37,7 @@ GEMS (Server-side Personas):
 
   During chat, type /gems to switch gems without leaving the chat.
   The active gem is shown in the header.`,
+	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runChat()
 	},

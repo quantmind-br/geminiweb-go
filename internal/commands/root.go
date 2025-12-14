@@ -58,10 +58,10 @@ Examples:
 
 		// Determine raw output mode:
 		// - If outputFlag is set (writing to file), use raw mode
-		// - If stdin is piped AND stdout is not a TTY, use raw mode
+		// - If stdout is not a TTY (piped to another command), use raw mode
 		isTTY := isStdoutTTY()
 		isFileOutput := outputFlag != ""
-		isPipeOutput := hasStdin && !isTTY
+		isPipeOutput := !isTTY // Pipe output regardless of stdin
 		rawOutput := isFileOutput || isPipeOutput
 
 		// Check for file input

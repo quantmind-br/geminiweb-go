@@ -347,6 +347,11 @@ func (c *GeminiClient) attemptInitialAuth() error {
 	}
 
 	// Step 2: Try browser extraction (without rate limiting - it's initialization)
+	// Only attempt browser refresh if browserRefresh is enabled
+	if !c.browserRefresh {
+		return fmt.Errorf("authentication failed: no valid cookies found and browser refresh is disabled")
+	}
+
 	// Use browserRefreshType if set, otherwise use "auto"
 	browserType := c.browserRefreshType
 	if browserType == "" {

@@ -180,14 +180,14 @@ func TestSaveConfig(t *testing.T) {
 		t.Errorf("Verbose = %v, want %v", saved.Verbose, cfg.Verbose)
 	}
 
-	// Check file permissions
+	// Check file permissions (should be 600 for privacy)
 	info, err := os.Stat(configPath)
 	if err != nil {
 		t.Fatalf("Failed to stat config file: %v", err)
 	}
 	perm := info.Mode().Perm()
-	if perm != 0o644 {
-		t.Errorf("File permissions = %o, want 644", perm)
+	if perm != 0o600 {
+		t.Errorf("File permissions = %o, want 600", perm)
 	}
 }
 

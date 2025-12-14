@@ -417,8 +417,9 @@ func runQuery(prompt string, rawOutput bool) error {
 		fmt.Println(thoughtsContent)
 	}
 
-	// Render markdown for terminal output
-	rendered, err := render.MarkdownWithWidth(text, contentWidth)
+	// Render markdown for terminal output using user config
+	renderOpts := render.LoadOptionsFromConfigWithWidth(contentWidth)
+	rendered, err := render.Markdown(text, renderOpts)
 	if err != nil {
 		rendered = text
 	}
