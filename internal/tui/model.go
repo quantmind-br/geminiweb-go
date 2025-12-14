@@ -16,6 +16,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/diogo/geminiweb/internal/api"
+	"github.com/diogo/geminiweb/internal/config"
 	apierrors "github.com/diogo/geminiweb/internal/errors"
 	"github.com/diogo/geminiweb/internal/history"
 	"github.com/diogo/geminiweb/internal/models"
@@ -146,6 +147,9 @@ type Model struct {
 
 	// Extension state
 	detectedExtension models.Extension // Extension detected in prompt (e.g., @Gmail)
+
+	// Local persona (system prompt)
+	persona *config.Persona
 
 	// Dimensions
 	width  int
@@ -785,8 +789,15 @@ func (m Model) sendMessage(prompt string) tea.Cmd {
 func (m Model) sendMessageWithAttachments(prompt string) tea.Cmd {
 	// Capture attachments in closure (they will be cleared after this returns)
 	attachments := m.attachments
+
+	// Apply persona system prompt if set
+	finalPrompt := prompt
+	if m.persona != nil && m.persona.SystemPrompt != "" {
+		finalPrompt = config.FormatSystemPrompt(m.persona, prompt)
+	}
+
 	return func() tea.Msg {
-		output, err := m.session.SendMessage(prompt, attachments)
+		output, err := m.session.SendMessage(finalPrompt, attachments)
 		if err != nil {
 			return errMsg{err: err}
 		}
@@ -1405,8 +1416,14 @@ func RunChatWithConversation(client api.GeminiClientInterface, session ChatSessi
 
 // RunChatWithConversationAndGem starts the chat TUI with a pre-configured session, conversation, and initial gem name
 func RunChatWithConversationAndGem(client api.GeminiClientInterface, session ChatSessionInterface, modelName string, conv *history.Conversation, store HistoryStoreInterface, gemName string) error {
+	return RunChatWithPersona(client, session, modelName, conv, store, gemName, nil)
+}
+
+// RunChatWithPersona starts the chat TUI with a pre-configured session, conversation, gem name, and local persona
+func RunChatWithPersona(client api.GeminiClientInterface, session ChatSessionInterface, modelName string, conv *history.Conversation, store HistoryStoreInterface, gemName string, persona *config.Persona) error {
 	m := NewChatModelWithConversation(client, session, modelName, conv, store)
 	m.activeGemName = gemName
+	m.persona = persona
 
 	p := tea.NewProgram(
 		m,

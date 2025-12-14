@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/diogo/geminiweb/internal/api"
+	"github.com/diogo/geminiweb/internal/config"
 	"github.com/diogo/geminiweb/internal/history"
 	"github.com/diogo/geminiweb/internal/models"
 	"github.com/diogo/geminiweb/internal/tui"
@@ -16,6 +17,9 @@ var chatGemFlag string
 
 // chatNewFlag bypasses history selector and starts a new conversation
 var chatNewFlag bool
+
+// chatPersonaFlag is the --persona flag for the chat command
+var chatPersonaFlag string
 
 var chatCmd = &cobra.Command{
 	Use:   "chat",
@@ -36,7 +40,15 @@ GEMS (Server-side Personas):
     geminiweb chat -g code
 
   During chat, type /gems to switch gems without leaving the chat.
-  The active gem is shown in the header.`,
+  The active gem is shown in the header.
+
+LOCAL PERSONAS:
+  Use --persona to apply a local system prompt:
+    geminiweb chat --persona coder
+    geminiweb chat -p writer
+
+  Local personas are defined in ~/.geminiweb/personas.json
+  Use 'geminiweb persona list' to see available personas.`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runChat()
@@ -46,6 +58,7 @@ GEMS (Server-side Personas):
 func init() {
 	chatCmd.Flags().StringVarP(&chatGemFlag, "gem", "g", "", "Use a gem (by ID or name) - server-side persona")
 	chatCmd.Flags().BoolVarP(&chatNewFlag, "new", "n", false, "Start a new conversation (skip history selector)")
+	chatCmd.Flags().StringVarP(&chatPersonaFlag, "persona", "p", "", "Use a local persona (system prompt)")
 }
 
 func runChat() error {
@@ -108,6 +121,21 @@ func runChat() error {
 		return err
 	}
 
+	// Resolve persona if specified
+	var persona *config.Persona
+	if chatPersonaFlag != "" {
+		persona, err = config.GetPersona(chatPersonaFlag)
+		if err != nil {
+			return fmt.Errorf("failed to load persona '%s': %w", chatPersonaFlag, err)
+		}
+	} else {
+		// Check for default persona (if not "default")
+		defaultPersona, err := config.GetDefaultPersona()
+		if err == nil && defaultPersona != nil && defaultPersona.Name != "default" && defaultPersona.SystemPrompt != "" {
+			persona = defaultPersona
+		}
+	}
+
 	// Create or resume conversation
 	if selectedConv == nil {
 		// New conversation - create in store
@@ -120,8 +148,8 @@ func runChat() error {
 	// Create session with conversation context
 	session := createChatSessionWithConversation(client, resolvedGem.ID, model, selectedConv)
 
-	// Run chat TUI with conversation and initial gem name
-	return tui.RunChatWithConversationAndGem(client, session, modelName, selectedConv, store, resolvedGem.Name)
+	// Run chat TUI with conversation, gem name, and persona
+	return tui.RunChatWithPersona(client, session, modelName, selectedConv, store, resolvedGem.Name, persona)
 }
 
 // createChatSessionWithConversation creates a chat session, optionally resuming from a conversation

@@ -449,7 +449,7 @@ func (m ConfigModel) renderMainMenu(width int) string {
 		verboseValue,
 	))
 
-	// Auto Close
+	// Auto Close (planned - not yet implemented)
 	cursor = "  "
 	style = configMenuItemStyle
 	if m.cursor == menuAutoClose {
@@ -459,8 +459,8 @@ func (m ConfigModel) renderMainMenu(width int) string {
 	autoCloseValue := m.renderBoolValue(m.config.AutoClose)
 	items = append(items, fmt.Sprintf("%s%s%s%s",
 		cursor,
-		style.Render("Auto Close"),
-		strings.Repeat(" ", 10),
+		style.Render("Auto Close (planned)"),
+		strings.Repeat(" ", 1),
 		autoCloseValue,
 	))
 

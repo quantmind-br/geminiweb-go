@@ -19,9 +19,15 @@ type MarkdownConfig struct {
 
 // Config represents the user configuration
 type Config struct {
-	DefaultModel    string         `json:"default_model"`
-	AutoClose       bool           `json:"auto_close"`
-	Verbose         bool           `json:"verbose"`
+	DefaultModel string `json:"default_model"`
+	// AutoClose controls automatic client shutdown after inactivity.
+	// RESERVED: This feature is planned but not yet implemented.
+	// When implemented, it will automatically close the GeminiClient and stop
+	// background cookie rotation after a period of inactivity.
+	AutoClose bool `json:"auto_close"`
+	// Verbose enables detailed logging output during operations.
+	// When enabled, shows model info, request timing, and response metadata.
+	Verbose bool `json:"verbose"`
 	CopyToClipboard bool           `json:"copy_to_clipboard"`
 	TUITheme        string         `json:"tui_theme,omitempty"`    // TUI color theme
 	DownloadDir     string         `json:"download_dir,omitempty"` // Directory for saving images

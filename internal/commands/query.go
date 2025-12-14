@@ -183,8 +183,38 @@ func runQuery(prompt string, rawOutput bool) error {
 		return fmt.Errorf("prompt cannot be empty")
 	}
 
+	// Load config for verbose logging
+	cfg, _ := config.LoadConfig()
+
 	modelName := getModel()
 	model := models.ModelFromName(modelName)
+
+	// Apply persona system prompt if specified
+	var persona *config.Persona
+	if personaFlag != "" {
+		var err error
+		persona, err = config.GetPersona(personaFlag)
+		if err != nil {
+			return fmt.Errorf("failed to load persona '%s': %w", personaFlag, err)
+		}
+		if cfg.Verbose && !rawOutput {
+			fmt.Fprintf(os.Stderr, "[verbose] Using persona: %s\n", persona.Name)
+		}
+	} else {
+		// Check for default persona (if not "default")
+		defaultPersona, err := config.GetDefaultPersona()
+		if err == nil && defaultPersona != nil && defaultPersona.Name != "default" && defaultPersona.SystemPrompt != "" {
+			persona = defaultPersona
+			if cfg.Verbose && !rawOutput {
+				fmt.Fprintf(os.Stderr, "[verbose] Using default persona: %s\n", persona.Name)
+			}
+		}
+	}
+
+	// Verbose: show model being used
+	if cfg.Verbose && !rawOutput {
+		fmt.Fprintf(os.Stderr, "[verbose] Model: %s\n", modelName)
+	}
 
 	// Build client options
 	clientOpts := []api.ClientOption{
@@ -267,6 +297,11 @@ func runQuery(prompt string, rawOutput bool) error {
 		}
 	}
 
+	// Apply persona system prompt to the user's message
+	if persona != nil && persona.SystemPrompt != "" {
+		prompt = config.FormatSystemPrompt(persona, prompt)
+	}
+
 	// For large prompts, upload as a file and use a reference prompt
 	var actualPrompt string
 	if len(prompt) > api.LargePromptThreshold {
@@ -308,7 +343,11 @@ func runQuery(prompt string, rawOutput bool) error {
 		GemID: gemID,
 	}
 
+	// Track request timing for verbose output
+	startTime := time.Now()
 	output, err := client.GenerateContent(actualPrompt, opts)
+	requestDuration := time.Since(startTime)
+
 	if err != nil {
 		if !rawOutput {
 			spin.stopWithError()
@@ -318,6 +357,22 @@ func runQuery(prompt string, rawOutput bool) error {
 	}
 	if !rawOutput {
 		spin.stopWithSuccess("Done")
+	}
+
+	// Verbose: show request timing
+	if cfg.Verbose && !rawOutput {
+		fmt.Fprintf(os.Stderr, "[verbose] Request took %s\n", requestDuration.Round(time.Millisecond))
+		if candidate := output.ChosenCandidate(); candidate != nil {
+			if candidate.Thoughts != "" {
+				fmt.Fprintf(os.Stderr, "[verbose] Response includes thoughts\n")
+			}
+			if len(candidate.WebImages) > 0 {
+				fmt.Fprintf(os.Stderr, "[verbose] Response includes %d web images\n", len(candidate.WebImages))
+			}
+			if len(candidate.GeneratedImages) > 0 {
+				fmt.Fprintf(os.Stderr, "[verbose] Response includes %d generated images\n", len(candidate.GeneratedImages))
+			}
+		}
 	}
 
 	// Download images if --save-images flag is set
@@ -369,8 +424,7 @@ func runQuery(prompt string, rawOutput bool) error {
 	// Add spacing
 	fmt.Fprintln(os.Stderr)
 
-	// Copy to clipboard if enabled in config
-	cfg, _ := config.LoadConfig()
+	// Copy to clipboard if enabled in config (cfg was loaded at function start)
 	if cfg.CopyToClipboard {
 		if err := clipboard.WriteAll(text); err != nil {
 			// Log warning but don't fail
