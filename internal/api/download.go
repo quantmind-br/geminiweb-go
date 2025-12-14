@@ -15,6 +15,8 @@ import (
 	"github.com/diogo/geminiweb/internal/models"
 )
 
+var reURLLastPartHasExt = regexp.MustCompile(`\.\w+$`)
+
 // ImageDownloadOptions configures image download behavior
 type ImageDownloadOptions struct {
 	// Directory is the destination directory (default: ~/.geminiweb/images)
@@ -55,7 +57,7 @@ func (c *GeminiClient) DownloadGeneratedImage(img models.GeneratedImage, opts Im
 // downloadImageURL is the internal implementation for downloading images
 func (c *GeminiClient) downloadImageURL(url, title string, opts ImageDownloadOptions) (string, error) {
 	// Ensure directory exists
-	if err := os.MkdirAll(opts.Directory, 0755); err != nil {
+	if err := os.MkdirAll(opts.Directory, 0o700); err != nil {
 		return "", apierrors.NewDownloadError("failed to create directory: "+err.Error(), url)
 	}
 
@@ -97,16 +99,32 @@ func (c *GeminiClient) downloadImageURL(url, title string, opts ImageDownloadOpt
 	// Build full path
 	destPath := filepath.Join(opts.Directory, filename)
 
-	// Read response body
-	body, err := io.ReadAll(resp.Body)
+	tmpFile, err := os.CreateTemp(opts.Directory, ".geminiweb-img-*")
 	if err != nil {
-		return "", apierrors.NewDownloadError("failed to read response: "+err.Error(), url)
+		return "", apierrors.NewDownloadError("failed to create temp file: "+err.Error(), url)
 	}
+	tmpPath := tmpFile.Name()
+	cleanupTmp := true
+	defer func() {
+		_ = tmpFile.Close()
+		if cleanupTmp {
+			_ = os.Remove(tmpPath)
+		}
+	}()
 
-	// Write file
-	if err := os.WriteFile(destPath, body, 0644); err != nil {
+	if _, err := io.Copy(tmpFile, resp.Body); err != nil {
 		return "", apierrors.NewDownloadError("failed to save file: "+err.Error(), url)
 	}
+	if err := tmpFile.Close(); err != nil {
+		return "", apierrors.NewDownloadError("failed to finalize file: "+err.Error(), url)
+	}
+	if err := os.Chmod(tmpPath, 0o600); err != nil {
+		return "", apierrors.NewDownloadError("failed to set file permissions: "+err.Error(), url)
+	}
+	if err := os.Rename(tmpPath, destPath); err != nil {
+		return "", apierrors.NewDownloadError("failed to move file into place: "+err.Error(), url)
+	}
+	cleanupTmp = false
 
 	// Return absolute path (fallback to relative path if Abs fails)
 	absPath, err := filepath.Abs(destPath)
@@ -133,7 +151,7 @@ func generateFilename(url, title, contentType string) string {
 	urlParts := strings.Split(strings.Split(url, "?")[0], "/")
 	if len(urlParts) > 0 {
 		lastPart := urlParts[len(urlParts)-1]
-		if matched, _ := regexp.MatchString(`\.\w+$`, lastPart); matched {
+		if reURLLastPartHasExt.MatchString(lastPart) {
 			return sanitizeFilename(lastPart)
 		}
 	}

@@ -77,3 +77,6 @@ logs/
 PLAN.md
 TASKS.md
 /history/
+
+# Local tooling
+.ai/venv/

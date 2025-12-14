@@ -199,7 +199,8 @@ func extractCookiesFromStore(ctx context.Context, store kooky.CookieStore, brows
 		}
 
 		// Manual filtering: only process google.com domain cookies
-		if !strings.Contains(cookie.Domain, "google.com") {
+		domain := strings.ToLower(strings.TrimPrefix(cookie.Domain, "."))
+		if domain != "google.com" && !strings.HasSuffix(domain, ".google.com") {
 			continue
 		}
 

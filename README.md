@@ -32,12 +32,6 @@
 ## Table of Contents
 
 - [Architecture](#architecture)
-- [C4 Model Architecture](#c4-model-architecture)
-- [Repository Structure](#repository-structure)
-- [Dependencies and Integration](#dependencies-and-integration)
-- [API Documentation](#api-documentation)
-- [Development Notes](#development-notes)
-- [Known Issues and Limitations](#known-issues-and-limitations)
 - [Additional Documentation](#additional-documentation)
 
 ## Architecture
@@ -123,9 +117,10 @@ graph TB
 - **Strategy Pattern**: Multiple browser extraction strategies with fallback
 - **Factory Pattern**: Client and model factories with configurable options
 
-## C4 Model Architecture
+## Additional Documentation
 
-### Context Diagram
-
-</arg_value>
-</tool_call>
+- `docs/API_BREAKING_CHANGE_2024-12.md`
+- `development-docs/0001-conversation-management.md`
+- `development-docs/0002-gems-interactive-cleanup.md`
+- `development-docs/0003-bugfixes-concurrency.md`
+- `SUGESTOES.md`

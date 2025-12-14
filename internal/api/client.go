@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -83,8 +84,8 @@ type GeminiClient struct {
 	refreshFunc  RefreshFunc
 	cookieLoader CookieLoader
 	// Gems cache
-	gems *models.GemJar
-	mu   sync.RWMutex
+	gems   *models.GemJar
+	mu     sync.RWMutex
 	closed bool
 }
 
@@ -394,7 +395,7 @@ func (c *GeminiClient) initialBrowserRefresh(browserType browser.SupportedBrowse
 	// Save cookies to disk for next time
 	if err := config.SaveCookies(c.cookies); err != nil {
 		// Log but don't fail - cookies are updated in memory
-		fmt.Printf("Warning: failed to save cookies to disk: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Warning: failed to save cookies to disk: %v\n", err)
 	}
 
 	return nil
@@ -454,7 +455,7 @@ func (c *GeminiClient) RefreshFromBrowser() (bool, error) {
 	// Save updated cookies to disk
 	if err := config.SaveCookies(c.cookies); err != nil {
 		// Log but don't fail - cookies are updated in memory
-		fmt.Printf("Warning: failed to save refreshed cookies to disk: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Warning: failed to save refreshed cookies to disk: %v\n", err)
 	}
 
 	// Re-fetch access token with new cookies
