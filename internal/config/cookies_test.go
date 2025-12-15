@@ -371,3 +371,149 @@ func TestCookies_Update1PSIDTS_Empty(t *testing.T) {
 		t.Errorf("Secure1PSIDTS = %s, want empty", cookies.Secure1PSIDTS)
 	}
 }
+
+func TestCookies_GetSecure1PSID(t *testing.T) {
+	cookies := &Cookies{
+		Secure1PSID:   "test_psid_value",
+		Secure1PSIDTS: "test_psidts_value",
+	}
+
+	got := cookies.GetSecure1PSID()
+	if got != "test_psid_value" {
+		t.Errorf("GetSecure1PSID() = %q, want 'test_psid_value'", got)
+	}
+}
+
+func TestCookies_GetSecure1PSIDTS(t *testing.T) {
+	cookies := &Cookies{
+		Secure1PSID:   "test_psid_value",
+		Secure1PSIDTS: "test_psidts_value",
+	}
+
+	got := cookies.GetSecure1PSIDTS()
+	if got != "test_psidts_value" {
+		t.Errorf("GetSecure1PSIDTS() = %q, want 'test_psidts_value'", got)
+	}
+}
+
+func TestCookies_GetSecure1PSIDTS_Empty(t *testing.T) {
+	cookies := &Cookies{
+		Secure1PSID: "test_psid_value",
+	}
+
+	got := cookies.GetSecure1PSIDTS()
+	if got != "" {
+		t.Errorf("GetSecure1PSIDTS() = %q, want empty string", got)
+	}
+}
+
+func TestCookies_Snapshot(t *testing.T) {
+	cookies := &Cookies{
+		Secure1PSID:   "psid_value",
+		Secure1PSIDTS: "psidts_value",
+	}
+
+	psid, psidts := cookies.Snapshot()
+
+	if psid != "psid_value" {
+		t.Errorf("Snapshot() psid = %q, want 'psid_value'", psid)
+	}
+	if psidts != "psidts_value" {
+		t.Errorf("Snapshot() psidts = %q, want 'psidts_value'", psidts)
+	}
+}
+
+func TestCookies_Snapshot_EmptyPSIDTS(t *testing.T) {
+	cookies := &Cookies{
+		Secure1PSID: "psid_only",
+	}
+
+	psid, psidts := cookies.Snapshot()
+
+	if psid != "psid_only" {
+		t.Errorf("Snapshot() psid = %q, want 'psid_only'", psid)
+	}
+	if psidts != "" {
+		t.Errorf("Snapshot() psidts = %q, want empty string", psidts)
+	}
+}
+
+func TestCookies_SetBoth(t *testing.T) {
+	cookies := &Cookies{
+		Secure1PSID:   "old_psid",
+		Secure1PSIDTS: "old_psidts",
+	}
+
+	cookies.SetBoth("new_psid", "new_psidts")
+
+	if cookies.Secure1PSID != "new_psid" {
+		t.Errorf("Secure1PSID = %q, want 'new_psid'", cookies.Secure1PSID)
+	}
+	if cookies.Secure1PSIDTS != "new_psidts" {
+		t.Errorf("Secure1PSIDTS = %q, want 'new_psidts'", cookies.Secure1PSIDTS)
+	}
+}
+
+func TestCookies_SetBoth_FromEmpty(t *testing.T) {
+	cookies := &Cookies{}
+
+	cookies.SetBoth("psid", "psidts")
+
+	if cookies.Secure1PSID != "psid" {
+		t.Errorf("Secure1PSID = %q, want 'psid'", cookies.Secure1PSID)
+	}
+	if cookies.Secure1PSIDTS != "psidts" {
+		t.Errorf("Secure1PSIDTS = %q, want 'psidts'", cookies.Secure1PSIDTS)
+	}
+}
+
+func TestCookies_ThreadSafety(t *testing.T) {
+	cookies := &Cookies{
+		Secure1PSID:   "initial_psid",
+		Secure1PSIDTS: "initial_psidts",
+	}
+
+	// Run concurrent reads and writes
+	done := make(chan bool)
+
+	// Writer goroutine
+	go func() {
+		for i := 0; i < 100; i++ {
+			cookies.SetBoth("psid_"+string(rune('a'+i%26)), "psidts_"+string(rune('a'+i%26)))
+			cookies.Update1PSIDTS("updated_" + string(rune('a'+i%26)))
+		}
+		done <- true
+	}()
+
+	// Reader goroutine 1
+	go func() {
+		for i := 0; i < 100; i++ {
+			_ = cookies.GetSecure1PSID()
+			_ = cookies.GetSecure1PSIDTS()
+		}
+		done <- true
+	}()
+
+	// Reader goroutine 2
+	go func() {
+		for i := 0; i < 100; i++ {
+			_, _ = cookies.Snapshot()
+		}
+		done <- true
+	}()
+
+	// Reader goroutine 3 - ToMap
+	go func() {
+		for i := 0; i < 100; i++ {
+			_ = cookies.ToMap()
+		}
+		done <- true
+	}()
+
+	// Wait for all goroutines
+	for i := 0; i < 4; i++ {
+		<-done
+	}
+
+	// If we get here without a race condition, the test passes
+}

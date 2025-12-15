@@ -255,3 +255,136 @@ func TestLoadConfig_InvalidJSON(t *testing.T) {
 		t.Errorf("DefaultModel = %s, want gemini-2.5-flash", cfg.DefaultModel)
 	}
 }
+
+func TestGetDownloadDir(t *testing.T) {
+	tmpDir := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	_ = os.Setenv("HOME", tmpDir)
+	defer func() { _ = os.Setenv("HOME", oldHome) }()
+
+	t.Run("with custom directory", func(t *testing.T) {
+		customDir := filepath.Join(tmpDir, "custom_downloads")
+		cfg := Config{
+			DownloadDir: customDir,
+		}
+
+		dir, err := GetDownloadDir(cfg)
+		if err != nil {
+			t.Fatalf("GetDownloadDir() returned error: %v", err)
+		}
+		if dir != customDir {
+			t.Errorf("GetDownloadDir() = %q, want %q", dir, customDir)
+		}
+
+		// Verify directory was created
+		info, err := os.Stat(dir)
+		if err != nil {
+			t.Fatalf("Directory was not created: %v", err)
+		}
+		if !info.IsDir() {
+			t.Error("Path is not a directory")
+		}
+
+		// Check permissions (0700 for privacy)
+		perm := info.Mode().Perm()
+		if perm != 0o700 {
+			t.Errorf("Directory permissions = %o, want 700", perm)
+		}
+	})
+
+	t.Run("with empty directory (uses default)", func(t *testing.T) {
+		cfg := Config{
+			DownloadDir: "",
+		}
+
+		dir, err := GetDownloadDir(cfg)
+		if err != nil {
+			t.Fatalf("GetDownloadDir() returned error: %v", err)
+		}
+
+		expectedDir := filepath.Join(tmpDir, ".geminiweb", "images")
+		if dir != expectedDir {
+			t.Errorf("GetDownloadDir() = %q, want %q", dir, expectedDir)
+		}
+
+		// Verify directory was created
+		info, err := os.Stat(dir)
+		if err != nil {
+			t.Fatalf("Directory was not created: %v", err)
+		}
+		if !info.IsDir() {
+			t.Error("Path is not a directory")
+		}
+	})
+
+	t.Run("directory already exists", func(t *testing.T) {
+		existingDir := filepath.Join(tmpDir, "existing_dir")
+		if err := os.MkdirAll(existingDir, 0o755); err != nil {
+			t.Fatalf("Failed to create existing directory: %v", err)
+		}
+
+		cfg := Config{
+			DownloadDir: existingDir,
+		}
+
+		dir, err := GetDownloadDir(cfg)
+		if err != nil {
+			t.Fatalf("GetDownloadDir() returned error: %v", err)
+		}
+		if dir != existingDir {
+			t.Errorf("GetDownloadDir() = %q, want %q", dir, existingDir)
+		}
+	})
+}
+
+func TestDefaultMarkdownConfig(t *testing.T) {
+	cfg := DefaultMarkdownConfig()
+
+	if cfg.Style != "dark" {
+		t.Errorf("Style = %q, want 'dark'", cfg.Style)
+	}
+	if !cfg.EnableEmoji {
+		t.Error("EnableEmoji should be true")
+	}
+	if !cfg.PreserveNewLines {
+		t.Error("PreserveNewLines should be true")
+	}
+	if !cfg.TableWrap {
+		t.Error("TableWrap should be true")
+	}
+	if cfg.InlineTableLinks {
+		t.Error("InlineTableLinks should be false")
+	}
+}
+
+func TestDefaultConfig_AllFields(t *testing.T) {
+	cfg := DefaultConfig()
+
+	if cfg.DefaultModel != "gemini-2.5-flash" {
+		t.Errorf("DefaultModel = %q, want 'gemini-2.5-flash'", cfg.DefaultModel)
+	}
+	if !cfg.AutoClose {
+		t.Error("AutoClose should be true")
+	}
+	if cfg.CloseDelay != 300 {
+		t.Errorf("CloseDelay = %d, want 300", cfg.CloseDelay)
+	}
+	if !cfg.AutoReInit {
+		t.Error("AutoReInit should be true")
+	}
+	if cfg.Verbose {
+		t.Error("Verbose should be false")
+	}
+	if cfg.CopyToClipboard {
+		t.Error("CopyToClipboard should be false")
+	}
+	if cfg.TUITheme != "tokyonight" {
+		t.Errorf("TUITheme = %q, want 'tokyonight'", cfg.TUITheme)
+	}
+	if cfg.DownloadDir == "" {
+		t.Error("DownloadDir should not be empty")
+	}
+	if cfg.Markdown.Style != "dark" {
+		t.Errorf("Markdown.Style = %q, want 'dark'", cfg.Markdown.Style)
+	}
+}

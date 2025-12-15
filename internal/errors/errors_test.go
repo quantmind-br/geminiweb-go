@@ -1039,3 +1039,335 @@ func BenchmarkGetHTTPStatus(b *testing.B) {
 
 // Ensure time package is used
 var _ = time.Second
+
+func TestDownloadError(t *testing.T) {
+	t.Run("basic", func(t *testing.T) {
+		err := NewDownloadError("failed to download", "https://example.com/image.png")
+		if err == nil {
+			t.Fatal("Expected non-nil error")
+		}
+		if !containsString(err.Error(), "download error") {
+			t.Errorf("Error() should contain 'download error', got %q", err.Error())
+		}
+		if !containsString(err.Error(), "https://example.com/image.png") {
+			t.Errorf("Error() should contain URL, got %q", err.Error())
+		}
+		if err.URL != "https://example.com/image.png" {
+			t.Errorf("URL = %q, want 'https://example.com/image.png'", err.URL)
+		}
+	})
+
+	t.Run("with status", func(t *testing.T) {
+		err := NewDownloadErrorWithStatus("https://example.com/image.png", 404)
+		if err.HTTPStatus != 404 {
+			t.Errorf("HTTPStatus = %d, want 404", err.HTTPStatus)
+		}
+		if !containsString(err.Error(), "HTTP 404") {
+			t.Errorf("Error() should contain 'HTTP 404', got %q", err.Error())
+		}
+	})
+
+	t.Run("network error", func(t *testing.T) {
+		cause := errors.New("connection refused")
+		err := NewDownloadNetworkError("https://example.com/image.png", cause)
+		if err.Cause != cause {
+			t.Error("Cause should be set")
+		}
+		if !containsString(err.Error(), "connection refused") {
+			t.Errorf("Error() should contain cause message, got %q", err.Error())
+		}
+	})
+
+	t.Run("error without URL", func(t *testing.T) {
+		err := &DownloadError{
+			GeminiError: &GeminiError{Message: "generic error"},
+		}
+		expected := "download error: generic error"
+		if err.Error() != expected {
+			t.Errorf("Error() = %q, want %q", err.Error(), expected)
+		}
+	})
+
+	t.Run("Is method", func(t *testing.T) {
+		err := NewDownloadError("error", "https://example.com")
+		if !err.Is(NewDownloadError("other", "https://other.com")) {
+			t.Error("DownloadError should match other DownloadError")
+		}
+	})
+
+	t.Run("Is with network failure", func(t *testing.T) {
+		cause := errors.New("network issue")
+		err := NewDownloadNetworkError("https://example.com", cause)
+		if !err.Is(ErrNetworkFailure) {
+			t.Error("DownloadError with cause should match ErrNetworkFailure")
+		}
+	})
+
+	t.Run("Unwrap returns cause", func(t *testing.T) {
+		cause := errors.New("underlying")
+		err := NewDownloadNetworkError("https://example.com", cause)
+		if err.Unwrap() != cause {
+			t.Error("Unwrap should return the cause")
+		}
+	})
+}
+
+func TestIsDownloadError(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      error
+		expected bool
+	}{
+		{"nil", nil, false},
+		{"DownloadError", NewDownloadError("msg", "url"), true},
+		{"DownloadErrorWithStatus", NewDownloadErrorWithStatus("url", 500), true},
+		{"DownloadNetworkError", NewDownloadNetworkError("url", errors.New("net")), true},
+		{"wrapped DownloadError", fmt.Errorf("wrapped: %w", NewDownloadError("msg", "url")), true},
+		{"other error", errors.New("other"), false},
+		{"APIError", NewAPIError(500, "", ""), false},
+		{"UploadError", NewUploadError("file", "msg"), false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := IsDownloadError(tt.err); got != tt.expected {
+				t.Errorf("IsDownloadError() = %v, want %v", got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestPromptTooLongError(t *testing.T) {
+	t.Run("basic", func(t *testing.T) {
+		err := NewPromptTooLongError("gemini-pro")
+		if err == nil {
+			t.Fatal("Expected non-nil error")
+		}
+		if !containsString(err.Error(), "prompt too long") {
+			t.Errorf("Error() should contain 'prompt too long', got %q", err.Error())
+		}
+		if !containsString(err.Error(), "gemini-pro") {
+			t.Errorf("Error() should contain model name, got %q", err.Error())
+		}
+	})
+
+	t.Run("Is method", func(t *testing.T) {
+		err := NewPromptTooLongError("model")
+		if !err.Is(NewPromptTooLongError("other")) {
+			t.Error("PromptTooLongError should match other PromptTooLongError")
+		}
+	})
+
+	t.Run("Is does not match other types", func(t *testing.T) {
+		err := NewPromptTooLongError("model")
+		if err.Is(NewModelError("msg")) {
+			t.Error("PromptTooLongError should not match ModelError")
+		}
+	})
+
+	t.Run("Unwrap returns cause", func(t *testing.T) {
+		err := NewPromptTooLongError("model")
+		// PromptTooLongError has no cause by default
+		if err.Unwrap() != nil {
+			t.Error("Unwrap should return nil when no cause")
+		}
+	})
+
+	t.Run("error code is set", func(t *testing.T) {
+		err := NewPromptTooLongError("model")
+		if err.Code != ErrCodePromptTooLong {
+			t.Errorf("Code = %d, want %d", err.Code, ErrCodePromptTooLong)
+		}
+	})
+}
+
+func TestHandleErrorCode_PromptTooLong(t *testing.T) {
+	err := HandleErrorCode(ErrCodePromptTooLong, "endpoint", "test-model")
+	var promptErr *PromptTooLongError
+	if !errors.As(err, &promptErr) {
+		t.Error("HandleErrorCode(ErrCodePromptTooLong) should return PromptTooLongError")
+	}
+}
+
+func TestGetBody(t *testing.T) {
+	err := NewGeminiError("op", "msg")
+	err.WithBody("response body content")
+
+	body := err.GetBody()
+	if body != "response body content" {
+		t.Errorf("GetBody() = %q, want 'response body content'", body)
+	}
+}
+
+func TestGetResponseBody(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      error
+		expected string
+	}{
+		{"nil", nil, ""},
+		{"GeminiError with body", func() error {
+			e := NewGeminiError("op", "msg")
+			e.WithBody("gemini body")
+			return e
+		}(), "gemini body"},
+		{"APIError with body", NewAPIErrorWithBody(500, "ep", "msg", "api body"), "api body"},
+		{"wrapped GeminiError", func() error {
+			e := NewGeminiError("op", "msg")
+			e.WithBody("wrapped body")
+			return fmt.Errorf("wrapped: %w", e)
+		}(), "wrapped body"},
+		{"other error", errors.New("other"), ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := GetResponseBody(tt.err); got != tt.expected {
+				t.Errorf("GetResponseBody() = %q, want %q", got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestUnwrapMethods(t *testing.T) {
+	cause := errors.New("underlying cause")
+
+	t.Run("TimeoutError Unwrap", func(t *testing.T) {
+		err := NewTimeoutErrorWithEndpoint("https://example.com", cause)
+		if err.Unwrap() != cause {
+			t.Error("TimeoutError.Unwrap should return cause")
+		}
+	})
+
+	t.Run("UsageLimitError Unwrap", func(t *testing.T) {
+		err := NewUsageLimitError("model")
+		// UsageLimitError has no cause by default
+		if err.Unwrap() != nil {
+			t.Error("UsageLimitError.Unwrap should return nil when no cause")
+		}
+	})
+
+	t.Run("ModelError Unwrap", func(t *testing.T) {
+		err := NewModelError("msg")
+		if err.Unwrap() != nil {
+			t.Error("ModelError.Unwrap should return nil when no cause")
+		}
+	})
+
+	t.Run("BlockedError Unwrap", func(t *testing.T) {
+		err := NewBlockedError("blocked")
+		if err.Unwrap() != nil {
+			t.Error("BlockedError.Unwrap should return nil when no cause")
+		}
+	})
+
+	t.Run("ParseError Unwrap", func(t *testing.T) {
+		err := NewParseError("parse failed", "path")
+		if err.Unwrap() != nil {
+			t.Error("ParseError.Unwrap should return nil when no cause")
+		}
+	})
+}
+
+func TestGeminiError_Is_EdgeCases(t *testing.T) {
+	t.Run("Is with same GeminiError code", func(t *testing.T) {
+		err1 := &GeminiError{Code: ErrCodeUsageLimitExceeded}
+		err2 := &GeminiError{Code: ErrCodeUsageLimitExceeded}
+		if !err1.Is(err2) {
+			t.Error("GeminiError should match another GeminiError with same code")
+		}
+	})
+
+	t.Run("Is with same HTTPStatus", func(t *testing.T) {
+		err1 := &GeminiError{HTTPStatus: 500}
+		err2 := &GeminiError{HTTPStatus: 500}
+		if !err1.Is(err2) {
+			t.Error("GeminiError should match another GeminiError with same HTTPStatus")
+		}
+	})
+
+	t.Run("Is does not match different code and status", func(t *testing.T) {
+		err1 := &GeminiError{Code: ErrCodeUsageLimitExceeded, HTTPStatus: 500}
+		err2 := &GeminiError{Code: ErrCodeIPBlocked, HTTPStatus: 403}
+		if err1.Is(err2) {
+			t.Error("GeminiError should not match GeminiError with different code and status")
+		}
+	})
+
+	t.Run("Is with ErrNetworkFailure", func(t *testing.T) {
+		netCause := &mockNetError{}
+		err := &GeminiError{Cause: netCause}
+		if !err.Is(ErrNetworkFailure) {
+			t.Error("GeminiError with net.Error cause should match ErrNetworkFailure")
+		}
+	})
+
+	t.Run("Is with ErrTimeout", func(t *testing.T) {
+		netCause := &mockNetError{timeout: true}
+		err := &GeminiError{Cause: netCause}
+		if !err.Is(ErrTimeout) {
+			t.Error("GeminiError with timeout cause should match ErrTimeout")
+		}
+	})
+}
+
+func TestUsageLimitError_Is_EdgeCases(t *testing.T) {
+	t.Run("Is with another UsageLimitError", func(t *testing.T) {
+		err1 := NewUsageLimitError("model1")
+		err2 := NewUsageLimitError("model2")
+		if !err1.Is(err2) {
+			t.Error("UsageLimitError should match other UsageLimitError")
+		}
+	})
+
+	t.Run("Is does not match ModelError", func(t *testing.T) {
+		err := NewUsageLimitError("model")
+		if err.Is(NewModelError("msg")) {
+			t.Error("UsageLimitError should not match ModelError")
+		}
+	})
+}
+
+func TestModelError_Is_EdgeCases(t *testing.T) {
+	t.Run("Is does not match BlockedError", func(t *testing.T) {
+		err := NewModelError("msg")
+		if err.Is(NewBlockedError("blocked")) {
+			t.Error("ModelError should not match BlockedError")
+		}
+	})
+}
+
+func TestBlockedError_Is_EdgeCases(t *testing.T) {
+	t.Run("Is does not match ParseError", func(t *testing.T) {
+		err := NewBlockedError("blocked")
+		if err.Is(NewParseError("msg", "path")) {
+			t.Error("BlockedError should not match ParseError")
+		}
+	})
+}
+
+func TestUploadError_Is_EdgeCases(t *testing.T) {
+	t.Run("Is does not match DownloadError", func(t *testing.T) {
+		err := NewUploadError("file", "msg")
+		if err.Is(NewDownloadError("msg", "url")) {
+			t.Error("UploadError should not match DownloadError")
+		}
+	})
+
+	t.Run("Is does not match ErrNetworkFailure without cause", func(t *testing.T) {
+		err := NewUploadError("file", "msg")
+		if err.Is(ErrNetworkFailure) {
+			t.Error("UploadError without cause should not match ErrNetworkFailure")
+		}
+	})
+}
+
+func TestErrorCodeString_PromptTooLong(t *testing.T) {
+	if ErrCodePromptTooLong.String() != "prompt too long - reduce input size" {
+		t.Errorf("ErrCodePromptTooLong.String() = %q, want 'prompt too long - reduce input size'", ErrCodePromptTooLong.String())
+	}
+}
+
+// Ensure DownloadError and PromptTooLongError implement error interface
+var _ error = (*DownloadError)(nil)
+var _ error = (*PromptTooLongError)(nil)

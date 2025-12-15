@@ -515,3 +515,63 @@ func TestChatSession_updateMetadata(t *testing.T) {
 		}
 	})
 }
+
+// TestChatSession_SetGem tests the SetGem function
+func TestChatSession_SetGem(t *testing.T) {
+	validCookies := &config.Cookies{
+		Secure1PSID:   "test_psid",
+		Secure1PSIDTS: "test_psidts",
+	}
+
+	geminiClient, err := NewClient(validCookies)
+	if err != nil {
+		t.Fatalf("Failed to create client: %v", err)
+	}
+
+	t.Run("SetGem updates gemID", func(t *testing.T) {
+		session := &ChatSession{
+			client: geminiClient,
+			model:  models.Model25Flash,
+		}
+
+		session.SetGem("new-gem-id")
+
+		if session.gemID != "new-gem-id" {
+			t.Errorf("gemID = %s, want new-gem-id", session.gemID)
+		}
+		if session.GetGemID() != "new-gem-id" {
+			t.Errorf("GetGemID() = %s, want new-gem-id", session.GetGemID())
+		}
+	})
+
+	t.Run("SetGem clears gemID with empty string", func(t *testing.T) {
+		session := &ChatSession{
+			client: geminiClient,
+			model:  models.Model25Flash,
+			gemID:  "existing-gem",
+		}
+
+		session.SetGem("")
+
+		if session.gemID != "" {
+			t.Errorf("gemID = %s, want empty", session.gemID)
+		}
+		if session.GetGemID() != "" {
+			t.Errorf("GetGemID() = %s, want empty", session.GetGemID())
+		}
+	})
+
+	t.Run("SetGem replaces existing gemID", func(t *testing.T) {
+		session := &ChatSession{
+			client: geminiClient,
+			model:  models.Model25Flash,
+			gemID:  "old-gem-id",
+		}
+
+		session.SetGem("replaced-gem-id")
+
+		if session.gemID != "replaced-gem-id" {
+			t.Errorf("gemID = %s, want replaced-gem-id", session.gemID)
+		}
+	})
+}

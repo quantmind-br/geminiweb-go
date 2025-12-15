@@ -507,3 +507,46 @@ func TestCookieRotator_Stop(t *testing.T) {
 		}
 	})
 }
+
+func TestWithErrorCallback(t *testing.T) {
+	cookies := &config.Cookies{
+		Secure1PSID:   "test-psid",
+		Secure1PSIDTS: "test-token",
+	}
+
+	t.Run("sets error callback", func(t *testing.T) {
+		errorCallbackCalled := false
+		callback := func(err error) {
+			errorCallbackCalled = true
+		}
+
+		// Create a rotator with the error callback
+		rotator := NewCookieRotator(nil, cookies, 1*time.Minute, WithErrorCallback(callback))
+
+		if rotator.onError == nil {
+			t.Error("onError callback should not be nil")
+		}
+
+		// Test that callback is stored correctly by calling it
+		rotator.onError(fmt.Errorf("test error"))
+		if !errorCallbackCalled {
+			t.Error("onError callback should have been called")
+		}
+	})
+
+	t.Run("nil callback", func(t *testing.T) {
+		rotator := NewCookieRotator(nil, cookies, 1*time.Minute, WithErrorCallback(nil))
+
+		if rotator.onError != nil {
+			t.Error("onError should be nil when set to nil")
+		}
+	})
+
+	t.Run("rotator without callback", func(t *testing.T) {
+		rotator := NewCookieRotator(nil, cookies, 1*time.Minute)
+
+		if rotator.onError != nil {
+			t.Error("onError should be nil by default")
+		}
+	})
+}

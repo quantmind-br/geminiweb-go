@@ -2110,3 +2110,56 @@ func TestGeminiClient_AutoClose_ConcurrentResetTimer(t *testing.T) {
 
 	client.Close()
 }
+
+func TestGeminiClient_WithRefreshFunc(t *testing.T) {
+	validCookies := &config.Cookies{
+		Secure1PSID:   "test_psid",
+		Secure1PSIDTS: "test_psidts",
+	}
+
+	refreshCalled := false
+	// RefreshFunc signature is func() (bool, error)
+	customRefresh := func() (bool, error) {
+		refreshCalled = true
+		return true, nil
+	}
+
+	client, err := NewClient(validCookies, WithRefreshFunc(customRefresh))
+	if err != nil {
+		t.Fatalf("NewClient() error: %v", err)
+	}
+	defer client.Close()
+
+	if client.refreshFunc == nil {
+		t.Error("refreshFunc should be set")
+	}
+
+	// Test that the refresh function works correctly by calling it
+	result, callErr := client.refreshFunc()
+	if callErr != nil {
+		t.Errorf("refreshFunc returned error: %v", callErr)
+	}
+	if !result {
+		t.Error("refreshFunc should return true")
+	}
+	if !refreshCalled {
+		t.Error("refreshFunc should have been called")
+	}
+}
+
+func TestGeminiClient_WithRefreshFunc_NilFunc(t *testing.T) {
+	validCookies := &config.Cookies{
+		Secure1PSID:   "test_psid",
+		Secure1PSIDTS: "test_psidts",
+	}
+
+	client, err := NewClient(validCookies, WithRefreshFunc(nil))
+	if err != nil {
+		t.Fatalf("NewClient() error: %v", err)
+	}
+	defer client.Close()
+
+	if client.refreshFunc != nil {
+		t.Error("refreshFunc should be nil when set to nil")
+	}
+}

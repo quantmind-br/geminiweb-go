@@ -386,3 +386,16 @@ func TestModelOutput_RID(t *testing.T) {
 		})
 	}
 }
+
+func TestUploadHeaders(t *testing.T) {
+	headers := UploadHeaders()
+
+	if len(headers) == 0 {
+		t.Error("Expected at least one upload header")
+	}
+
+	// Check for Push-ID header which is required for uploads
+	if _, exists := headers["Push-ID"]; !exists {
+		t.Error("Missing required header: Push-ID")
+	}
+}
