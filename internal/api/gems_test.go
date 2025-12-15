@@ -430,3 +430,12 @@ func TestDeleteGemClosedClient(t *testing.T) {
 		t.Error("Expected error for closed client")
 	}
 }
+
+// Note: FetchGems, CreateGem, UpdateGem, and DeleteGem HTTP tests require
+// complex mocking of BatchExecute which parses multi-response batch RPC calls.
+// The current tests cover:
+// - Response parsing (parseGemsResponse, parseGemData)
+// - Client state management (Gems, GetGem cache methods)
+// - Closed client error handling
+// - Chat options with gems
+// - Payload structure validation
