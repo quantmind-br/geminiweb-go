@@ -58,6 +58,10 @@ type (
 		count int      // Number of images downloaded
 		err   error    // Error, if any
 	}
+	// initialPromptMsg is sent when an initial prompt from file needs to be processed
+	initialPromptMsg struct {
+		prompt string
+	}
 )
 
 // ChatSessionInterface defines the interface for chat session operations needed by the TUI
@@ -151,6 +155,9 @@ type Model struct {
 	// Local persona (system prompt)
 	persona *config.Persona
 
+	// Initial prompt to send automatically on start
+	initialPrompt string
+
 	// Dimensions
 	width  int
 	height int
@@ -209,10 +216,17 @@ func NewChatModel(client api.GeminiClientInterface, modelName string) Model {
 
 // Init initializes the model
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(
+	cmds := []tea.Cmd{
 		textarea.Blink,
 		m.spinner.Tick,
-	)
+	}
+
+	// If there's an initial prompt, send it automatically
+	if m.initialPrompt != "" {
+		cmds = append(cmds, m.sendInitialPrompt())
+	}
+
+	return tea.Batch(cmds...)
 }
 
 // animationTick returns a command that sends animation tick messages
@@ -542,6 +556,35 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.animationFrame++
 			cmds = append(cmds, animationTick())
 		}
+
+	case initialPromptMsg:
+		// Process initial prompt from file as if user typed it
+		prompt := msg.prompt
+
+		// Apply persona system prompt if set
+		finalPrompt := prompt
+		if m.persona != nil && m.persona.SystemPrompt != "" {
+			finalPrompt = config.FormatSystemPrompt(m.persona, prompt)
+		}
+
+		// Add user message to chat
+		m.messages = append(m.messages, chatMessage{
+			role:    "user",
+			content: prompt, // Show original prompt, not with system prompt
+		})
+
+		// Save to history if available
+		if m.historyStore != nil && m.conversation != nil {
+			_ = m.historyStore.AddMessage(m.conversation.ID, "user", prompt, "")
+		}
+
+		// Set loading state and send message
+		m.loading = true
+		m.updateViewport()
+		return m, tea.Batch(
+			m.sendMessage(finalPrompt),
+			animationTick(),
+		)
 	}
 
 	// Update child components - only pass KeyMsg to textarea to prevent escape sequence leaks
@@ -802,6 +845,18 @@ func (m Model) sendMessageWithAttachments(prompt string) tea.Cmd {
 			return errMsg{err: err}
 		}
 		return responseMsg{output: output}
+	}
+}
+
+// sendInitialPrompt creates a command to send the initial prompt from file
+// This is called automatically on Init() when initialPrompt is set
+func (m *Model) sendInitialPrompt() tea.Cmd {
+	prompt := m.initialPrompt
+	m.initialPrompt = "" // Clear to prevent re-sending
+
+	return func() tea.Msg {
+		// Return a message that triggers the send flow
+		return initialPromptMsg{prompt: prompt}
 	}
 }
 
@@ -1421,9 +1476,25 @@ func RunChatWithConversationAndGem(client api.GeminiClientInterface, session Cha
 
 // RunChatWithPersona starts the chat TUI with a pre-configured session, conversation, gem name, and local persona
 func RunChatWithPersona(client api.GeminiClientInterface, session ChatSessionInterface, modelName string, conv *history.Conversation, store HistoryStoreInterface, gemName string, persona *config.Persona) error {
+	return RunChatWithInitialPrompt(client, session, modelName, conv, store, gemName, persona, "")
+}
+
+// RunChatWithInitialPrompt starts the chat TUI with all options including an initial prompt
+// If initialPrompt is non-empty, it will be sent automatically when the TUI starts
+func RunChatWithInitialPrompt(
+	client api.GeminiClientInterface,
+	session ChatSessionInterface,
+	modelName string,
+	conv *history.Conversation,
+	store HistoryStoreInterface,
+	gemName string,
+	persona *config.Persona,
+	initialPrompt string,
+) error {
 	m := NewChatModelWithConversation(client, session, modelName, conv, store)
 	m.activeGemName = gemName
 	m.persona = persona
+	m.initialPrompt = initialPrompt
 
 	p := tea.NewProgram(
 		m,

@@ -4444,3 +4444,130 @@ func TestNewChatModel_WithClient(t *testing.T) {
 		t.Errorf("messages length = %d, want 0", len(m.messages))
 	}
 }
+
+// TestModel_InitialPrompt tests the initialPrompt field
+func TestModel_InitialPrompt(t *testing.T) {
+	m := Model{
+		initialPrompt: "Test initial prompt",
+		messages:      []chatMessage{},
+	}
+
+	if m.initialPrompt == "" {
+		t.Error("initialPrompt should be set")
+	}
+	if m.initialPrompt != "Test initial prompt" {
+		t.Errorf("initialPrompt = %q, want %q", m.initialPrompt, "Test initial prompt")
+	}
+}
+
+// TestInitialPromptMsg tests the initialPromptMsg type
+func TestInitialPromptMsg(t *testing.T) {
+	msg := initialPromptMsg{prompt: "test prompt"}
+	if msg.prompt != "test prompt" {
+		t.Errorf("prompt = %q, want %q", msg.prompt, "test prompt")
+	}
+}
+
+// TestSendInitialPrompt_ClearsPrompt tests that sendInitialPrompt clears the initialPrompt field
+func TestSendInitialPrompt_ClearsPrompt(t *testing.T) {
+	m := &Model{
+		initialPrompt: "test",
+	}
+
+	// Call sendInitialPrompt
+	_ = m.sendInitialPrompt()
+
+	// After calling sendInitialPrompt, the field should be cleared
+	if m.initialPrompt != "" {
+		t.Errorf("initialPrompt should be cleared after sendInitialPrompt, got %q", m.initialPrompt)
+	}
+}
+
+// TestSendInitialPrompt_ReturnsMessage tests that sendInitialPrompt returns the correct message
+func TestSendInitialPrompt_ReturnsMessage(t *testing.T) {
+	m := &Model{
+		initialPrompt: "my test prompt",
+	}
+
+	cmd := m.sendInitialPrompt()
+	result := cmd()
+
+	if msg, ok := result.(initialPromptMsg); ok {
+		if msg.prompt != "my test prompt" {
+			t.Errorf("prompt = %q, want %q", msg.prompt, "my test prompt")
+		}
+	} else {
+		t.Errorf("expected initialPromptMsg, got %T", result)
+	}
+}
+
+// TestModel_Init_WithInitialPrompt tests that Init returns commands when initialPrompt is set
+func TestModel_Init_WithInitialPrompt(t *testing.T) {
+	ta := textarea.New()
+	s := spinner.New()
+
+	m := Model{
+		initialPrompt: "initial prompt",
+		textarea:      ta,
+		spinner:       s,
+	}
+
+	cmd := m.Init()
+	if cmd == nil {
+		t.Error("Init should return a command")
+	}
+}
+
+// TestModel_Init_WithoutInitialPrompt tests that Init returns commands when initialPrompt is empty
+func TestModel_Init_WithoutInitialPrompt(t *testing.T) {
+	ta := textarea.New()
+	s := spinner.New()
+
+	m := Model{
+		initialPrompt: "",
+		textarea:      ta,
+		spinner:       s,
+	}
+
+	cmd := m.Init()
+	if cmd == nil {
+		t.Error("Init should return a command even without initialPrompt")
+	}
+}
+
+// TestModel_Update_InitialPromptMsg tests that Update handles initialPromptMsg correctly
+func TestModel_Update_InitialPromptMsg(t *testing.T) {
+	ta := textarea.New()
+	s := spinner.New()
+
+	m := Model{
+		messages: []chatMessage{},
+		textarea: ta,
+		spinner:  s,
+		viewport: viewport.New(80, 20),
+		ready:    true,
+	}
+
+	msg := initialPromptMsg{prompt: "hello world"}
+	newModel, _ := m.Update(msg)
+
+	updatedModel := newModel.(Model)
+
+	// Check that user message was added
+	if len(updatedModel.messages) != 1 {
+		t.Errorf("messages length = %d, want 1", len(updatedModel.messages))
+	}
+
+	if updatedModel.messages[0].role != "user" {
+		t.Errorf("message role = %q, want %q", updatedModel.messages[0].role, "user")
+	}
+
+	if updatedModel.messages[0].content != "hello world" {
+		t.Errorf("message content = %q, want %q", updatedModel.messages[0].content, "hello world")
+	}
+
+	// Check that loading is true
+	if !updatedModel.loading {
+		t.Error("loading should be true after initialPromptMsg")
+	}
+}

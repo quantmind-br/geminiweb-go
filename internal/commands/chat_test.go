@@ -1,6 +1,9 @@
 package commands
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -68,5 +71,66 @@ func TestChatCommand_Flags(t *testing.T) {
 	flag := rootCmd.PersistentFlags().Lookup("model")
 	if flag == nil {
 		t.Error("model flag not found on rootCmd")
+	}
+}
+
+func TestChatCommand_FileFlag(t *testing.T) {
+	// Verify file flag is registered
+	flag := chatCmd.Flags().Lookup("file")
+	if flag == nil {
+		t.Error("file flag not found")
+	}
+	if flag.Shorthand != "f" {
+		t.Errorf("Expected shorthand 'f', got '%s'", flag.Shorthand)
+	}
+}
+
+func TestChatCommand_FileFlag_ReadFile(t *testing.T) {
+	// Create temp file with content
+	tmpDir := t.TempDir()
+	tmpFile := filepath.Join(tmpDir, "test_prompt.md")
+	content := "Test prompt content\nWith multiple lines"
+
+	if err := os.WriteFile(tmpFile, []byte(content), 0644); err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+
+	// Test reading
+	data, err := os.ReadFile(tmpFile)
+	if err != nil {
+		t.Fatalf("Failed to read file: %v", err)
+	}
+
+	if strings.TrimSpace(string(data)) != content {
+		t.Errorf("Content mismatch: got %q, want %q", string(data), content)
+	}
+}
+
+func TestChatCommand_FileFlag_EmptyFile(t *testing.T) {
+	// Create empty temp file
+	tmpDir := t.TempDir()
+	tmpFile := filepath.Join(tmpDir, "empty.md")
+
+	if err := os.WriteFile(tmpFile, []byte(""), 0644); err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+
+	data, _ := os.ReadFile(tmpFile)
+	if strings.TrimSpace(string(data)) != "" {
+		t.Error("Expected empty content")
+	}
+}
+
+func TestChatCommand_FileFlag_NonExistent(t *testing.T) {
+	_, err := os.ReadFile("/nonexistent/path/file.md")
+	if err == nil {
+		t.Error("Expected error for non-existent file")
+	}
+}
+
+func TestChatCommand_FileFlag_MaxFileSize(t *testing.T) {
+	// Verify the constant is set correctly
+	if maxFileSize != 1*1024*1024 {
+		t.Errorf("Expected maxFileSize to be 1MB (1048576), got %d", maxFileSize)
 	}
 }

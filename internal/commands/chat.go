@@ -2,7 +2,10 @@ package commands
 
 import (
 	"fmt"
+	"os"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/spf13/cobra"
 
@@ -22,6 +25,9 @@ var chatNewFlag bool
 // chatPersonaFlag is the --persona flag for the chat command
 var chatPersonaFlag string
 
+// chatFileFlag is the --file flag for providing initial prompt from file
+var chatFileFlag string
+
 var chatCmd = &cobra.Command{
 	Use:   "chat",
 	Short: "Start an interactive chat session",
@@ -34,6 +40,21 @@ HISTORY:
   By default, a history selector lets you resume previous conversations
   or start a new one. Use --new to skip the selector and start fresh.
   Conversations are automatically saved to ~/.geminiweb/history/
+
+INITIAL PROMPT FROM FILE:
+  Use --file to start the chat with content from a file:
+    geminiweb chat --file context.md
+    geminiweb chat -f prompt.txt --new
+
+  The file content is sent as the first message, and the chat
+  continues interactively. Useful for:
+    - Loading project context
+    - Starting with predefined prompts
+    - Code review sessions
+
+  Combine with other flags:
+    geminiweb chat -f task.md --gem "Code Helper"
+    geminiweb chat -f context.md --persona coder
 
 GEMS (Server-side Personas):
   Use --gem to start the chat with a specific gem:
@@ -60,11 +81,47 @@ func init() {
 	chatCmd.Flags().StringVarP(&chatGemFlag, "gem", "g", "", "Use a gem (by ID or name) - server-side persona")
 	chatCmd.Flags().BoolVarP(&chatNewFlag, "new", "n", false, "Start a new conversation (skip history selector)")
 	chatCmd.Flags().StringVarP(&chatPersonaFlag, "persona", "p", "", "Use a local persona (system prompt)")
+	chatCmd.Flags().StringVarP(&chatFileFlag, "file", "f", "", "Read initial prompt from file")
 }
+
+// maxFileSize is the maximum file size for initial prompt (1MB)
+const maxFileSize = 1 * 1024 * 1024
 
 func runChat() error {
 	modelName := getModel()
 	model := models.ModelFromName(modelName)
+
+	// Read initial prompt from file if specified
+	var initialPrompt string
+	if chatFileFlag != "" {
+		// Check file size first
+		info, err := os.Stat(chatFileFlag)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return fmt.Errorf("file not found: %s", chatFileFlag)
+			}
+			return fmt.Errorf("failed to access file '%s': %w", chatFileFlag, err)
+		}
+		if info.Size() > maxFileSize {
+			return fmt.Errorf("file '%s' is too large (max 1MB)", chatFileFlag)
+		}
+
+		// Read file content
+		data, err := os.ReadFile(chatFileFlag)
+		if err != nil {
+			return fmt.Errorf("failed to read file '%s': %w", chatFileFlag, err)
+		}
+
+		// Validate content
+		if !utf8.Valid(data) {
+			return fmt.Errorf("file '%s' appears to be binary, not text", chatFileFlag)
+		}
+
+		initialPrompt = strings.TrimSpace(string(data))
+		if initialPrompt == "" {
+			return fmt.Errorf("file '%s' is empty", chatFileFlag)
+		}
+	}
 
 	// Initialize history store
 	store, err := history.DefaultStore()
@@ -161,8 +218,8 @@ func runChat() error {
 	// Create session with conversation context
 	session := createChatSessionWithConversation(client, resolvedGem.ID, model, selectedConv)
 
-	// Run chat TUI with conversation, gem name, and persona
-	return tui.RunChatWithPersona(client, session, modelName, selectedConv, store, resolvedGem.Name, persona)
+	// Run chat TUI with conversation, gem name, persona, and initial prompt
+	return tui.RunChatWithInitialPrompt(client, session, modelName, selectedConv, store, resolvedGem.Name, persona, initialPrompt)
 }
 
 // createChatSessionWithConversation creates a chat session, optionally resuming from a conversation
