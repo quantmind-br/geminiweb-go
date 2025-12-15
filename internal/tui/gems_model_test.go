@@ -61,7 +61,8 @@ func (m *mockGemsClient) UpdateGem(gemID, name, prompt, description string) (*mo
 	return nil, nil
 }
 func (m *mockGemsClient) DeleteGem(gemID string) error { return nil }
-func (m *mockGemsClient) Gems() *models.GemJar         { return m.gems }
+func (m *mockGemsClient) Gems() *models.GemJar           { return m.gems }
+func (m *mockGemsClient) IsAutoCloseEnabled() bool       { return false }
 func (m *mockGemsClient) GetGem(id, name string) *models.Gem {
 	return nil
 }

@@ -21,13 +21,18 @@ type MarkdownConfig struct {
 type Config struct {
 	DefaultModel string `json:"default_model"`
 	// AutoClose controls automatic client shutdown after inactivity.
-	// RESERVED: This feature is planned but not yet implemented.
-	// When implemented, it will automatically close the GeminiClient and stop
-	// background cookie rotation after a period of inactivity.
+	// When enabled, the GeminiClient will automatically close and stop
+	// background cookie rotation after CloseDelay seconds of inactivity.
 	AutoClose bool `json:"auto_close"`
+	// CloseDelay is the number of seconds of inactivity before auto-close triggers.
+	// Default is 300 (5 minutes). Minimum recommended is 30 seconds.
+	CloseDelay int `json:"close_delay"`
+	// AutoReInit enables automatic re-initialization when a request is made
+	// after the client was auto-closed due to inactivity.
+	AutoReInit bool `json:"auto_reinit"`
 	// Verbose enables detailed logging output during operations.
 	// When enabled, shows model info, request timing, and response metadata.
-	Verbose bool `json:"verbose"`
+	Verbose         bool           `json:"verbose"`
 	CopyToClipboard bool           `json:"copy_to_clipboard"`
 	TUITheme        string         `json:"tui_theme,omitempty"`    // TUI color theme
 	DownloadDir     string         `json:"download_dir,omitempty"` // Directory for saving images
@@ -51,6 +56,8 @@ func DefaultConfig() Config {
 	return Config{
 		DefaultModel:    "gemini-2.5-flash",
 		AutoClose:       true,
+		CloseDelay:      300, // 5 minutes
+		AutoReInit:      true,
 		Verbose:         false,
 		CopyToClipboard: false,
 		TUITheme:        "tokyonight",

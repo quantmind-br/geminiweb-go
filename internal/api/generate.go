@@ -25,6 +25,14 @@ type GenerateOptions struct {
 
 // GenerateContent sends a prompt to Gemini and returns the response
 func (c *GeminiClient) GenerateContent(prompt string, opts *GenerateOptions) (*models.ModelOutput, error) {
+	// Ensure client is running (may re-init if auto-closed)
+	if err := c.ensureRunning(); err != nil {
+		return nil, err
+	}
+
+	// Reset idle timer to indicate activity
+	c.resetIdleTimer()
+
 	result, err := c.doGenerateContent(prompt, opts)
 
 	// If auth error and browser refresh is enabled, try to refresh and retry

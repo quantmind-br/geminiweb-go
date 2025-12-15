@@ -38,12 +38,26 @@ func DefaultDownloadOptions() ImageDownloadOptions {
 
 // DownloadImage downloads a WebImage to disk
 func (c *GeminiClient) DownloadImage(img models.WebImage, opts ImageDownloadOptions) (string, error) {
+	// Ensure client is running (may re-init if auto-closed)
+	if err := c.ensureRunning(); err != nil {
+		return "", err
+	}
+	// Reset idle timer to indicate activity
+	c.resetIdleTimer()
+
 	return c.downloadImageURL(img.URL, img.Title, opts)
 }
 
 // DownloadGeneratedImage downloads a GeneratedImage to disk
 // If opts.FullSize is true, appends =s2048 to the URL for maximum resolution
 func (c *GeminiClient) DownloadGeneratedImage(img models.GeneratedImage, opts ImageDownloadOptions) (string, error) {
+	// Ensure client is running (may re-init if auto-closed)
+	if err := c.ensureRunning(); err != nil {
+		return "", err
+	}
+	// Reset idle timer to indicate activity
+	c.resetIdleTimer()
+
 	url := img.URL
 
 	// Add size parameter for full-size images

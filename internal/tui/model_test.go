@@ -2878,8 +2878,9 @@ func (m *mockGeminiClientWithUpload) CreateGem(name, prompt, description string)
 func (m *mockGeminiClientWithUpload) UpdateGem(gemID, name, prompt, description string) (*models.Gem, error) {
 	return nil, nil
 }
-func (m *mockGeminiClientWithUpload) DeleteGem(gemID string) error      { return nil }
-func (m *mockGeminiClientWithUpload) Gems() *models.GemJar              { return nil }
+func (m *mockGeminiClientWithUpload) DeleteGem(gemID string) error       { return nil }
+func (m *mockGeminiClientWithUpload) Gems() *models.GemJar               { return nil }
+func (m *mockGeminiClientWithUpload) IsAutoCloseEnabled() bool           { return false }
 func (m *mockGeminiClientWithUpload) GetGem(id, name string) *models.Gem { return nil }
 func (m *mockGeminiClientWithUpload) BatchExecute(requests []api.RPCData) ([]api.BatchResponse, error) {
 	return nil, nil

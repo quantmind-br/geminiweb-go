@@ -2,6 +2,7 @@ package commands
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -87,6 +88,9 @@ func runChat() error {
 		selectedConv = result.Conversation
 	}
 
+	// Load config for auto-close settings
+	cfg, _ := config.LoadConfig()
+
 	// Build client options
 	clientOpts := []api.ClientOption{
 		api.WithModel(model),
@@ -96,6 +100,15 @@ func runChat() error {
 	// Add browser refresh if enabled (also enables silent auto-login fallback)
 	if browserType, enabled := getBrowserRefresh(); enabled {
 		clientOpts = append(clientOpts, api.WithBrowserRefresh(browserType))
+	}
+
+	// Add auto-close options from config
+	if cfg.AutoClose {
+		clientOpts = append(clientOpts,
+			api.WithAutoClose(true),
+			api.WithCloseDelay(time.Duration(cfg.CloseDelay)*time.Second),
+			api.WithAutoReInit(cfg.AutoReInit),
+		)
 	}
 
 	// Create client with nil cookies - Init() will load from disk or browser

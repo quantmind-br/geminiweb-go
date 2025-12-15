@@ -37,9 +37,13 @@ type BatchResponse struct {
 // BatchExecute executa múltiplas chamadas RPC em uma única requisição HTTP
 // Este é o método central para todas as operações de Gems
 func (c *GeminiClient) BatchExecute(requests []RPCData) ([]BatchResponse, error) {
-	if c.IsClosed() {
-		return nil, fmt.Errorf("client is closed")
+	// Ensure client is running (may re-init if auto-closed)
+	if err := c.ensureRunning(); err != nil {
+		return nil, err
 	}
+
+	// Reset idle timer to indicate activity
+	c.resetIdleTimer()
 
 	if len(requests) == 0 {
 		return nil, fmt.Errorf("no requests provided")

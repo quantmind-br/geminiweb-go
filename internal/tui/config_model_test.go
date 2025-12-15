@@ -672,20 +672,26 @@ func TestConfigModel_MenuConstants(t *testing.T) {
 	if menuAutoClose != 2 {
 		t.Errorf("Expected menuAutoClose to be 2, got %d", menuAutoClose)
 	}
-	if menuCopyToClipboard != 3 {
-		t.Errorf("Expected menuCopyToClipboard to be 3, got %d", menuCopyToClipboard)
+	if menuCloseDelay != 3 {
+		t.Errorf("Expected menuCloseDelay to be 3, got %d", menuCloseDelay)
 	}
-	if menuTheme != 4 {
-		t.Errorf("Expected menuTheme to be 4, got %d", menuTheme)
+	if menuAutoReInit != 4 {
+		t.Errorf("Expected menuAutoReInit to be 4, got %d", menuAutoReInit)
 	}
-	if menuTUITheme != 5 {
-		t.Errorf("Expected menuTUITheme to be 5, got %d", menuTUITheme)
+	if menuCopyToClipboard != 5 {
+		t.Errorf("Expected menuCopyToClipboard to be 5, got %d", menuCopyToClipboard)
 	}
-	if menuExit != 6 {
-		t.Errorf("Expected menuExit to be 6, got %d", menuExit)
+	if menuTheme != 6 {
+		t.Errorf("Expected menuTheme to be 6, got %d", menuTheme)
 	}
-	if menuItemCount != 7 {
-		t.Errorf("Expected menuItemCount to be 7, got %d", menuItemCount)
+	if menuTUITheme != 7 {
+		t.Errorf("Expected menuTUITheme to be 7, got %d", menuTUITheme)
+	}
+	if menuExit != 8 {
+		t.Errorf("Expected menuExit to be 8, got %d", menuExit)
+	}
+	if menuItemCount != 9 {
+		t.Errorf("Expected menuItemCount to be 9, got %d", menuItemCount)
 	}
 }
 

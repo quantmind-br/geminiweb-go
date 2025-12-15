@@ -384,6 +384,13 @@ func generateUploadID() string {
 
 // UploadImage is a convenience method on GeminiClient for uploading images
 func (c *GeminiClient) UploadImage(filePath string) (*UploadedImage, error) {
+	// Ensure client is running (may re-init if auto-closed)
+	if err := c.ensureRunning(); err != nil {
+		return nil, err
+	}
+	// Reset idle timer to indicate activity
+	c.resetIdleTimer()
+
 	uploader := NewImageUploader(c)
 	return uploader.UploadFile(filePath)
 }
@@ -394,18 +401,39 @@ func (c *GeminiClient) UploadImageFromReader(
 	fileName string,
 	mimeType string,
 ) (*UploadedImage, error) {
+	// Ensure client is running (may re-init if auto-closed)
+	if err := c.ensureRunning(); err != nil {
+		return nil, err
+	}
+	// Reset idle timer to indicate activity
+	c.resetIdleTimer()
+
 	uploader := NewImageUploader(c)
 	return uploader.UploadFromReader(reader, fileName, mimeType)
 }
 
 // UploadFile is a convenience method on GeminiClient for uploading any file
 func (c *GeminiClient) UploadFile(filePath string) (*UploadedFile, error) {
+	// Ensure client is running (may re-init if auto-closed)
+	if err := c.ensureRunning(); err != nil {
+		return nil, err
+	}
+	// Reset idle timer to indicate activity
+	c.resetIdleTimer()
+
 	uploader := NewFileUploader(c)
 	return uploader.UploadFile(filePath)
 }
 
 // UploadText is a convenience method for uploading text content as a file
 func (c *GeminiClient) UploadText(content string, fileName string) (*UploadedFile, error) {
+	// Ensure client is running (may re-init if auto-closed)
+	if err := c.ensureRunning(); err != nil {
+		return nil, err
+	}
+	// Reset idle timer to indicate activity
+	c.resetIdleTimer()
+
 	uploader := NewFileUploader(c)
 	return uploader.UploadText(content, fileName)
 }

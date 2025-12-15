@@ -1650,3 +1650,463 @@ func (m *SequentialMockHttpClient) doRequest() (*fhttp.Response, error) {
 		Header:     make(fhttp.Header),
 	}, nil
 }
+
+// ============================================================================
+// AutoClose Tests
+// ============================================================================
+
+// TestGeminiClient_AutoClose_DefaultDisabled tests that auto-close is disabled by default
+func TestGeminiClient_AutoClose_DefaultDisabled(t *testing.T) {
+	cookies := &config.Cookies{Secure1PSID: "test_psid"}
+
+	client, err := NewClient(cookies)
+	if err != nil {
+		t.Fatalf("NewClient() failed: %v", err)
+	}
+
+	if client.IsAutoCloseEnabled() {
+		t.Error("Auto-close should be disabled by default")
+	}
+
+	if client.autoClose {
+		t.Error("autoClose field should be false by default")
+	}
+}
+
+// TestGeminiClient_AutoClose_WithAutoCloseOption tests WithAutoClose option
+func TestGeminiClient_AutoClose_WithAutoCloseOption(t *testing.T) {
+	cookies := &config.Cookies{Secure1PSID: "test_psid"}
+
+	tests := []struct {
+		name        string
+		enabled     bool
+		wantEnabled bool
+	}{
+		{"enabled", true, true},
+		{"disabled", false, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client, err := NewClient(cookies, WithAutoClose(tt.enabled))
+			if err != nil {
+				t.Fatalf("NewClient() failed: %v", err)
+			}
+
+			if client.IsAutoCloseEnabled() != tt.wantEnabled {
+				t.Errorf("IsAutoCloseEnabled() = %v, want %v", client.IsAutoCloseEnabled(), tt.wantEnabled)
+			}
+		})
+	}
+}
+
+// TestGeminiClient_AutoClose_WithCloseDelay tests WithCloseDelay option
+func TestGeminiClient_AutoClose_WithCloseDelay(t *testing.T) {
+	cookies := &config.Cookies{Secure1PSID: "test_psid"}
+
+	tests := []struct {
+		name      string
+		delay     time.Duration
+		wantDelay time.Duration
+	}{
+		{"1 minute", time.Minute, time.Minute},
+		{"5 minutes", 5 * time.Minute, 5 * time.Minute},
+		{"30 seconds", 30 * time.Second, 30 * time.Second},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client, err := NewClient(cookies, WithCloseDelay(tt.delay))
+			if err != nil {
+				t.Fatalf("NewClient() failed: %v", err)
+			}
+
+			if client.closeDelay != tt.wantDelay {
+				t.Errorf("closeDelay = %v, want %v", client.closeDelay, tt.wantDelay)
+			}
+		})
+	}
+}
+
+// TestGeminiClient_AutoClose_WithAutoReInit tests WithAutoReInit option
+func TestGeminiClient_AutoClose_WithAutoReInit(t *testing.T) {
+	cookies := &config.Cookies{Secure1PSID: "test_psid"}
+
+	tests := []struct {
+		name        string
+		enabled     bool
+		wantEnabled bool
+	}{
+		{"enabled", true, true},
+		{"disabled", false, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client, err := NewClient(cookies, WithAutoReInit(tt.enabled))
+			if err != nil {
+				t.Fatalf("NewClient() failed: %v", err)
+			}
+
+			if client.autoReInit != tt.wantEnabled {
+				t.Errorf("autoReInit = %v, want %v", client.autoReInit, tt.wantEnabled)
+			}
+		})
+	}
+}
+
+// TestGeminiClient_AutoClose_TimerStartsOnInit tests that timer starts on Init when auto-close is enabled
+func TestGeminiClient_AutoClose_TimerStartsOnInit(t *testing.T) {
+	cookies := &config.Cookies{Secure1PSID: "test_psid"}
+
+	// Setup mock HTTP client
+	tokenResponse := `<html><script>window.data = {"SNlM0e":"test_token"};</script></html>`
+	mockHttpClient := NewMockHttpClient([]byte(tokenResponse), 200)
+
+	client, err := NewClient(cookies,
+		WithAutoClose(true),
+		WithCloseDelay(100*time.Millisecond),
+		WithAutoRefresh(false))
+	if err != nil {
+		t.Fatalf("NewClient() failed: %v", err)
+	}
+
+	client.httpClient = mockHttpClient
+
+	// Before Init, timer should be nil
+	if client.idleTimer != nil {
+		t.Error("idleTimer should be nil before Init()")
+	}
+
+	err = client.Init()
+	if err != nil {
+		t.Fatalf("Init() failed: %v", err)
+	}
+
+	// After Init, timer should be set
+	if client.idleTimer == nil {
+		t.Error("idleTimer should be set after Init() when auto-close is enabled")
+	}
+
+	// Cleanup
+	client.Close()
+}
+
+// TestGeminiClient_AutoClose_TimerDoesNotStartWhenDisabled tests that timer doesn't start when auto-close is disabled
+func TestGeminiClient_AutoClose_TimerDoesNotStartWhenDisabled(t *testing.T) {
+	cookies := &config.Cookies{Secure1PSID: "test_psid"}
+
+	// Setup mock HTTP client
+	tokenResponse := `<html><script>window.data = {"SNlM0e":"test_token"};</script></html>`
+	mockHttpClient := NewMockHttpClient([]byte(tokenResponse), 200)
+
+	client, err := NewClient(cookies,
+		WithAutoClose(false),
+		WithAutoRefresh(false))
+	if err != nil {
+		t.Fatalf("NewClient() failed: %v", err)
+	}
+
+	client.httpClient = mockHttpClient
+
+	err = client.Init()
+	if err != nil {
+		t.Fatalf("Init() failed: %v", err)
+	}
+
+	// Timer should still be nil when auto-close is disabled
+	if client.idleTimer != nil {
+		t.Error("idleTimer should be nil when auto-close is disabled")
+	}
+
+	// Cleanup
+	client.Close()
+}
+
+// TestGeminiClient_AutoClose_ClientClosesAfterDelay tests that client closes after delay
+func TestGeminiClient_AutoClose_ClientClosesAfterDelay(t *testing.T) {
+	cookies := &config.Cookies{Secure1PSID: "test_psid"}
+
+	// Setup mock HTTP client
+	tokenResponse := `<html><script>window.data = {"SNlM0e":"test_token"};</script></html>`
+	mockHttpClient := NewMockHttpClient([]byte(tokenResponse), 200)
+
+	delay := 50 * time.Millisecond
+	client, err := NewClient(cookies,
+		WithAutoClose(true),
+		WithCloseDelay(delay),
+		WithAutoRefresh(false))
+	if err != nil {
+		t.Fatalf("NewClient() failed: %v", err)
+	}
+
+	client.httpClient = mockHttpClient
+
+	err = client.Init()
+	if err != nil {
+		t.Fatalf("Init() failed: %v", err)
+	}
+
+	// Client should not be closed initially
+	if client.IsClosed() {
+		t.Error("Client should not be closed immediately after Init()")
+	}
+
+	// Wait for the delay plus a small buffer
+	time.Sleep(delay + 50*time.Millisecond)
+
+	// Client should now be closed
+	if !client.IsClosed() {
+		t.Error("Client should be closed after closeDelay")
+	}
+}
+
+// TestGeminiClient_AutoClose_CloseStopsTimer tests that Close() stops the timer
+func TestGeminiClient_AutoClose_CloseStopsTimer(t *testing.T) {
+	cookies := &config.Cookies{Secure1PSID: "test_psid"}
+
+	// Setup mock HTTP client
+	tokenResponse := `<html><script>window.data = {"SNlM0e":"test_token"};</script></html>`
+	mockHttpClient := NewMockHttpClient([]byte(tokenResponse), 200)
+
+	client, err := NewClient(cookies,
+		WithAutoClose(true),
+		WithCloseDelay(time.Second),
+		WithAutoRefresh(false))
+	if err != nil {
+		t.Fatalf("NewClient() failed: %v", err)
+	}
+
+	client.httpClient = mockHttpClient
+
+	err = client.Init()
+	if err != nil {
+		t.Fatalf("Init() failed: %v", err)
+	}
+
+	// Verify timer is set
+	if client.idleTimer == nil {
+		t.Fatal("idleTimer should be set after Init()")
+	}
+
+	// Close the client
+	client.Close()
+
+	// Timer should be nil after Close
+	if client.idleTimer != nil {
+		t.Error("idleTimer should be nil after Close()")
+	}
+}
+
+// TestGeminiClient_AutoClose_EnsureRunning_NotClosed tests ensureRunning when client is not closed
+func TestGeminiClient_AutoClose_EnsureRunning_NotClosed(t *testing.T) {
+	cookies := &config.Cookies{Secure1PSID: "test_psid"}
+
+	// Setup mock HTTP client
+	tokenResponse := `<html><script>window.data = {"SNlM0e":"test_token"};</script></html>`
+	mockHttpClient := NewMockHttpClient([]byte(tokenResponse), 200)
+
+	client, err := NewClient(cookies, WithAutoRefresh(false))
+	if err != nil {
+		t.Fatalf("NewClient() failed: %v", err)
+	}
+
+	client.httpClient = mockHttpClient
+
+	err = client.Init()
+	if err != nil {
+		t.Fatalf("Init() failed: %v", err)
+	}
+
+	// ensureRunning should return nil when client is not closed
+	err = client.ensureRunning()
+	if err != nil {
+		t.Errorf("ensureRunning() should return nil when client is running, got: %v", err)
+	}
+
+	client.Close()
+}
+
+// TestGeminiClient_AutoClose_EnsureRunning_ClosedNoReInit tests ensureRunning when client is closed and autoReInit is disabled
+func TestGeminiClient_AutoClose_EnsureRunning_ClosedNoReInit(t *testing.T) {
+	cookies := &config.Cookies{Secure1PSID: "test_psid"}
+
+	// Setup mock HTTP client
+	tokenResponse := `<html><script>window.data = {"SNlM0e":"test_token"};</script></html>`
+	mockHttpClient := NewMockHttpClient([]byte(tokenResponse), 200)
+
+	client, err := NewClient(cookies,
+		WithAutoReInit(false),
+		WithAutoRefresh(false))
+	if err != nil {
+		t.Fatalf("NewClient() failed: %v", err)
+	}
+
+	client.httpClient = mockHttpClient
+
+	err = client.Init()
+	if err != nil {
+		t.Fatalf("Init() failed: %v", err)
+	}
+
+	// Close the client
+	client.Close()
+
+	// ensureRunning should return error when client is closed and autoReInit is disabled
+	err = client.ensureRunning()
+	if err == nil {
+		t.Error("ensureRunning() should return error when client is closed and autoReInit is disabled")
+	}
+	if !strings.Contains(err.Error(), "auto-reinit is disabled") {
+		t.Errorf("Error should mention auto-reinit is disabled, got: %v", err)
+	}
+}
+
+// TestGeminiClient_AutoClose_EnsureRunning_ReInit tests ensureRunning with auto re-init
+func TestGeminiClient_AutoClose_EnsureRunning_ReInit(t *testing.T) {
+	cookies := &config.Cookies{Secure1PSID: "test_psid"}
+
+	// Setup mock HTTP client that returns tokens
+	callCount := 0
+	sequentialMockClient := &SequentialMockHttpClient{
+		responses: []mockResponse{
+			{statusCode: 200, body: []byte(`{"SNlM0e":"first_token"}`)},
+			{statusCode: 200, body: []byte(`{"SNlM0e":"second_token"}`)},
+		},
+		callCount: &callCount,
+	}
+
+	client, err := NewClient(cookies,
+		WithAutoReInit(true),
+		WithAutoRefresh(false))
+	if err != nil {
+		t.Fatalf("NewClient() failed: %v", err)
+	}
+
+	client.httpClient = sequentialMockClient
+
+	// First Init
+	err = client.Init()
+	if err != nil {
+		t.Fatalf("First Init() failed: %v", err)
+	}
+
+	firstToken := client.GetAccessToken()
+	if firstToken != "first_token" {
+		t.Errorf("First token = %s, want first_token", firstToken)
+	}
+
+	// Close the client
+	client.Close()
+
+	// ensureRunning should re-init the client
+	err = client.ensureRunning()
+	if err != nil {
+		t.Errorf("ensureRunning() should succeed with autoReInit enabled, got: %v", err)
+	}
+
+	// Client should not be closed anymore
+	if client.IsClosed() {
+		t.Error("Client should not be closed after re-init")
+	}
+
+	// Token should be updated
+	secondToken := client.GetAccessToken()
+	if secondToken != "second_token" {
+		t.Errorf("Second token = %s, want second_token", secondToken)
+	}
+
+	client.Close()
+}
+
+// TestGeminiClient_AutoClose_ResetIdleTimer tests that resetIdleTimer extends the timer
+func TestGeminiClient_AutoClose_ResetIdleTimer(t *testing.T) {
+	cookies := &config.Cookies{Secure1PSID: "test_psid"}
+
+	// Setup mock HTTP client
+	tokenResponse := `<html><script>window.data = {"SNlM0e":"test_token"};</script></html>`
+	mockHttpClient := NewMockHttpClient([]byte(tokenResponse), 200)
+
+	delay := 100 * time.Millisecond
+	client, err := NewClient(cookies,
+		WithAutoClose(true),
+		WithCloseDelay(delay),
+		WithAutoRefresh(false))
+	if err != nil {
+		t.Fatalf("NewClient() failed: %v", err)
+	}
+
+	client.httpClient = mockHttpClient
+
+	err = client.Init()
+	if err != nil {
+		t.Fatalf("Init() failed: %v", err)
+	}
+
+	// Wait for half the delay
+	time.Sleep(delay / 2)
+
+	// Reset the timer (simulating activity)
+	client.resetIdleTimer()
+
+	// Wait for another 75% of the delay
+	time.Sleep(delay * 3 / 4)
+
+	// Client should NOT be closed (total time: 125% but timer was reset at 50%)
+	if client.IsClosed() {
+		t.Error("Client should not be closed - timer was reset")
+	}
+
+	// Wait for the remaining time
+	time.Sleep(delay/2 + 50*time.Millisecond)
+
+	// Now client should be closed
+	if !client.IsClosed() {
+		t.Error("Client should be closed after full delay since last reset")
+	}
+}
+
+// TestGeminiClient_AutoClose_ConcurrentResetTimer tests concurrent resetIdleTimer calls
+func TestGeminiClient_AutoClose_ConcurrentResetTimer(t *testing.T) {
+	cookies := &config.Cookies{Secure1PSID: "test_psid"}
+
+	// Setup mock HTTP client
+	tokenResponse := `<html><script>window.data = {"SNlM0e":"test_token"};</script></html>`
+	mockHttpClient := NewMockHttpClient([]byte(tokenResponse), 200)
+
+	client, err := NewClient(cookies,
+		WithAutoClose(true),
+		WithCloseDelay(time.Second),
+		WithAutoRefresh(false))
+	if err != nil {
+		t.Fatalf("NewClient() failed: %v", err)
+	}
+
+	client.httpClient = mockHttpClient
+
+	err = client.Init()
+	if err != nil {
+		t.Fatalf("Init() failed: %v", err)
+	}
+
+	// Concurrent timer resets
+	var wg sync.WaitGroup
+	for i := 0; i < 100; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			client.resetIdleTimer()
+		}()
+	}
+	wg.Wait()
+
+	// Client should not be closed and should be in consistent state
+	if client.IsClosed() {
+		t.Error("Client should not be closed during concurrent resets")
+	}
+	if client.idleTimer == nil {
+		t.Error("idleTimer should not be nil after concurrent resets")
+	}
+
+	client.Close()
+}

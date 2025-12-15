@@ -50,6 +50,9 @@ type GeminiClientInterface interface {
 	RefreshFromBrowser() (bool, error)
 	IsBrowserRefreshEnabled() bool
 
+	// Auto-close
+	IsAutoCloseEnabled() bool
+
 	// Gems methods
 	FetchGems(includeHidden bool) (*models.GemJar, error)
 	CreateGem(name, prompt, description string) (*models.Gem, error)
@@ -80,6 +83,12 @@ type GeminiClient struct {
 	browserExtractor      BrowserCookieExtractor
 	lastBrowserRefresh    time.Time
 	browserRefreshMinWait time.Duration
+	// Auto-close after inactivity
+	autoClose   bool          // If true, client closes after inactivity period
+	closeDelay  time.Duration // Time of inactivity before auto-close
+	idleTimer   *time.Timer   // Timer for auto-close
+	autoReInit  bool          // If true, auto re-initialize on next request after auto-close
+	initialized bool          // True after successful Init()
 	// Injected dependencies for testing
 	refreshFunc  RefreshFunc
 	cookieLoader CookieLoader
@@ -153,6 +162,32 @@ func WithHTTPClient(client tls_client.HttpClient) ClientOption {
 	}
 }
 
+// WithAutoClose enables automatic client shutdown after a period of inactivity.
+// When enabled, the client will automatically close (stopping cookie rotation and
+// releasing resources) after closeDelay of inactivity. Each API request resets the timer.
+func WithAutoClose(enabled bool) ClientOption {
+	return func(c *GeminiClient) {
+		c.autoClose = enabled
+	}
+}
+
+// WithCloseDelay sets the inactivity duration before auto-close triggers.
+// Default is 5 minutes. Minimum recommended is 30 seconds.
+func WithCloseDelay(delay time.Duration) ClientOption {
+	return func(c *GeminiClient) {
+		c.closeDelay = delay
+	}
+}
+
+// WithAutoReInit enables automatic re-initialization when a request is made
+// after the client was auto-closed due to inactivity.
+// Default is true when auto-close is enabled.
+func WithAutoReInit(enabled bool) ClientOption {
+	return func(c *GeminiClient) {
+		c.autoReInit = enabled
+	}
+}
+
 // CookieLoader is a function type for loading cookies (for dependency injection)
 type CookieLoader func() (*config.Cookies, error)
 
@@ -174,6 +209,10 @@ func NewClient(cookies *config.Cookies, opts ...ClientOption) (*GeminiClient, er
 		refreshInterval:       9 * time.Minute,  // Default: 9 minutes
 		browserRefreshMinWait: 30 * time.Second, // Minimum wait between browser refreshes
 		cookieLoader:          config.LoadCookies,
+		// Auto-close defaults
+		autoClose:  false,             // Disabled by default (opt-in feature)
+		closeDelay: 5 * time.Minute,   // Default: 5 minutes of inactivity
+		autoReInit: true,              // Default: auto re-init when auto-close is enabled
 	}
 
 	// Apply options first (allows injecting custom HTTP client)
@@ -247,6 +286,14 @@ func (c *GeminiClient) Init() error {
 		c.rotator.Start()
 	}
 
+	// Mark as initialized
+	c.initialized = true
+
+	// Step 4: Start auto-close timer if enabled
+	if c.autoClose && c.closeDelay > 0 {
+		c.resetIdleTimerLocked()
+	}
+
 	return nil
 }
 
@@ -260,6 +307,12 @@ func (c *GeminiClient) Close() {
 	}
 
 	c.closed = true
+
+	// Stop auto-close timer
+	if c.idleTimer != nil {
+		c.idleTimer.Stop()
+		c.idleTimer = nil
+	}
 
 	if c.rotator != nil {
 		c.rotator.Stop()
@@ -304,6 +357,94 @@ func (c *GeminiClient) IsClosed() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.closed
+}
+
+// IsAutoCloseEnabled returns whether auto-close is enabled
+func (c *GeminiClient) IsAutoCloseEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.autoClose
+}
+
+// resetIdleTimer resets the inactivity timer for auto-close.
+// This method acquires the lock internally.
+// Call this after each API request to indicate activity.
+func (c *GeminiClient) resetIdleTimer() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.resetIdleTimerLocked()
+}
+
+// resetIdleTimerLocked resets the inactivity timer for auto-close.
+// The caller must hold c.mu.Lock().
+func (c *GeminiClient) resetIdleTimerLocked() {
+	if !c.autoClose || c.closeDelay <= 0 {
+		return
+	}
+
+	// Stop existing timer if any
+	if c.idleTimer != nil {
+		c.idleTimer.Stop()
+	}
+
+	// Create new timer
+	c.idleTimer = time.AfterFunc(c.closeDelay, func() {
+		c.autoCloseHandler()
+	})
+}
+
+// autoCloseHandler is called when the idle timer expires.
+// It closes the client due to inactivity.
+func (c *GeminiClient) autoCloseHandler() {
+	c.mu.Lock()
+	// Double-check that we should still close
+	if c.closed || !c.autoClose {
+		c.mu.Unlock()
+		return
+	}
+	c.mu.Unlock()
+
+	// Close the client (this will acquire the lock)
+	c.Close()
+}
+
+// ensureRunning ensures the client is initialized and running.
+// If the client was auto-closed and autoReInit is enabled, it will re-initialize.
+// Returns an error if the client is closed and cannot be re-initialized.
+func (c *GeminiClient) ensureRunning() error {
+	c.mu.RLock()
+	if !c.closed && c.initialized {
+		c.mu.RUnlock()
+		return nil
+	}
+	needsReInit := c.autoReInit && c.closed && c.initialized
+	c.mu.RUnlock()
+
+	if needsReInit {
+		// Re-initialize the client
+		c.mu.Lock()
+		// Double-check under write lock
+		if !c.closed {
+			c.mu.Unlock()
+			return nil
+		}
+		c.closed = false
+		c.initialized = false
+		c.mu.Unlock()
+
+		// Init() will acquire its own lock
+		return c.Init()
+	}
+
+	c.mu.RLock()
+	isClosed := c.closed
+	c.mu.RUnlock()
+
+	if isClosed {
+		return fmt.Errorf("client is closed and auto-reinit is disabled")
+	}
+
+	return nil
 }
 
 // StartChat creates a new chat session

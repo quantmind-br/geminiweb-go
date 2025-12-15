@@ -28,6 +28,8 @@ const (
 	menuDefaultModel = iota
 	menuVerbose
 	menuAutoClose
+	menuCloseDelay
+	menuAutoReInit
 	menuCopyToClipboard
 	menuTheme    // Markdown theme
 	menuTUITheme // TUI color theme
@@ -261,6 +263,38 @@ func (m ConfigModel) handleSelect() (tea.Model, tea.Cmd) {
 			}
 			return m, clearFeedback(m.feedbackTimeout)
 
+		case menuCloseDelay:
+			// Cycle through preset values: 60, 120, 300, 600, 900 seconds
+			presets := []int{60, 120, 300, 600, 900}
+			currentIdx := 0
+			for i, p := range presets {
+				if p == m.config.CloseDelay {
+					currentIdx = i
+					break
+				}
+			}
+			nextIdx := (currentIdx + 1) % len(presets)
+			m.config.CloseDelay = presets[nextIdx]
+			if err := config.SaveConfig(m.config); err != nil {
+				m.feedback = fmt.Sprintf("Error: %v", err)
+			} else {
+				m.feedback = fmt.Sprintf("Close delay set to %s", formatDuration(m.config.CloseDelay))
+			}
+			return m, clearFeedback(m.feedbackTimeout)
+
+		case menuAutoReInit:
+			m.config.AutoReInit = !m.config.AutoReInit
+			if err := config.SaveConfig(m.config); err != nil {
+				m.feedback = fmt.Sprintf("Error: %v", err)
+			} else {
+				state := "disabled"
+				if m.config.AutoReInit {
+					state = "enabled"
+				}
+				m.feedback = fmt.Sprintf("Auto re-init %s", state)
+			}
+			return m, clearFeedback(m.feedbackTimeout)
+
 		case menuCopyToClipboard:
 			m.config.CopyToClipboard = !m.config.CopyToClipboard
 			if err := config.SaveConfig(m.config); err != nil {
@@ -449,7 +483,7 @@ func (m ConfigModel) renderMainMenu(width int) string {
 		verboseValue,
 	))
 
-	// Auto Close (planned - not yet implemented)
+	// Auto Close
 	cursor = "  "
 	style = configMenuItemStyle
 	if m.cursor == menuAutoClose {
@@ -459,9 +493,39 @@ func (m ConfigModel) renderMainMenu(width int) string {
 	autoCloseValue := m.renderBoolValue(m.config.AutoClose)
 	items = append(items, fmt.Sprintf("%s%s%s%s",
 		cursor,
-		style.Render("Auto Close (planned)"),
-		strings.Repeat(" ", 1),
+		style.Render("Auto Close"),
+		strings.Repeat(" ", 10),
 		autoCloseValue,
+	))
+
+	// Close Delay
+	cursor = "  "
+	style = configMenuItemStyle
+	if m.cursor == menuCloseDelay {
+		cursor = configCursorStyle.Render("▸ ")
+		style = configMenuSelectedStyle
+	}
+	closeDelayValue := configValueStyle.Render(formatDuration(m.config.CloseDelay))
+	items = append(items, fmt.Sprintf("%s%s%s%s",
+		cursor,
+		style.Render("Close Delay"),
+		strings.Repeat(" ", 9),
+		closeDelayValue,
+	))
+
+	// Auto Re-Init
+	cursor = "  "
+	style = configMenuItemStyle
+	if m.cursor == menuAutoReInit {
+		cursor = configCursorStyle.Render("▸ ")
+		style = configMenuSelectedStyle
+	}
+	autoReInitValue := m.renderBoolValue(m.config.AutoReInit)
+	items = append(items, fmt.Sprintf("%s%s%s%s",
+		cursor,
+		style.Render("Auto Re-Init"),
+		strings.Repeat(" ", 8),
+		autoReInitValue,
 	))
 
 	// Copy to Clipboard
@@ -639,6 +703,23 @@ func (m ConfigModel) renderBoolValue(value bool) string {
 		return configEnabledStyle.Render("enabled")
 	}
 	return configDisabledStyle.Render("disabled")
+}
+
+// formatDuration formats seconds into a human-readable duration string
+func formatDuration(seconds int) string {
+	if seconds < 60 {
+		return fmt.Sprintf("%ds", seconds)
+	}
+	minutes := seconds / 60
+	if minutes < 60 {
+		return fmt.Sprintf("%dm", minutes)
+	}
+	hours := minutes / 60
+	mins := minutes % 60
+	if mins == 0 {
+		return fmt.Sprintf("%dh", hours)
+	}
+	return fmt.Sprintf("%dh%dm", hours, mins)
 }
 
 // renderStatusBar renders the bottom status bar

@@ -227,6 +227,15 @@ func runQuery(prompt string, rawOutput bool) error {
 		clientOpts = append(clientOpts, api.WithBrowserRefresh(browserType))
 	}
 
+	// Add auto-close options from config (less relevant for single queries, but consistent)
+	if cfg.AutoClose {
+		clientOpts = append(clientOpts,
+			api.WithAutoClose(true),
+			api.WithCloseDelay(time.Duration(cfg.CloseDelay)*time.Second),
+			api.WithAutoReInit(cfg.AutoReInit),
+		)
+	}
+
 	// Create client with nil cookies - Init() will load from disk or browser
 	client, err := api.NewClient(nil, clientOpts...)
 	if err != nil {
