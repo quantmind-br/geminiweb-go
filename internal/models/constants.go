@@ -42,22 +42,38 @@ var (
 		Header: nil,
 	}
 
-	Model25Flash = Model{
-		Name: "gemini-2.5-flash",
+	// ModelFast is the fast/flash model optimized for speed
+	ModelFast = Model{
+		Name: "fast",
 		Header: map[string]string{
-			"x-goog-ext-525001261-jspb": `[1,null,null,null,"71c2d248d3b102ff",null,null,0,[4],null,null,2]`,
+			"x-goog-ext-525001261-jspb": `[1,null,null,null,"56fdd199312815e2",null,null,0,[4],null,null,2]`,
 		},
 	}
 
-	Model30Pro = Model{
-		Name: "gemini-3.0-pro",
+	// ModelPro is the advanced pro model for complex tasks
+	ModelPro = Model{
+		Name: "pro",
 		Header: map[string]string{
 			"x-goog-ext-525001261-jspb": `[1,null,null,null,"e6fa609c3fa255c0",null,null,0,[4],null,null,2]`,
 		},
 	}
 
+	// ModelThinking is the reasoning model with extended thinking capabilities
+	ModelThinking = Model{
+		Name: "thinking",
+		Header: map[string]string{
+			"x-goog-ext-525001261-jspb": `[1,null,null,null,"e051ce1aa80aa576",null,null,0,[4],null,null,2]`,
+		},
+	}
+
 	// DefaultModel is the recommended default
-	DefaultModel = Model30Pro
+	DefaultModel = ModelPro
+
+	// Legacy aliases for backward compatibility
+	// Deprecated: Use ModelFast instead
+	Model25Flash = ModelFast
+	// Deprecated: Use ModelPro instead
+	Model30Pro = ModelPro
 
 	// GeminiGenericHeader is the header used for generic Gem operations
 	GeminiGenericHeader = map[string]string{
@@ -67,16 +83,18 @@ var (
 
 // AllModels returns a list of all available models
 func AllModels() []Model {
-	return []Model{Model25Flash, Model30Pro}
+	return []Model{ModelFast, ModelPro, ModelThinking}
 }
 
 // ModelFromName returns a Model by its name
 func ModelFromName(name string) Model {
 	switch name {
-	case "gemini-2.5-flash":
-		return Model25Flash
-	case "gemini-3.0-pro":
-		return Model30Pro
+	case "fast", "gemini-2.5-flash": // gemini-2.5-flash is legacy alias
+		return ModelFast
+	case "pro", "gemini-3.0-pro": // gemini-3.0-pro is legacy alias
+		return ModelPro
+	case "thinking":
+		return ModelThinking
 	default:
 		return ModelUnspecified
 	}

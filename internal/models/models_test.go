@@ -27,8 +27,14 @@ func TestModelFromName(t *testing.T) {
 		name     string
 		expected Model
 	}{
-		{"gemini-2.5-flash", Model25Flash},
-		{"gemini-3.0-pro", Model30Pro},
+		// New model names
+		{"fast", ModelFast},
+		{"pro", ModelPro},
+		{"thinking", ModelThinking},
+		// Legacy model names (backward compatibility)
+		{"gemini-2.5-flash", ModelFast},
+		{"gemini-3.0-pro", ModelPro},
+		// Invalid models
 		{"invalid-model", ModelUnspecified},
 		{"", ModelUnspecified},
 	}
@@ -41,6 +47,39 @@ func TestModelFromName(t *testing.T) {
 				t.Errorf("ModelFromName(%s) = %v, want %v", tt.name, model.Name, tt.expected.Name)
 			}
 		})
+	}
+}
+
+func TestAllModelsContainsAllModels(t *testing.T) {
+	models := AllModels()
+
+	// Should contain exactly 3 models: Fast, Pro, Thinking
+	if len(models) != 3 {
+		t.Errorf("AllModels() returned %d models, expected 3", len(models))
+	}
+
+	// Check that all expected models are present
+	expectedNames := map[string]bool{"fast": false, "pro": false, "thinking": false}
+	for _, m := range models {
+		if _, exists := expectedNames[m.Name]; exists {
+			expectedNames[m.Name] = true
+		}
+	}
+
+	for name, found := range expectedNames {
+		if !found {
+			t.Errorf("AllModels() is missing model: %s", name)
+		}
+	}
+}
+
+func TestLegacyModelAliases(t *testing.T) {
+	// Verify that legacy aliases point to the correct models
+	if Model25Flash.Name != ModelFast.Name {
+		t.Errorf("Model25Flash should alias ModelFast, got %s, want %s", Model25Flash.Name, ModelFast.Name)
+	}
+	if Model30Pro.Name != ModelPro.Name {
+		t.Errorf("Model30Pro should alias ModelPro, got %s, want %s", Model30Pro.Name, ModelPro.Name)
 	}
 }
 
