@@ -10,8 +10,8 @@ import (
 func TestDefaultConfig(t *testing.T) {
 	cfg := DefaultConfig()
 
-	if cfg.DefaultModel != "gemini-2.5-flash" {
-		t.Errorf("Expected default model to be 'gemini-2.5-flash', got '%s'", cfg.DefaultModel)
+	if cfg.DefaultModel != "fast" {
+		t.Errorf("Expected default model to be 'fast', got '%s'", cfg.DefaultModel)
 	}
 
 	if cfg.AutoClose != true {
@@ -89,7 +89,7 @@ func TestAvailableModels(t *testing.T) {
 	}
 
 	// Check for expected models
-	expected := []string{"gemini-2.5-flash", "gemini-3.0-pro", "unspecified"}
+	expected := []string{"fast", "thinking", "pro"}
 	for _, expectedModel := range expected {
 		found := false
 		for _, model := range models {
@@ -251,8 +251,8 @@ func TestLoadConfig_InvalidJSON(t *testing.T) {
 	}
 
 	// Should return default config on error
-	if cfg.DefaultModel != "gemini-2.5-flash" {
-		t.Errorf("DefaultModel = %s, want gemini-2.5-flash", cfg.DefaultModel)
+	if cfg.DefaultModel != "fast" {
+		t.Errorf("DefaultModel = %s, want fast", cfg.DefaultModel)
 	}
 }
 
@@ -360,8 +360,8 @@ func TestDefaultMarkdownConfig(t *testing.T) {
 func TestDefaultConfig_AllFields(t *testing.T) {
 	cfg := DefaultConfig()
 
-	if cfg.DefaultModel != "gemini-2.5-flash" {
-		t.Errorf("DefaultModel = %q, want 'gemini-2.5-flash'", cfg.DefaultModel)
+	if cfg.DefaultModel != "fast" {
+		t.Errorf("DefaultModel = %q, want 'fast'", cfg.DefaultModel)
 	}
 	if !cfg.AutoClose {
 		t.Error("AutoClose should be true")

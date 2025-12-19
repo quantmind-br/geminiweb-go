@@ -138,7 +138,7 @@ func TestGetModel(t *testing.T) {
 				// This would require mocking config.LoadConfig
 				// For now, we expect the default fallback
 			},
-			expected: "gemini-2.5-flash",
+			expected: "fast",
 		},
 		{
 			name:      "no flag, config fails",
@@ -146,7 +146,7 @@ func TestGetModel(t *testing.T) {
 			setupMock: func() {
 				// Config failure is handled by returning default
 			},
-			expected: "gemini-2.5-flash",
+			expected: "fast",
 		},
 	}
 

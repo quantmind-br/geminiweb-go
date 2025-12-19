@@ -54,7 +54,7 @@ func DefaultMarkdownConfig() MarkdownConfig {
 func DefaultConfig() Config {
 	homeDir, _ := os.UserHomeDir()
 	return Config{
-		DefaultModel:    "gemini-2.5-flash",
+		DefaultModel:    "fast",
 		AutoClose:       true,
 		CloseDelay:      300, // 5 minutes
 		AutoReInit:      true,
@@ -178,8 +178,8 @@ func SaveConfig(cfg Config) error {
 // AvailableModels returns a list of available model names
 func AvailableModels() []string {
 	return []string{
-		"gemini-2.5-flash",
-		"gemini-3.0-pro",
-		"unspecified",
+		"fast",
+		"thinking",
+		"pro",
 	}
 }
