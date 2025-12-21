@@ -56,6 +56,11 @@ type executorConfig struct {
 	// recoverPanics determines whether to recover from panics in tool execution.
 	// When true, panics are converted to PanicError.
 	recoverPanics bool
+
+	// middlewareChain is the chain of middlewares to apply to tool execution.
+	// Middlewares are applied in order, with the first middleware being the
+	// outermost wrapper.
+	middlewareChain *MiddlewareChain
 }
 
 // defaultConfig returns the default executor configuration.
