@@ -80,18 +80,35 @@ type executor struct {
 	config   *executorConfig
 }
 
-// NewExecutor creates a new Executor with the given registry.
+// NewExecutor creates a new Executor with the given registry and options.
 // If registry is nil, the default global registry is used.
-// Additional configuration can be provided via ExecutorOption functions
-// (which will be added in a future subtask).
-func NewExecutor(registry Registry) *executor {
+// Additional configuration can be provided via ExecutorOption functions.
+//
+// Example:
+//
+//	executor := NewExecutor(
+//	    registry,
+//	    WithTimeout(60*time.Second),
+//	    WithMaxConcurrent(4),
+//	    WithDefaultMiddleware(),
+//	)
+//
+// Default configuration (when no options provided):
+//   - 30 second timeout
+//   - 1 concurrent execution (sequential for safety)
+//   - Panic recovery enabled
+//   - No middleware chain (pass-through execution)
+func NewExecutor(registry Registry, opts ...ExecutorOption) *executor {
 	if registry == nil {
 		registry = DefaultRegistry()
 	}
 
+	config := defaultConfig()
+	applyOptions(config, opts...)
+
 	return &executor{
 		registry: registry,
-		config:   defaultConfig(),
+		config:   config,
 	}
 }
 
@@ -100,12 +117,16 @@ func NewExecutor(registry Registry) *executor {
 //  1. Look up the tool in the registry
 //  2. Apply timeout if configured
 //  3. Check context before execution
-//  4. Execute the tool with panic recovery
-//  5. Return the output or error
+//  4. Apply middleware chain (if configured)
+//  5. Execute the tool with panic recovery
+//  6. Return the output or error
 //
 // The context is used for cancellation and can have a timeout applied.
 // If the executor has a default timeout configured and the context has no
 // deadline, a timeout will be applied.
+//
+// Middleware chain is applied around the tool execution, allowing pre/post
+// execution hooks for logging, validation, metrics, etc.
 func (e *executor) Execute(ctx context.Context, toolName string, input *Input) (*Output, error) {
 	// Step 1: Look up the tool in the registry
 	tool, err := e.registry.Get(toolName)
@@ -129,17 +150,33 @@ func (e *executor) Execute(ctx context.Context, toolName string, input *Input) (
 	default:
 	}
 
-	// Step 4: Execute the tool with optional panic recovery
-	if e.config.recoverPanics {
-		return e.executeWithRecovery(ctx, tool, toolName, input)
+	// Step 4: Create the base execution function
+	// This function performs the actual tool execution with error wrapping
+	baseFn := func(ctx context.Context, toolName string, input *Input) (*Output, error) {
+		return e.executeToolDirectly(ctx, tool, toolName, input)
 	}
 
-	return e.executeDirectly(ctx, tool, toolName, input)
+	// Step 5: Apply middleware chain if configured
+	execFn := baseFn
+	if e.config.middlewareChain != nil && e.config.middlewareChain.Len() > 0 {
+		execFn = e.config.middlewareChain.Wrap(baseFn)
+	}
+
+	// Step 6: Execute with optional panic recovery
+	// Note: If middleware chain includes RecoveryMiddleware, this provides
+	// a second layer of protection. The executor's panic recovery is always
+	// the outermost layer when enabled.
+	if e.config.recoverPanics {
+		return e.executeWithRecovery(ctx, execFn, toolName, input)
+	}
+
+	return execFn(ctx, toolName, input)
 }
 
-// executeWithRecovery executes a tool with panic recovery.
+// executeWithRecovery executes a ToolFunc with panic recovery.
 // If a panic occurs, it is converted to a PanicError with stack trace.
-func (e *executor) executeWithRecovery(ctx context.Context, tool Tool, toolName string, input *Input) (output *Output, err error) {
+// This wraps the entire middleware-wrapped execution chain.
+func (e *executor) executeWithRecovery(ctx context.Context, fn ToolFunc, toolName string, input *Input) (output *Output, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			stack := string(debug.Stack())
@@ -148,12 +185,13 @@ func (e *executor) executeWithRecovery(ctx context.Context, tool Tool, toolName 
 		}
 	}()
 
-	return e.executeDirectly(ctx, tool, toolName, input)
+	return fn(ctx, toolName, input)
 }
 
-// executeDirectly executes a tool without panic recovery.
+// executeToolDirectly executes a tool without panic recovery or middleware.
 // It wraps any errors from the tool execution.
-func (e *executor) executeDirectly(ctx context.Context, tool Tool, toolName string, input *Input) (*Output, error) {
+// This is the innermost execution function that actually calls the tool.
+func (e *executor) executeToolDirectly(ctx context.Context, tool Tool, toolName string, input *Input) (*Output, error) {
 	output, err := tool.Execute(ctx, input)
 	if err != nil {
 		// Check if this was a context error
@@ -221,6 +259,22 @@ func (e *executor) GetMaxConcurrent() int {
 // RecoversPanics returns whether this executor recovers from panics.
 func (e *executor) RecoversPanics() bool {
 	return e.config.recoverPanics
+}
+
+// GetMiddlewareChain returns a copy of the middleware chain used by this executor.
+// Returns nil if no middleware chain is configured.
+// The returned chain is a copy; modifications do not affect the executor.
+func (e *executor) GetMiddlewareChain() *MiddlewareChain {
+	if e.config.middlewareChain == nil {
+		return nil
+	}
+	// Return a copy to prevent external modification
+	return NewMiddlewareChain(e.config.middlewareChain.Middlewares()...)
+}
+
+// HasMiddleware returns whether this executor has a middleware chain configured.
+func (e *executor) HasMiddleware() bool {
+	return e.config.middlewareChain != nil && e.config.middlewareChain.Len() > 0
 }
 
 // ExecuteAsync runs a tool asynchronously and returns a channel for the result.
