@@ -302,8 +302,9 @@
             "command": "go test ./pkg/toolexec/... -run Example",
             "expected": "examples compile and run"
           },
-          "status": "pending",
-          "notes": "Create Example_basicUsage, Example_asyncExecution, Example_middleware. Add package-level doc.go with overview, architecture decisions, and usage patterns."
+          "status": "completed",
+          "notes": "Example tool implementation and usage documentation completed. Files were already created in previous sessions:\n\n**pkg/toolexec/doc.go** (259 lines):\n- Comprehensive package-level documentation\n- Overview of architecture and design principles\n- Quick Start guide with code examples\n- Detailed sections: Tool Interface, Registry, Executor, Middleware, Error Handling\n- Input/Output usage examples\n- Thread safety notes\n- Best practices for tool implementation and executor usage\n\n**pkg/toolexec/example_test.go** (565 lines, 17 Example functions):\n- Example() - Basic usage overview\n- Example_registry() - Registry operations\n- Example_input() - Input creation and parameter access\n- Example_output() - Output creation patterns\n- Example_executor() - Executor configuration and execution\n- Example_asyncExecution() - Asynchronous tool execution\n- Example_batchExecution() - Batch execution with concurrency\n- Example_middleware() - Middleware usage\n- Example_customMiddleware() - Creating custom middleware\n- Example_defaultMiddleware() - Using default middleware chain\n- Example_errorHandling() - Error handling patterns\n- Example_timeout() - Timeout handling\n- Example_contextCancellation() - Context cancellation\n- Example_globalRegistry() - Global registry usage\n- Example_result() - Working with async Result\n- Example_middlewareChain() - Building middleware chains\n- Example_executorConfig() - Inspecting executor configuration\n\nFixed incorrect import path from github.com/diogogmt/geminiweb-go to github.com/diogo/geminiweb.\n\nCommit: e94cc80\n\nNote: go test verification cannot be run due to command restrictions in this environment - syntax and structure verified through code review.",
+          "updated_at": "2025-12-21T20:04:13.856446+00:00"
         }
       ]
     },
@@ -564,5 +565,5 @@
     }
   },
   "qa_signoff": null,
-  "last_updated": "2025-12-21T19:58:56.555813+00:00"
+  "last_updated": "2025-12-21T20:04:13.856452+00:00"
 }

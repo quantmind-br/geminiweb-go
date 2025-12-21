@@ -19,7 +19,17 @@
       "description": "Comprehensive unit tests for toolexec package. Three test files cover: registry_test.go (~500 lines) tests tool registration, discovery, thread-safety; executor_test.go (~945 lines) tests sync/async/batch execution, timeouts, panic recovery; middleware_test.go (~880 lines) tests middleware chaining, built-in middlewares. All follow table-driven test patterns from internal/api/client_test.go.",
       "category": "testing",
       "discovered_at": "2025-12-21T19:58:20.542014+00:00"
+    },
+    "pkg/toolexec/example_test.go": {
+      "description": "Example tests for toolexec package demonstrating all major features: basic usage, registry operations, input/output, executor configuration, async/batch execution, middleware (built-in and custom), error handling, timeout/cancellation, and configuration inspection. Uses package toolexec_test for black-box testing with 16 Example functions following Go conventions.",
+      "category": "testing",
+      "discovered_at": "2025-12-21T20:03:09.196826+00:00"
+    },
+    "pkg/toolexec/doc.go": {
+      "description": "Package-level documentation with comprehensive godoc covering: Overview, Quick Start, Architecture, Tool Interface, Registry, Executor, Middleware, Error Handling, Input/Output, Thread Safety, and Best Practices. Follows Go documentation conventions with code examples.",
+      "category": "documentation",
+      "discovered_at": "2025-12-21T20:03:09.198926+00:00"
     }
   },
-  "last_updated": "2025-12-21T19:58:20.542020+00:00"
+  "last_updated": "2025-12-21T20:03:09.198930+00:00"
 }
