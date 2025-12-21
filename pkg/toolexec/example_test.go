@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/diogogmt/geminiweb-go/pkg/toolexec"
+	"github.com/diogo/geminiweb/pkg/toolexec"
 )
 
 // GreetingTool is a simple tool that returns a greeting message.
