@@ -7,7 +7,10 @@ import (
 	"context"
 	"fmt"
 	"runtime/debug"
+	"sync"
 	"time"
+
+	"golang.org/x/sync/errgroup"
 )
 
 // Executor defines the interface for executing tools.
@@ -258,49 +261,132 @@ func (e *executor) ExecuteAsync(ctx context.Context, toolName string, input *Inp
 }
 
 // ExecuteMany runs multiple tools concurrently and returns all results.
-// This is a placeholder implementation that will be expanded in subtask 3-3.
-// Currently executes tools sequentially for simplicity.
+// It uses errgroup for coordinated concurrent execution with fail-fast behavior.
+//
+// Behavior:
+//   - Executes tools concurrently up to the configured maxConcurrent limit
+//   - Fail-fast: the first error cancels all remaining executions via context
+//   - Partial results are always returned, even when an error occurs
+//   - Each result includes timing information (start, end, duration)
+//   - Results are returned in the same order as the input executions
+//
+// Concurrency control:
+//   - If maxConcurrent <= 0, unlimited concurrency is used
+//   - If maxConcurrent == 1, executions run sequentially (safe default)
+//   - If maxConcurrent > 1, up to that many executions run in parallel
+//
+// Usage:
+//
+//	executions := []ToolExecution{
+//	    {ToolName: "tool1", Input: input1},
+//	    {ToolName: "tool2", Input: input2},
+//	}
+//	results, err := executor.ExecuteMany(ctx, executions)
+//	// results[0] corresponds to tool1, results[1] to tool2
+//	// err is the first error that occurred, if any
 func (e *executor) ExecuteMany(ctx context.Context, executions []ToolExecution) ([]*Result, error) {
+	if len(executions) == 0 {
+		return []*Result{}, nil
+	}
+
+	// Pre-allocate results slice
 	results := make([]*Result, len(executions))
-	var firstErr error
 
+	// Use a mutex to protect results slice from concurrent writes
+	// (though each goroutine writes to a distinct index, the slice header
+	// could theoretically race on some architectures)
+	var mu sync.Mutex
+
+	// Create errgroup with context for coordinated cancellation
+	// When one goroutine returns an error, gctx is cancelled,
+	// which signals all other goroutines to stop
+	g, gctx := errgroup.WithContext(ctx)
+
+	// Apply concurrency limit if configured
+	// SetLimit(n) limits the number of active goroutines to n
+	// SetLimit(0) or negative means unlimited
+	if e.config.maxConcurrent > 0 {
+		g.SetLimit(e.config.maxConcurrent)
+	}
+
+	// Launch all executions
 	for i, exec := range executions {
-		// Check context before each execution
-		select {
-		case <-ctx.Done():
-			// Fill remaining results with cancelled errors
-			for j := i; j < len(executions); j++ {
-				results[j] = &Result{
-					ToolName: executions[j].ToolName,
-					Error:    e.wrapContextError(ctx, executions[j].ToolName),
+		// Capture loop variables to avoid closure issues
+		// In Go 1.22+ this is handled automatically, but we support older versions
+		i, exec := i, exec
+
+		g.Go(func() error {
+			// Check if context is already cancelled before starting
+			select {
+			case <-gctx.Done():
+				// Context cancelled (likely due to another execution failing)
+				// Record the cancellation in the result
+				mu.Lock()
+				results[i] = &Result{
+					ToolName:  exec.ToolName,
+					Output:    nil,
+					Error:     e.wrapContextError(gctx, exec.ToolName),
+					StartTime: time.Now(),
+					EndTime:   time.Now(),
+					Duration:  0,
 				}
+				mu.Unlock()
+				return nil // Don't propagate - let the original error be the one returned
+			default:
 			}
-			if firstErr == nil {
-				firstErr = e.wrapContextError(ctx, exec.ToolName)
+
+			// Execute the tool
+			start := time.Now()
+			output, err := e.Execute(gctx, exec.ToolName, exec.Input)
+			end := time.Now()
+
+			// Record the result
+			mu.Lock()
+			results[i] = &Result{
+				ToolName:  exec.ToolName,
+				Output:    output,
+				Error:     err,
+				StartTime: start,
+				EndTime:   end,
+				Duration:  end.Sub(start),
 			}
-			return results, firstErr
-		default:
-		}
+			mu.Unlock()
 
-		start := time.Now()
-		output, err := e.Execute(ctx, exec.ToolName, exec.Input)
-		end := time.Now()
+			// Return error for fail-fast behavior
+			// This will cancel gctx and stop other executions
+			if err != nil {
+				return err
+			}
 
-		results[i] = &Result{
-			ToolName:  exec.ToolName,
-			Output:    output,
-			Error:     err,
-			StartTime: start,
-			EndTime:   end,
-			Duration:  end.Sub(start),
-		}
+			return nil
+		})
+	}
 
-		if err != nil && firstErr == nil {
-			firstErr = err
+	// Wait for all goroutines to complete
+	// Returns the first non-nil error (if any)
+	err := g.Wait()
+
+	// Fill in any nil results with cancelled errors
+	// This handles the case where goroutines were never started due to limit
+	for i, result := range results {
+		if result == nil {
+			results[i] = &Result{
+				ToolName:  executions[i].ToolName,
+				Output:    nil,
+				Error:     e.wrapContextError(ctx, executions[i].ToolName),
+				StartTime: time.Time{},
+				EndTime:   time.Time{},
+				Duration:  0,
+			}
 		}
 	}
 
-	return results, firstErr
+	// Return partial results along with the first error
+	if err != nil {
+		return results, fmt.Errorf("batch execution failed: %w", err)
+	}
+
+	return results, nil
 }
 
 // Ensure executor implements the Executor interface.
