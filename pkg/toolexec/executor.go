@@ -216,8 +216,22 @@ func (e *executor) RecoversPanics() bool {
 }
 
 // ExecuteAsync runs a tool asynchronously and returns a channel for the result.
-// This is a placeholder implementation that will be expanded in subtask 3-2.
 // The result channel will receive exactly one Result and then close.
+// This allows callers to start execution and retrieve results when needed.
+//
+// The implementation:
+//   - Uses a buffered channel (size 1) to prevent goroutine leaks
+//   - Closes the channel when done to signal completion
+//   - Includes timing information in the result (start, end, duration)
+//   - Respects context cancellation through the underlying Execute call
+//
+// Usage:
+//
+//	resultCh := executor.ExecuteAsync(ctx, "mytool", input)
+//	result := <-resultCh
+//	if result.Error != nil {
+//	    // Handle error
+//	}
 func (e *executor) ExecuteAsync(ctx context.Context, toolName string, input *Input) <-chan *Result {
 	resultCh := make(chan *Result, 1)
 
