@@ -1,253 +1,121 @@
-
-Based on my comprehensive analysis of the geminiweb-go project, I'll create detailed API documentation covering both served and consumed APIs.
-
 # API Documentation
+
+The `geminiweb-go` project is a command-line interface and Go library designed to interact with the private Google Gemini Web API. It emulates browser behavior to provide features not available in the public Google AI SDK, such as Gems management, advanced file uploads, and specific model behaviors.
 
 ## APIs Served by This Project
 
-### Overview
-This project is a **CLI tool** that consumes Google Gemini's Web API rather than serving its own REST APIs. The application provides a command-line interface for interacting with Google Gemini through cookie-based authentication.
+This project primarily serves as a **CLI tool** and a **Go Package API**. It does not expose a REST/HTTP server by default.
 
-### Technology Stack
-- **Language**: Go 1.23.10
-- **CLI Framework**: Cobra
-- **HTTP Client**: bogdanfinn/tls-client (for browser fingerprinting)
-- **JSON Parsing**: tidwall/gjson
-- **Browser Integration**: browserutils/kooky
-- **TUI Framework**: Charm Bubbletea
+### CLI Interface (User-Facing API)
 
-### Endpoints
+The CLI acts as the primary interface for users and scripts to interact with the Gemini service.
 
-#### CLI Commands (Primary Interface)
+| Command | Description | Key Flags |
+| :--- | :--- | :--- |
+| `geminiweb [prompt]` | Send a single query and get a response. | `--model`, `--image`, `--file`, `--gem`, `--output` |
+| `geminiweb chat` | Start an interactive TUI chat session. | `--new`, `--persona`, `--gem` |
+| `geminiweb gems` | Manage server-side personas (Gems). | `list`, `create`, `delete` |
+| `geminiweb history` | Manage local conversation history. | `list`, `export`, `search` |
+| `geminiweb config` | Configure application settings. | `--model`, `--theme` |
+| `geminiweb import-cookies` | Manually import cookies from a JSON file. | N/A |
 
-**Root Command - Query Processing**
-- **Method**: CLI execution
-- **Path**: `geminiweb [prompt]`
-- **Description**: Send a single query to Gemini and get response
-- **Request**: 
-  - Positional argument: prompt text
-  - Flags: `--model`, `--output`, `--file`, `--image`, `--gem`
-- **Response**: Text output to stdout or file
-- **Authentication**: Cookie-based (auto-loaded from config)
-- **Examples**:
-  ```bash
-  geminiweb "What is Go?"
-  geminiweb -f prompt.md
-  cat prompt.md | geminiweb
-  geminiweb "Hello" -o response.md
-  ```
+### Go Package API (`internal/api`)
 
-**Interactive Chat**
-- **Method**: CLI subcommand
-- **Path**: `geminiweb chat`
-- **Description**: Start interactive chat session with conversation context
-- **Request**: Interactive input via TUI
-- **Response**: Streaming responses in terminal
-- **Authentication**: Cookie-based
-- **Features**: Multi-turn conversations, file uploads, gem personas
+For developers integrating `geminiweb` into other Go projects, the `internal/api` package provides the following programmatic interface:
 
-**Configuration Management**
-- **Method**: CLI subcommand
-- **Path**: `geminiweb config`
-- **Description**: Configure default model, themes, and settings
-- **Request**: Interactive prompts or flags
-- **Response**: Configuration saved to `~/.geminiweb/config.json`
+#### `GeminiClient.GenerateContent(prompt string, opts *GenerateOptions)`
+- **Description**: The core method for generating responses from Gemini.
+- **Request**:
+  - `prompt`: The text string to send.
+  - `opts`: Struct containing `Model`, `Metadata` (for context), `Files` (uploaded attachments), and `GemID`.
+- **Response**: `*models.ModelOutput` containing the response text, candidate IDs, and metadata.
+- **Error Handling**: Automatically attempts browser-based cookie refresh if an authentication error occurs.
 
-**Cookie Management**
-- **Method**: CLI subcommand
-- **Path**: `geminiweb import-cookies <file>`
-- **Description**: Import authentication cookies from browser export
-- **Request**: Path to cookies.json file
-- **Response**: Validation and storage of cookies
+#### `FileUploader.UploadFile(filePath string)`
+- **Description**: Uploads a file (image or text) to Google's content-push service.
+- **Request**: Path to a local file.
+- **Response**: `*UploadedFile` containing a `ResourceID` used in generation requests.
 
-**Gems Management**
-- **Method**: CLI subcommands
-- **Path**: `geminiweb gems [list|create|update|delete]`
-- **Description**: Manage server-side personas (Gems)
-- **Request**: Gem operations via CLI flags
-- **Response**: Gem information and operation results
+---
 
-**History Management**
-- **Method**: CLI subcommand
-- **Path**: `geminiweb history [list|export|search]`
-- **Description**: Manage conversation history
-- **Request**: History operations
-- **Response**: Conversation data and exports
+## Authentication & Security
 
-### Authentication & Security
+The project uses a sophisticated authentication flow to maintain access to the Gemini Web API.
 
-#### Cookie-Based Authentication
-- **Primary Method**: Browser cookies (`__Secure-1PSID`, `__Secure-1PSIDTS`)
-- **Cookie Sources**:
-  - Manual import from browser export
-  - Automatic extraction from browsers (Chrome, Firefox, Edge, Chromium, Opera)
-  - Auto-refresh on authentication failure
+### Authentication Flow
+1.  **Cookie Acquisition**: Cookies (`__Secure-1PSID` and `__Secure-1PSIDTS`) are extracted automatically from local browser stores (Chrome, Firefox, etc.) or imported via `cookies.json`.
+2.  **Token Extraction**: The client performs a GET request to `https://gemini.google.com/app` to extract the `SNlM0e` (session-specific) token from the HTML response using regex.
+3.  **Request Signing**: Every POST request to the API includes the cookies in the header and the `SNlM0e` token as the `at` form parameter.
 
-#### Access Token Management
-- **Token Type**: SNlM0e token extracted from Gemini initialization page
-- **Extraction**: Regex pattern matching from HTML response
-- **Refresh**: Automatic token refresh on expiry
+### Browser Fingerprinting
+To avoid anti-bot detection, the project uses `bogdanfinn/tls-client` to:
+- Emulate specific browser TLS fingerprints (Chrome 133).
+- Maintain consistent User-Agent and related headers (`sec-ch-ua`, etc.).
+- Handle redirects and cookies similarly to a real browser.
 
-#### Browser Fingerprinting
-- **Client Profile**: Chrome 133 emulation
-- **Headers**: Complete browser header set for anti-bot detection
-- **TLS Client**: Custom TLS fingerprinting to avoid detection
-
-### Rate Limiting & Constraints
-
-#### API Rate Limits
-- **Cookie Rotation**: Maximum once per minute
-- **Request Limits**: Enforced by Google's anti-bot systems
-- **Error Codes**:
-  - `1037`: Usage limit exceeded
-  - `1060`: IP temporarily blocked
-  - `2`: Anti-bot verification failed (new as of Dec 2024)
-
-#### File Upload Constraints
-- **Image Files**: Maximum 20MB
-- **Text Files**: Maximum 50MB
-- **Supported Formats**: JPEG, PNG, GIF, WebP, Plain Text, Markdown, JSON, CSV, HTML, XML
+---
 
 ## External API Dependencies
 
+The project consumes several undocumented or private Google APIs.
+
 ### Services Consumed
 
-#### Google Gemini Web API
-- **Service Name**: Google Gemini Web Interface
-- **Base URL**: `https://gemini.google.com`
-- **Purpose**: AI content generation and conversation management
+| Service Name | Purpose | Base URL |
+| :--- | :--- | :--- |
+| **Gemini Web UI** | Main interaction point | `https://gemini.google.com` |
+| **Google Content Push** | File/Image uploads | `https://content-push.googleapis.com` |
+| **Google Accounts** | Session maintenance | `https://accounts.google.com` |
 
-**Endpoints Used**:
+### Endpoints Used
 
-1. **Initialization Endpoint**
-   - **URL**: `https://gemini.google.com/app`
-   - **Method**: GET
-   - **Purpose**: Extract SNlM0e access token
-   - **Authentication**: Required cookies
-   - **Response**: HTML with embedded access token
+#### 1. Content Generation (Streaming)
+- **Path**: `/_/BardChatUi/data/assistant.lamda.BardFrontendService/StreamGenerate`
+- **Method**: `POST`
+- **Format**: Form-encoded `f.req` (complex nested JSON arrays).
+- **Response**: Chunked streaming JSON. Each chunk is prefixed with its length. The stream ends with a specific `[["e", ...]]` marker.
 
-2. **Content Generation Endpoint**
-   - **URL**: `https://gemini.google.com/_/BardChatUi/data/assistant.lamda.BardFrontendService/StreamGenerate`
-   - **Method**: POST
-   - **Purpose**: Generate AI responses
-   - **Authentication**: Access token + cookies
-   - **Request Format**: Form data with `at` and `f.req` parameters
-   - **Response Format**: Streaming JSON chunks with end marker `[["e",`
+#### 2. Batch Execute (Gems & Management)
+- **Path**: `/_/BardChatUi/data/batchexecute`
+- **Method**: `POST`
+- **Purpose**: Used for listing, creating, and deleting Gems (server-side personas).
+- **RPC IDs**:
+    - `Y6pS7b`: List Gems
+    - `pLAt4c`: Create/Update Gem
+    - `Xm7p3c`: Delete Gem
 
-3. **File Upload Endpoint**
-   - **URL**: `https://content-push.googleapis.com/upload`
-   - **Method**: POST
-   - **Purpose**: Upload images and text files
-   - **Authentication**: None required
-   - **Request Format**: Multipart form data
-   - **Response**: Plain text resource ID
+#### 3. File Upload
+- **Path**: `/upload` (on `content-push.googleapis.com`)
+- **Method**: `POST`
+- **Headers**: Requires `Push-ID: 1033` and `Content-Type: multipart/form-data`.
+- **Response**: Plain text Resource ID (e.g., `/contrib_service/ttl_1d/...`).
 
-4. **Cookie Rotation Endpoint**
-   - **URL**: `https://accounts.google.com/RotateCookies`
-   - **Method**: POST
-   - **Purpose**: Refresh session cookies
-   - **Authentication**: Current cookies
-   - **Rate Limit**: Once per minute maximum
+#### 4. Cookie Rotation
+- **Path**: `/RotateCookies` (on `accounts.google.com`)
+- **Method**: `POST`
+- **Purpose**: Refreshes session cookies to prevent expiration during long sessions.
+- **Constraint**: Rate-limited to once per minute.
 
-5. **Batch Execute Endpoint**
-   - **URL**: `https://gemini.google.com/_/BardChatUi/data/batchexecute`
-   - **Method**: POST
-   - **Purpose**: Execute multiple RPC operations (Gems management)
-   - **Authentication**: Access token + cookies
-   **Request Format**: Batched RPC calls with identifiers
+---
 
-#### Browser Cookie Extraction
-- **Service**: Local browser cookie stores
-- **Browsers Supported**: Chrome, Firefox, Edge, Chromium, Opera
-- **Purpose**: Automatic authentication cookie extraction
-- **Method**: Direct database access via kooky library
+## Error Handling & Resilience
 
-### Authentication Method
+### Error Patterns
+- **Authentication Failure (401/403)**: The project intercepts these and triggers `RefreshFromBrowser()`, which re-scans local browsers for fresh cookies without user intervention.
+- **Rate Limiting (1037/1060)**: Specific Gemini error codes are parsed. The CLI provides user-friendly guidance (e.g., "Usage limit exceeded" or "IP blocked").
+- **Anti-Bot (Error 2)**: Detects when Google requests a manual verification (CAPTCHA) and provides instructions to the user.
 
-#### Cookie-Based Flow
-1. **Initial Setup**: Import cookies from browser or extract automatically
-2. **Token Extraction**: GET request to Gemini app page to extract SNlM0e token
-3. **Request Authentication**: Each API request includes:
-   - `__Secure-1PSID` cookie
-   - `__Secure-1PSIDTS` cookie (optional)
-   - `at` form parameter (SNlM0e token)
-   - Browser fingerprint headers
+### Resilience Mechanisms
+- **Automatic Client Re-initialization**: If the client is idle and the session expires, it re-fetches the `SNlM0e` token before the next request.
+- **Multipart Upload Robustness**: Handles both binary images and text files, automatically converting text snippets into "uploaded files" for better context handling by Gemini.
+- **Stream Detection**: The client robustly parses the fragmented JSON response chunks and stops immediately upon receiving the end-of-stream marker to avoid hanging.
 
-#### Browser Refresh Mechanism
-- **Trigger**: Authentication failure (401/403 responses)
-- **Process**: Extract fresh cookies from configured browser
-- **Fallback**: Manual cookie import required if automatic extraction fails
-
-### Error Handling
-
-#### Centralized Error Types
-- **Authentication Errors**: Cookie expiry, token invalid, IP blocked
-- **Network Errors**: Connection failures, timeouts
-- **API Errors**: Rate limiting, model unavailability, content policy violations
-- **Parse Errors**: Invalid response format, missing data
-
-#### Error Recovery Patterns
-1. **Automatic Retry**: Browser cookie refresh on auth failure
-2. **Graceful Degradation**: Continue with partial responses when possible
-3. **User Guidance**: Clear error messages with resolution steps
-4. **Rate Limiting**: Built-in delays for cookie rotation
-
-#### Circuit Breaker Configuration
-- **Cookie Rotation**: Rate limited to 1/minute
-- **Browser Refresh**: Minimum 30 seconds between attempts
-- **Request Timeouts**: 300 seconds default
-- **Stream Detection**: Automatic termination on end marker
-
-### Integration Patterns
-
-#### Streaming Response Handling
-- **Format**: Chunked JSON with size prefixes
-- **End Detection**: `[["e",status,null,null,bytes]]` marker
-- **Parsing**: Iterative chunk processing until valid response found
-
-#### Session Management
-- **Context Tracking**: CID, RID, RCID metadata for conversation continuity
-- **Multi-turn Support**: Automatic metadata propagation between messages
-- **Model Switching**: Dynamic model changes within sessions
-
-#### File Integration
-- **Upload Flow**: Local file → Google upload service → Resource ID → API reference
-- **Type Detection**: MIME type inference from file extensions
-- **Size Validation**: Pre-upload size checking with clear limits
-
-#### Batch Operations
-- **RPC Batching**: Multiple operations in single HTTP request
-- **Identifier Matching**: Request-response correlation via custom identifiers
-- **Error Isolation**: Individual operation failures don't affect batch
+---
 
 ## Available Documentation
 
-### Internal Documentation
-- **API Breaking Changes**: `/docs/API_BREAKING_CHANGE_2024-12.md`
-  - Details December 2024 anti-bot token changes
-  - Explains new verification requirements
-  - Provides migration guidance
-
-### Code Documentation
-- **Comprehensive Test Coverage**: Unit tests for all major components
-- **Interface Definitions**: Clear separation of concerns with dependency injection
-- **Error Documentation**: Detailed error codes and handling patterns
-
-### Configuration Documentation
-- **Default Settings**: Reasonable defaults for all configuration options
-- **Environment Detection**: Automatic browser detection and cookie extraction
-- **Theme Support**: Built-in themes for TUI and markdown rendering
-
-### Documentation Quality Assessment
-**Strengths**:
-- Excellent error handling with detailed diagnostics
-- Comprehensive test coverage
-- Clear separation of concerns
-- Well-documented breaking changes
-
-**Areas for Improvement**:
-- Could benefit from OpenAPI/Swagger specifications for external API contracts
-- Missing integration examples for programmatic usage
-- Limited documentation of internal data flow patterns
-
-The project demonstrates mature API integration practices with robust error handling, authentication management, and clear architectural patterns. The main challenge is the reliance on Google's unofficial web API, which requires constant maintenance to handle anti-bot measures and API changes.
+- **OpenAPI/Swagger**: None (Private API).
+- **Internal Specs**:
+    - `.ai/docs/api_analysis.md`: Detailed breakdown of response paths and GJSON selectors.
+    - `internal/api/paths.go`: Centralized list of indices for parsing the nested array responses.
+- **Documentation Quality**: High. The internal Go code is well-commented, and the `.ai/docs` directory contains extensive analysis of the reverse-engineered API structure.

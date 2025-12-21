@@ -1,70 +1,39 @@
 ---
-description: Go coding patterns, error handling, dependency injection, and testing conventions for the geminiweb-go project.
+description: Go-specific patterns, including Functional Options, Bubble Tea (TUI) conventions, and error handling.
 globs:
   - "**/*.go"
 alwaysApply: false
 ---
 
-# Go Code Patterns & Conventions
+# Go Coding Patterns & UI Development
 
-This document outlines the specific coding patterns, error handling, and dependency injection conventions used in the `geminiweb-go` project.
-
-## Error Handling
-
-Always use the custom error types defined in `@internal/errors/errors.go`. This provides structured error information throughout the application.
-
-- **DO**: Wrap errors with context using `errors.NewGeminiError`.
-- **AVOID**: Returning raw `errors.New()` or `fmt.Errorf()`.
-
-```go
-// Good Example from internal/api/client.go
-if resp.StatusCode != 200 {
-    body, _ := io.ReadAll(resp.Body)
-    return nil, errors.NewGeminiError(
-        fmt.Sprintf("failed to generate content, status code: %d", resp.StatusCode),
-        errors.WithCode(errors.APIError),
-        errors.WithDetails(string(body)),
-    )
-}
-```
-
-## Dependency Injection
-
-The project heavily uses interfaces and the **Functional Options Pattern** for dependency injection, especially for the `GeminiClient`. This makes components testable and configurable.
-
-- When creating a `GeminiClient`, use `api.NewClient()` with options.
-- When adding new configuration to the client, add a new `ClientOption` function in `@internal/api/options.go`.
-
-```go
-// Example of creating a client with options
-client, err := api.NewClient(
-    api.WithModel(models.ModelFromName(cfg.DefaultModel)),
-    api.WithBrowserRefresh(browserType),
-    api.WithAutoRefresh(true),
-)
-```
-
-## Interfaces
-
-Rely on interfaces to decouple components. The most important interfaces are:
-
-- `api.GeminiClientInterface`: For all interactions with the Gemini API.
-- `history.HistoryStoreInterface`: For conversation history operations.
-- `browser.BrowserCookieExtractor`: For abstracting cookie extraction logic.
-
-When writing new components that interact with these services, depend on the interface, not the concrete implementation.
-
-## Configuration Management
-
-Configuration is managed by the `config` package.
-
-- **DO**: Access configuration values through the `config.Config` struct.
-- **AVOID**: Reading environment variables or config files directly in other packages. The main command should load the config and pass it down to the components that need it.
+## Dependency Injection & Options
+- **Functional Options**: Use the pattern `func WithX(...) ClientOption` for configuring `GeminiClient` in `internal/api/options.go`.
+- **Interfaces**: Always define and use interfaces for core services to allow mocking in TUI tests.
+    - `GeminiClientInterface`
+    - `ChatSessionInterface`
+    - `HistoryStoreInterface`
 
 ## TUI Development (Bubble Tea)
+- **Model-View-Update (MVU)**: Follow the Elm architecture strictly in `internal/tui`.
+- **State Changes**: Perform long-running tasks (API calls) as `tea.Cmd`. 
+- **Example Pattern**:
+  ```go
+  func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+      switch msg := msg.(type) {
+      case generateMsg: // Custom message for API results
+          m.Response = msg.Content
+          return m, nil
+      }
+      // ...
+  }
+  ```
+- Use `internal/tui/components/` for reusable UI elements like loaders or status bars.
 
-The interactive UI in `@internal/tui/` is built with Bubble Tea.
+## Error Handling Pattern
+- **Wrap Errors**: Use `errors.NewGeminiError` to add context and custom error codes.
+- **Check Predicates**: Use helper functions like `errors.IsAuth(err)` or `errors.IsRateLimit(err)` instead of string matching.
 
-- The main state is managed in `internal/tui/model.go`.
-- State changes are handled through messages (`tea.Msg`). Avoid mutating state directly in the `Update` method; instead, return a `tea.Cmd` that will produce a message.
-- Asynchronous operations (like API calls) should be performed in commands and return a message with the result.
+## Concurrency
+- Use context cancellation for API requests, especially when the user interrupts a stream in the TUI.
+- The `CookieRotator` and `IdleTimer` in `internal/api` should run in background goroutines managed by the client lifecycle.

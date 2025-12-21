@@ -1,47 +1,29 @@
 ---
-description: High-level overview of the geminiweb-go project, its architecture, and core components.
+description: High-level architectural overview and technical constraints for geminiweb-go.
 globs:
   - "**/*"
 alwaysApply: true
 ---
 
-# Project Overview
+# GeminiWeb-Go Project Overview
 
-This document provides a high-level overview of the `geminiweb-go` project, its architecture, and core components.
+## Context & Architecture
+`geminiweb-go` is a high-performance CLI and TUI application that interacts with the private Google Gemini Web API. It prioritizes browser emulation to access features not available in public SDKs (Gems, file uploads, etc.).
 
-## Architecture
+### Core Architecture
+- **Entry Points**: `cmd/geminiweb` (main binary) and `internal/commands` (Cobra CLI).
+- **Core Logic**: `internal/api` contains the `GeminiClient` which handles reverse-engineered RPC calls.
+- **UI Layer**: `internal/tui` uses the **Bubble Tea (MVU)** pattern for an interactive terminal experience.
+- **Infrastructure**: `internal/browser` (cookie extraction), `internal/history` (JSON persistence), and `internal/config`.
 
-`geminiweb-go` is a CLI application for interacting with Google Gemini's web API. It uses a hexagonal architecture:
+### Critical Technical Constraints
+- **TLS Fingerprinting**: All outgoing requests MUST use `github.com/bogdanfinn/tls-client` to mimic a Chrome browser (currently Chrome 133). Standard `net/http` will trigger bot detection.
+- **Authentication**: Rely on `__Secure-1PSID` and `__Secure-1PSIDTS` cookies. The client uses a dynamic `SNlM0e` token extracted from the Gemini web page.
+- **Data Persistence**: Config and history are stored in `~/.config/geminiweb/` (or OS equivalent).
 
-- **Core**: The API client in `@internal/api/` is the central component, handling all communication with the Gemini Web API. It includes critical features like TLS fingerprinting to emulate a real browser.
-- **Adapters**: Surrounding the core are adapters for different functionalities:
-    - **CLI**: Cobra-based commands in `@internal/commands/` provide the user-facing interface.
-    - **TUI**: A Bubble Tea-based terminal user interface in `@internal/tui/` for interactive chat.
-    - **Browser Integration**: The `@internal/browser/` package handles extracting authentication cookies from various browsers.
-    - **Persistence**: JSON-based stores for configuration (`@internal/config/`), cookies, and conversation history (`@internal/history/`).
-
-## Core Concepts
-
-### Authentication
-
-Authentication is cookie-based and is the most critical and fragile part of the application.
-
-1.  **Cookies**: The primary authentication tokens are `__Secure-1PSID` and `__Secure-1PSIDTS`.
-2.  **Storage**: Cookies are stored in `~/.geminiweb/cookies.json`.
-3.  **Extraction**: The application can automatically extract cookies from installed browsers (Chrome, Firefox, etc.) using the `kooky` library. This is the preferred method for initial setup.
-4.  **Rotation**: The `__Secure-1PSIDTS` cookie is rotated periodically in the background to maintain the session.
-5.  **Browser Refresh**: If an API request fails with an authentication error, the client will automatically attempt to re-extract fresh cookies from the browser.
-
-### TLS Fingerprinting
-
-To avoid being blocked by Google's anti-bot measures, the application uses a custom TLS client (`github.com/bogdanfinn/tls-client`) that mimics a Chrome 133 browser fingerprint. All HTTP requests must go through this client.
-
-### Key Directories
-
-- `cmd/geminiweb/`: Main application entry point.
-- `internal/api/`: The core Gemini API client.
-- `internal/commands/`: All Cobra CLI command definitions.
-- `internal/tui/`: The Bubble Tea interactive UI.
-- `internal/config/`: Application configuration management.
-- `internal/history/`: Conversation history persistence.
-- `internal/models/`: Shared data structures for the entire application.
+### Key Directory Map
+- `internal/api/`: API client, session management, and response parsing.
+- `internal/tui/`: Bubble Tea models, viewports, and interactive components.
+- `internal/models/`: Shared data structures and API constants.
+- `internal/history/`: Local conversation storage logic.
+- `internal/render/`: Markdown rendering using Glamour.

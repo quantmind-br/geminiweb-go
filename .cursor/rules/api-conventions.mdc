@@ -1,57 +1,34 @@
 ---
-description: Rules and conventions for interacting with the external Google Gemini Web API.
+description: Rules for interacting with the reverse-engineered Gemini Web API and handling its specific RPC format.
 globs:
   - "internal/api/**/*.go"
-  - "internal/commands/**/*.go"
+  - "internal/models/**/*.go"
 alwaysApply: false
 ---
 
-# Gemini API Conventions
+# API & Communication Conventions
 
-This document outlines rules for interacting with the external Google Gemini Web API. All related logic is primarily located in `@internal/api/`.
+This project interacts with an undocumented, reverse-engineered API. Precision in request formatting and response parsing is mandatory.
 
-## Authentication Flow
+## Request Formatting (`f.req`)
+- Gemini Web API uses complex, nested JSON arrays inside a form-encoded `f.req` parameter.
+- **DO NOT** use standard JSON structs for the entire request; use the helpers in `internal/api/generate.go` to build the nested arrays.
+- Always include the `at` parameter (`SNlM0e` token) in POST requests.
 
-The authentication flow is complex and must be followed precisely.
+## Response Parsing (GJSON)
+- Responses are streaming JSON chunks, not a single valid JSON object.
+- **Rule**: Use `github.com/tidwall/gjson` for data extraction.
+- Refer to `internal/api/paths.go` for the specific GJSON path indices used to navigate the nested arrays.
+- **Marker**: The stream is complete when you encounter the `[["e",...]]` marker.
 
-1.  **Load Cookies**: The `GeminiClient` loads `__Secure-1PSID` and `__Secure-1PSIDTS` from `~/.geminiweb/cookies.json`.
-2.  **Fetch Access Token**: Before making a content request, the client must fetch a dynamic `SNlM0e` access token by making a GET request to `https://gemini.google.com/app`.
-3.  **Make Request**: The `SNlM0e` token is sent as a form parameter `at` in the `StreamGenerate` request.
-4.  **Handle Auth Failure**: If a request fails with an authentication error, the client's `RefreshFromBrowser()` method should be called to attempt recovery.
-
-## Key Endpoints
-
-- **Content Generation**: `POST https://gemini.google.com/_/BardChatUi/data/assistant.lamda.BardFrontendService/StreamGenerate`
-- **File Upload**: `POST https://content-push.googleapis.com/upload`
-- **Batch Operations (Gems)**: `POST https://gemini.google.com/_/BardChatUi/data/batchexecute`
-- **Cookie Rotation**: `POST https://accounts.google.com/RotateCookies`
-
-## Request & Response Formatting
-
-### StreamGenerate Requests
-- **Method**: `POST`
-- **Content-Type**: `application/x-www-form-urlencoded`
-- **Body**: Must contain two form parameters:
-    - `at`: The `SNlM0e` access token.
-    - `f.req`: A JSON string payload containing the prompt, conversation context, and other metadata.
-
-### StreamGenerate Responses
-- **Format**: The response is a streaming, multi-line JSON body. It is not a single valid JSON object.
-- **Parsing**: Use `gjson` to parse individual lines and candidates.
-- **End of Stream**: The stream is terminated by a specific JSON array: `[["e", ...]]`. The parser must look for this marker to know when the response is complete.
-
-## File Uploads
-
-File uploads are a two-step process:
-
-1.  Upload the file to `https://content-push.googleapis.com/upload`.
-2.  The response will be a plain text resource ID.
-3.  Embed this resource ID within the `f.req` payload of the `StreamGenerate` request.
-
-Refer to the `UploadFile` method in `@internal/api/upload.go` for the correct implementation.
+## Authentication Lifecycle
+1. **Init**: Fetch the `SNlM0e` token from `https://gemini.google.com/app`.
+2. **Refresh**: If a 401/403 occurs, use `api.RefreshFromBrowser()` to pull fresh cookies from local browser profiles (Chrome, Firefox, etc.).
+3. **Rotation**: The `CookieRotator` in `internal/api` periodically refreshes the `1PSIDTS` cookie to prevent session expiry.
 
 ## Error Handling
-
-- **Anti-Bot**: Google's anti-bot is aggressive. All requests MUST use the custom TLS client. A `401` or `403` status code often indicates an authentication or fingerprinting issue.
-- **Rate Limiting**: The API may return errors for too many requests. The client should handle these gracefully. The most common is error code `1037` (usage limit).
-- **API Changes**: The API is unofficial and changes without notice. A key breaking change is documented in `@docs/API_BREAKING_CHANGE_2024-12.md`.
+- Use `internal/errors` package.
+- **Specific Codes**: 
+    - `1037`: Usage limit exceeded (Rate limit).
+    - `Error 2`: Manual verification (CAPTCHA) required.
+- Capture the raw response body in `GeminiError` when parsing fails to aid debugging.

@@ -1,202 +1,50 @@
-
-Based on my analysis of the geminiweb-go codebase, I can now provide a comprehensive request flow analysis. This is a CLI application that interacts with Google Gemini's web API, not a traditional web server, so the "request flow" refers to how user commands are processed through the CLI to API interactions.
-
 # Request Flow Analysis
 
 ## Entry Points Overview
-
-The application has a single main entry point through the CLI:
-
-**Primary Entry Point**: `cmd/geminiweb/main.go`
-- Calls `commands.Execute()` which initializes the Cobra CLI framework
-- Routes to different command handlers based on user input
-
-**Command Entry Points**:
-- **Root Command** (`internal/commands/root.go`): Handles single queries, file input, stdin input
-- **Chat Command** (`internal/commands/chat.go`): Interactive chat sessions
-- **Config Command** (`internal/commands/config.go`): Configuration management
-- **Import Cookies** (`internal/commands/autologin.go`): Browser cookie extraction
-- **History Command** (`internal/commands/history.go`): Conversation history management
-- **Persona Command** (`internal/commands/persona.go`): Persona management
-- **Gems Command** (`internal/commands/gems.go`): Server-side persona management
+The application is primarily a CLI-based tool with multiple entry points defined in the `internal/commands` package using the Cobra library.
+- **Root Command (`geminiweb`)**: Handles single queries from positional arguments, standard input, or files.
+- **Chat Command (`geminiweb chat`)**: Launches an interactive TUI-based chat session.
+- **Config Command (`geminiweb config`)**: Manages local settings and personas.
+- **Utility Commands**: Commands like `import-cookies`, `auto-login`, `history`, `persona`, and `gems` for session and preference management.
 
 ## Request Routing Map
-
-The application uses Cobra for CLI routing with the following flow:
-
-```
-CLI Input → Cobra Router → Command Handler → API Client → Gemini Web API
-```
-
-**Routing Logic**:
-1. **Root Command**: Direct query execution via `runQuery()`
-2. **Subcommands**: Each has dedicated handlers (e.g., `runChat()` for chat)
-3. **Input Sources**: Command line args, files (`-f`), stdin, or interactive TUI
-
-**Key Routing Functions**:
-- `commands.Execute()`: Main router entry point
-- `runQuery()`: Handles single prompt requests
-- `runChat()`: Manages interactive chat sessions
-- TUI models handle internal routing for interactive features
+Request routing follows a path from the CLI layer to the API client layer:
+1. **CLI Layer (`internal/commands`)**: Parses flags and arguments, then calls appropriate methods on the `GeminiClient` or `ChatSession`.
+2. **Session Layer (`internal/api/session.go`)**: Manages conversation state (metadata) for multi-turn chats.
+3. **API Layer (`internal/api/client.go`)**: Centralizes logic for authentication, cookie rotation, and model selection.
+4. **Implementation Layer (`internal/api/generate.go`, `upload.go`, `batch.go`)**: Handles the specific HTTP request formation for different Gemini operations.
 
 ## Middleware Pipeline
-
-The application implements several middleware-like layers:
-
-**Authentication Layer**:
-- Cookie validation and loading (`internal/config/cookies.go`)
-- Browser-based cookie extraction (`internal/browser/browser.go`)
-- Access token fetching (`internal/api/token.go`)
-- Automatic cookie rotation (`internal/api/rotate.go`)
-
-**HTTP Client Middleware**:
-- TLS client with browser fingerprinting (`tls_client` with Chrome_133 profile)
-- Request/response header management
-- Cookie injection and management
-- Error handling and retry logic
-
-**Configuration Layer**:
-- Config loading and validation (`internal/config/config.go`)
-- Model selection and validation
-- Browser refresh settings
-- Theme and rendering preferences
+The "middleware" in this Go-based client is implemented as a sequence of lifecycle hooks and configuration options:
+- **Initialization Pipeline**: `Init()` method handles auth checks, cookie loading, and token retrieval before any request.
+- **Activity Monitoring**: `resetIdleTimer()` is called on every request to manage auto-close logic for background resources.
+- **Request Pre-processing**: `ensureRunning()` checks client state and re-initializes if necessary.
+- **Cookie Rotation**: A background `CookieRotator` goroutine periodically refreshes `__Secure-1PSIDTS` to maintain session validity.
 
 ## Controller/Handler Analysis
-
-**Primary Controllers**:
-
-1. **Query Controller** (`internal/commands/query.go`):
-   - Handles single prompt processing
-   - Manages file uploads and image attachments
-   - Coordinates response rendering and output
-
-2. **Chat Controller** (`internal/commands/chat.go`):
-   - Manages conversation sessions
-   - Handles history persistence
-   - Coordinates TUI interactions
-
-3. **API Client Controller** (`internal/api/client.go`):
-   - Central API interaction hub
-   - Manages authentication state
-   - Handles content generation requests
-   - Manages file uploads and gems operations
-
-4. **TUI Controllers** (`internal/tui/`):
-   - `model.go`: Main chat interface
-   - `config_model.go`: Configuration management
-   - `gems_model.go`: Gems selection interface
-   - `history_selector.go`: Conversation history management
-
-**Handler Flow**:
-```
-User Input → Command Handler → API Client → HTTP Request → Gemini API
-                ↓
-         Response Processing → Rendering → Output
-```
+- **`GeminiClient`**: The primary controller that manages the `tls_client.HttpClient`, cookies, and authentication state.
+- **`ChatSession`**: A stateful wrapper around the client that tracks `cid` (conversation ID), `rid` (reply ID), and `rcid` (reply candidate ID).
+- **`runQuery` (internal/commands/query.go)**: The functional handler for one-off requests, managing UI elements like spinners and formatted output.
+- **`doGenerateContent`**: The low-level handler that constructs the multipart/form-data payload, sets security headers, and processes the streaming response.
 
 ## Authentication & Authorization Flow
-
-**Multi-layer Authentication**:
-
-1. **Cookie-based Authentication**:
-   - Loads cookies from `~/.geminiweb/cookies.json`
-   - Falls back to browser extraction if needed
-   - Supports Chrome, Firefox, Edge, Chromium, Opera
-
-2. **Access Token Management**:
-   - Fetches SNlM0e token from `https://gemini.google.com/app`
-   - Token extraction via regex pattern matching
-   - Automatic token refresh on authentication failures
-
-3. **Browser Refresh Mechanism**:
-   - Auto-extracts fresh cookies on auth failures
-   - Rate-limited to prevent abuse
-   - Silent fallback for seamless user experience
-
-4. **Cookie Rotation**:
-   - Background rotation of `__Secure-1PSIDTS` cookies
-   - Configurable interval (default: 9 minutes)
-   - Prevents session expiration
-
-**Authentication Flow**:
-```
-Client Init → Load Cookies → Get Access Token → Validate → Ready
-      ↓ (if failed)
-Browser Extract → New Cookies → Get Access Token → Validate → Ready
-```
+1. **Cookie Discovery**: Tries loading from `cookies.json` or extracting from browsers (Chrome, Firefox, etc.).
+2. **Session Initialization**: Calls `EndpointInit` (`/app`) to verify cookies and extract the `SNlM0e` access token using regex.
+3. **Token Propagation**: The `SNlM0e` token is passed as the `at` form parameter in subsequent POST requests.
+4. **Header Injection**: Requests include `__Secure-1PSID` and `__Secure-1PSIDTS` cookies and specific `x-goog-ext-*` headers.
+5. **Fallback Auth**: If a 401/Auth error occurs, the system triggers `RefreshFromBrowser` if enabled, automatically re-extracting fresh cookies.
 
 ## Error Handling Pathways
-
-**Centralized Error System** (`internal/errors/errors.go`):
-
-**Error Types**:
-- `GeminiError`: Base error type with rich context
-- Authentication errors (401, expired cookies)
-- Network errors (timeouts, connection failures)
-- API errors (rate limiting, model inconsistencies)
-- Validation errors (file size, format issues)
-
-**Error Handling Flow**:
-1. **Detection**: HTTP status codes, response parsing, network failures
-2. **Classification**: Categorize as auth, network, API, or validation error
-3. **Recovery**: Automatic retry with browser refresh for auth errors
-4. **User Feedback**: Clear error messages with actionable guidance
-
-**Recovery Mechanisms**:
-- Automatic browser cookie refresh on authentication failures
-- Rate limiting with exponential backoff
-- Graceful degradation for non-critical errors
-- Detailed error diagnostics for debugging
+- **Structured Errors**: Uses a custom `GeminiError` struct that wraps HTTP status codes, internal Gemini codes (e.g., 1037 for rate limit), and the response body.
+- **Predicate Checks**: Provides helper methods like `IsAuth()`, `IsRateLimit()`, and `IsBlocked()` for logical branching.
+- **Diagnostic Capture**: Automatically captures and truncates response bodies during failures to provide context for "blocked" or "sorry" redirects.
+- **Retry Logic**: Explicit retry loop in `GenerateContent` that attempts a browser-based cookie refresh upon detecting authentication failure.
 
 ## Request Lifecycle Diagram
-
-```
-┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
-│   CLI Input     │───▶│  Cobra Router    │───▶│ Command Handler │
-└─────────────────┘    └──────────────────┘    └─────────────────┘
-                                                        │
-                                                        ▼
-┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
-│   User Output   │◀───│ Response Renderer│◀───│  API Client     │
-└─────────────────┘    └──────────────────┘    └─────────────────┘
-                                                        │
-                                                        ▼
-┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
-│ Gemini Web API  │◀───│ HTTP Request     │◀───│ Auth Middleware │
-└─────────────────┘    └──────────────────┘    └─────────────────┘
-
-Detailed Flow:
-1. User enters command/prompt
-2. Cobra routes to appropriate handler
-3. Handler creates API client with configuration
-4. Client initializes authentication (cookies + token)
-5. Request is built with proper headers and payload
-6. HTTP request sent to Gemini API
-7. Response parsed and validated
-8. Error handling and recovery if needed
-9. Response rendered and displayed to user
-```
-
-**Key Request Patterns**:
-
-**Single Query Request**:
-```
-runQuery() → GenerateContent() → HTTP POST → Parse Response → Render Output
-```
-
-**Chat Session Request**:
-```
-Chat TUI → SendMessage() → GenerateContent() → Update Context → Render
-```
-
-**File Upload Request**:
-```
-UploadFile() → Multipart Form → Upload Endpoint → Resource ID → Include in Prompt
-```
-
-**Gems Management Request**:
-```
-BatchExecute() → Multiple RPC Calls → Parse Batch Response → Update Cache
-```
-
-The request flow is designed for resilience with automatic authentication recovery, comprehensive error handling, and seamless user experience through intelligent fallbacks and retries.
+1. **User Input**: CLI command (e.g., `geminiweb "Hello"`) is executed.
+2. **Client Setup**: `api.NewClient()` is called with options; `Init()` loads cookies and fetches the `SNlM0e` token.
+3. **Payload Construction**: `buildPayloadWithGem()` converts the prompt and files into the complex nested JSON format required by Gemini.
+4. **Network Request**: `tls_client.Do(POST)` sends the request to the `StreamGenerate` endpoint with appropriate security headers.
+5. **Stream Processing**: The response is read as a stream, stopping at the end marker `[["e",...]`.
+6. **Data Extraction**: `parseResponse()` uses GJSON paths (defined in `paths.go`) to extract text, metadata, and images.
+7. **Presentation**: The output is rendered via `glamour` (markdown) and displayed to the user with TUI styling.
