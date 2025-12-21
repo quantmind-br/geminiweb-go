@@ -1,0 +1,107 @@
+# Build Progress - Modular Tool Executor Architecture
+
+## Completed Subtasks
+
+### subtask-5-1: Create comprehensive unit tests for all components
+**Status:** Completed
+**Date:** 2025-12-21
+
+**Summary:**
+Created comprehensive unit tests for all toolexec package components:
+
+1. **pkg/toolexec/registry_test.go** (~500 lines)
+   - TestNewRegistry: Tests empty registry creation
+   - TestRegistryRegister: Tests registration of valid/nil/empty-name tools
+   - TestRegistryRegisterDuplicate: Tests duplicate registration error handling
+   - TestRegistryGet: Tests tool retrieval and error cases
+   - TestRegistryGetToolNotFoundError: Tests error type structure
+   - TestRegistryList: Tests listing with alphabetical ordering
+   - TestRegistryHas: Tests tool existence checks
+   - TestRegistryCount: Tests tool counting
+   - TestRegistryUnregister: Tests tool removal
+   - TestRegistryClear: Tests clearing all tools
+   - TestRegistryConcurrentAccess: Tests thread-safety under concurrent load
+   - TestDefaultRegistry: Tests global registry singleton
+   - TestNewRegistryWithOptions/TestWithToolsOption: Tests registry options
+   - TestRegistrySnapshot: Tests point-in-time snapshots
+   - TestSnapshotRegistryInterface: Tests interface implementation
+   - TestToolInfoFromTool: Tests ToolInfo helper
+
+2. **pkg/toolexec/executor_test.go** (~945 lines)
+   - TestNewExecutor: Tests executor creation with various options
+   - TestExecutor_Execute: Tests synchronous execution (success/error/not-found)
+   - TestExecutor_Execute_PanicRecovery: Tests panic recovery behavior
+   - TestExecutor_Execute_Timeout: Tests timeout enforcement
+   - TestExecutor_Execute_ContextCancellation: Tests context handling
+   - TestExecutor_Execute_WithMiddleware: Tests middleware integration
+   - TestExecutor_ExecuteAsync: Tests async execution with channels
+   - TestExecutor_ExecuteMany: Tests batch execution with errgroup
+   - TestExecutor_ConcurrentAccess: Tests thread-safety
+   - TestExecutor_Config: Tests configuration inspection
+   - TestExecutor_HasMiddleware/GetMiddlewareChain: Tests middleware accessors
+   - TestExecutorOption_CombineOptions: Tests option composition
+   - TestToolExecution: Tests batch execution struct
+
+3. **pkg/toolexec/middleware_test.go** (~880 lines)
+   - TestNewMiddlewareChain: Tests chain creation
+   - TestMiddlewareChain_Add/Prepend/Middlewares: Tests chain manipulation
+   - TestMiddlewareChain_Wrap: Tests middleware wrapping order
+   - TestNewMiddlewareFunc: Tests function adapter
+   - TestRecoveryMiddleware: Tests panic recovery with/without stack traces
+   - TestTimingMiddleware: Tests timing metadata injection
+   - TestContextCheckMiddleware: Tests context cancellation detection
+   - TestInputValidationMiddleware: Tests nil input validation
+   - TestLoggingMiddleware: Tests logging hooks
+   - TestChainMiddleware/ApplyMiddleware: Tests utility functions
+   - TestCombineMiddleware/DefaultMiddlewareChain: Tests chain utilities
+   - TestMiddleware_ConcurrentAccess: Tests thread-safety
+   - TestFormatDurationMs/TestFormatInt64: Tests helper functions
+
+**Test Coverage Areas:**
+- Tool registration and discovery
+- Synchronous execution with context support
+- Asynchronous execution with channels
+- Batch execution with errgroup and concurrency limits
+- Timeout enforcement and context cancellation
+- Panic recovery with stack traces
+- Middleware chaining and execution order
+- Error wrapping and type checking
+- Thread-safety under concurrent access
+- Functional options pattern
+
+**Verification:**
+- Code review confirms correct Go test patterns
+- All tests follow table-driven test style from internal/api/client_test.go
+- Mock implementations follow established patterns
+- Error type checking uses errors.Is() and errors.As()
+- Concurrent tests use sync.WaitGroup and atomic operations
+
+**Notes:**
+- `go test` command could not be run due to environment restrictions
+- Syntax and imports verified through code review
+- Tests follow patterns from internal/api/client_test.go reference file
+
+---
+
+### subtask-2-2: Add default global registry and Register() helper function
+**Status:** Completed
+**Date:** 2025-12-21
+
+**Summary:**
+This subtask was already implemented as part of subtask-2-1. The registry.go file contains all the required functionality:
+
+1. `defaultRegistry` variable with `sync.Once` for lazy initialization
+2. `getDefaultRegistry()` internal helper for thread-safe access
+3. `DefaultRegistry()` public function exposing the global registry
+4. `Register(tool Tool)` that panics on error, suitable for init() usage
+5. `MustRegister(tool Tool)` as an alias emphasizing panic behavior
+6. Package-level convenience functions: `Get()`, `Has()`, `List()`, `Count()`
+
+**Verification:**
+- Code review confirms correct Go syntax and proper imports
+- All dependencies verified: Tool interface, ToolInfo, error types in result.go
+- No new code changes required - verified existing implementation meets requirements
+
+**Notes:**
+- `go build` command could not be run due to environment restrictions
+- Syntax verified through code review

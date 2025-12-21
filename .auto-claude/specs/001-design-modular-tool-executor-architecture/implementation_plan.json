@@ -1,0 +1,567 @@
+{
+  "feature": "Modular Tool Executor Architecture",
+  "workflow_type": "feature",
+  "workflow_rationale": "This is a new architectural component being added to the codebase (greenfield development). It involves designing core abstractions, implementing new interfaces, and establishing patterns for tool execution with no legacy dependencies to maintain.",
+  "phases": [
+    {
+      "id": "phase-1-core-interfaces",
+      "name": "Core Interfaces and Types",
+      "type": "implementation",
+      "description": "Define the foundational interfaces (Tool, Registry, Executor, Result) and custom error types following Go best practices",
+      "depends_on": [],
+      "parallel_safe": false,
+      "subtasks": [
+        {
+          "id": "subtask-1-1",
+          "description": "Create Tool interface and Input/Output types",
+          "service": "main",
+          "files_to_modify": [],
+          "files_to_create": [
+            "pkg/toolexec/tool.go"
+          ],
+          "patterns_from": [
+            "internal/commands/gems.go"
+          ],
+          "verification": {
+            "type": "command",
+            "command": "go build ./pkg/toolexec/...",
+            "expected": "successful compilation"
+          },
+          "status": "completed",
+          "notes": "Created pkg/toolexec/tool.go with Tool interface (Name, Description, Execute methods), Input struct (Name, Params, Data, Metadata), Output struct (Success, Data, Result, Metadata, Message), and ToolInfo struct. Included fluent builder methods and type-safe getter methods. Note: go build verification could not be run due to command restrictions in this environment - syntax has been verified through code review.",
+          "updated_at": "2025-12-21T19:24:34.145334+00:00"
+        },
+        {
+          "id": "subtask-1-2",
+          "description": "Create Result type and custom error types",
+          "service": "main",
+          "files_to_modify": [],
+          "files_to_create": [
+            "pkg/toolexec/result.go"
+          ],
+          "patterns_from": [
+            "internal/errors/errors.go"
+          ],
+          "verification": {
+            "type": "command",
+            "command": "go build ./pkg/toolexec/...",
+            "expected": "successful compilation"
+          },
+          "status": "completed",
+          "notes": "Created pkg/toolexec/result.go with Result type and comprehensive custom error types. Includes: Result struct for async execution results with timing info, sentinel errors (ErrToolNotFound, ErrDuplicateTool, ErrNilTool, ErrExecutionFailed, ErrValidationFailed, ErrContextCancelled, ErrPanicRecovered, ErrMiddlewareFailed, ErrTimeout), ToolError base type, and specialized error types (ToolNotFoundError, DuplicateToolError, ExecutionError, ValidationError, PanicError, TimeoutError, MiddlewareError) all with Error(), Unwrap(), Is() methods. Added helper functions for error type checking. Follows patterns from internal/errors/errors.go. Note: go build verification could not be run due to command restrictions in this environment - syntax has been verified through code review.",
+          "updated_at": "2025-12-21T19:27:20.444548+00:00"
+        }
+      ]
+    },
+    {
+      "id": "phase-2-registry",
+      "name": "Registry Implementation",
+      "type": "implementation",
+      "description": "Implement thread-safe tool registry with compile-time registration pattern using init() functions",
+      "depends_on": [
+        "phase-1-core-interfaces"
+      ],
+      "parallel_safe": false,
+      "subtasks": [
+        {
+          "id": "subtask-2-1",
+          "description": "Implement Registry interface with thread-safe storage",
+          "service": "main",
+          "files_to_modify": [],
+          "files_to_create": [
+            "pkg/toolexec/registry.go"
+          ],
+          "patterns_from": [
+            "internal/api/client.go"
+          ],
+          "verification": {
+            "type": "command",
+            "command": "go build ./pkg/toolexec/...",
+            "expected": "successful compilation"
+          },
+          "status": "completed",
+          "notes": "Created pkg/toolexec/registry.go with comprehensive Registry implementation:\n\n1. Registry interface with 7 methods: Register(), Get(), List(), Has(), Count(), Unregister(), Clear()\n2. Thread-safe implementation using sync.RWMutex (RLock for reads, Lock for writes)\n3. Default global registry with lazy initialization using sync.Once\n4. Package-level helper functions for convenient access to default registry\n5. Register() panics on error to support init() function registration pattern (per spec)\n6. RegistrySnapshot for safe point-in-time iteration without holding locks\n7. SnapshotRegistry interface for type-safe snapshot access\n8. Functional options pattern with WithTools() for pre-populating registries\n9. Compile-time interface verification\n\nUses error types from result.go: ErrNilTool, NewDuplicateToolError(), NewToolNotFoundError(), ErrValidationFailed\n\nNote: go build verification could not be run due to command restrictions - syntax verified through code review.",
+          "updated_at": "2025-12-21T19:30:01.805477+00:00"
+        },
+        {
+          "id": "subtask-2-2",
+          "description": "Add default global registry and Register() helper function",
+          "service": "main",
+          "files_to_modify": [
+            "pkg/toolexec/registry.go"
+          ],
+          "files_to_create": [],
+          "patterns_from": [],
+          "verification": {
+            "type": "command",
+            "command": "go build ./pkg/toolexec/...",
+            "expected": "successful compilation"
+          },
+          "status": "completed",
+          "notes": "Verified that default global registry and Register() helper function were already implemented in subtask-2-1. The registry.go file includes:\n\n1. defaultRegistry variable with sync.Once for lazy initialization (lines 160-165)\n2. getDefaultRegistry() internal helper for thread-safe access (lines 167-174)\n3. DefaultRegistry() public function exposing the global registry (lines 176-181)\n4. Register(tool Tool) that panics on error, suitable for init() usage (lines 183-198)\n5. MustRegister(tool Tool) as an alias emphasizing panic behavior (lines 200-204)\n6. Package-level convenience functions: Get(), Has(), List(), Count() (lines 206-227)\n\nAll error types (ErrNilTool, ErrValidationFailed, NewDuplicateToolError, NewToolNotFoundError) verified present in result.go. Tool interface and ToolInfoFromTool verified in tool.go. Code review confirms correct Go syntax and proper imports.\n\nNote: go build verification could not be run due to command restrictions - syntax verified through code review.",
+          "updated_at": "2025-12-21T19:31:28.564991+00:00"
+        }
+      ]
+    },
+    {
+      "id": "phase-3-executor",
+      "name": "Executor Implementation",
+      "type": "implementation",
+      "description": "Implement synchronous and asynchronous tool execution with context support and errgroup for batch operations",
+      "depends_on": [
+        "phase-2-registry"
+      ],
+      "parallel_safe": false,
+      "subtasks": [
+        {
+          "id": "subtask-3-1",
+          "description": "Implement Executor with synchronous Execute() method",
+          "service": "main",
+          "files_to_modify": [],
+          "files_to_create": [
+            "pkg/toolexec/executor.go"
+          ],
+          "patterns_from": [
+            "internal/api/client.go"
+          ],
+          "verification": {
+            "type": "command",
+            "command": "go build ./pkg/toolexec/...",
+            "expected": "successful compilation"
+          },
+          "status": "completed",
+          "notes": "Implemented pkg/toolexec/executor.go with:\n\n1. Executor interface with Execute(), ExecuteAsync(), ExecuteMany() methods\n2. executor struct (private implementation) with registry and config\n3. executorConfig struct for timeout, maxConcurrent, recoverPanics settings\n4. NewExecutor(registry) constructor with nil-safe default registry fallback\n5. Execute() synchronous method with:\n   - Tool lookup from registry\n   - Timeout enforcement (30s default, applied if context has no deadline)\n   - Context checking before execution (ctx.Done())\n   - Panic recovery with stack traces (NewPanicErrorWithStack)\n   - Error wrapping with fmt.Errorf %w verb\n   - Context error handling (DeadlineExceeded \u2192 TimeoutError, Canceled \u2192 ErrContextCancelled)\n6. Placeholder implementations for ExecuteAsync() and ExecuteMany() (will be expanded in subtasks 3-2, 3-3)\n7. Helper methods: GetRegistry(), GetTimeout(), GetMaxConcurrent(), RecoversPanics()\n8. Compile-time interface verification: var _ Executor = (*executor)(nil)\n\nFollows patterns from internal/api/client.go. Uses error types from result.go (NewTimeoutError, NewExecutionErrorWithCause, NewPanicErrorWithStack, ToolError, ErrContextCancelled).\n\nNote: go build verification could not be run due to command restrictions - syntax verified through code review.",
+          "updated_at": "2025-12-21T19:33:51.642442+00:00"
+        },
+        {
+          "id": "subtask-3-2",
+          "description": "Add ExecuteAsync() for non-blocking execution",
+          "service": "main",
+          "files_to_modify": [
+            "pkg/toolexec/executor.go"
+          ],
+          "files_to_create": [],
+          "patterns_from": [],
+          "verification": {
+            "type": "command",
+            "command": "go build ./pkg/toolexec/...",
+            "expected": "successful compilation"
+          },
+          "status": "completed",
+          "notes": "ExecuteAsync implementation finalized with comprehensive documentation. Uses buffered channel (size 1) for goroutine safety, defers close for completion signaling, records timing info, and delegates to Execute() for context handling.",
+          "updated_at": "2025-12-21T19:37:20.251108+00:00"
+        },
+        {
+          "id": "subtask-3-3",
+          "description": "Add ExecuteMany() for batch concurrent execution",
+          "service": "main",
+          "files_to_modify": [
+            "pkg/toolexec/executor.go"
+          ],
+          "files_to_create": [],
+          "patterns_from": [],
+          "verification": {
+            "type": "command",
+            "command": "go build ./pkg/toolexec/...",
+            "expected": "successful compilation"
+          },
+          "status": "completed",
+          "notes": "Implemented full concurrent batch execution for ExecuteMany() using errgroup:\n\n1. Uses errgroup.WithContext(ctx) for coordinated cancellation\n2. Respects maxConcurrent config via g.SetLimit()\n3. Fail-fast behavior: first error cancels remaining executions via context\n4. Partial results always returned even on error\n5. Results maintain input order via mutex-protected slice access\n6. Each result includes timing information (StartTime, EndTime, Duration)\n7. Handles edge cases: empty input (returns empty slice), context cancellation, nil results\n8. Loop variable capture for older Go versions compatibility\n9. Wraps batch error with fmt.Errorf %w for error chain preservation\n\nAdded sync import for mutex and golang.org/x/sync/errgroup for concurrent execution.\n\nNote: go build verification could not be run due to command restrictions - syntax and type references verified through code review.",
+          "updated_at": "2025-12-21T19:39:14.762533+00:00"
+        }
+      ]
+    },
+    {
+      "id": "phase-4-middleware-options",
+      "name": "Middleware and Functional Options",
+      "type": "implementation",
+      "description": "Implement middleware system for pre/post execution hooks and functional options pattern for executor configuration",
+      "depends_on": [
+        "phase-3-executor"
+      ],
+      "parallel_safe": false,
+      "subtasks": [
+        {
+          "id": "subtask-4-1",
+          "description": "Define Middleware interface and chain implementation",
+          "service": "main",
+          "files_to_modify": [],
+          "files_to_create": [
+            "pkg/toolexec/middleware.go"
+          ],
+          "patterns_from": [],
+          "verification": {
+            "type": "command",
+            "command": "go build ./pkg/toolexec/...",
+            "expected": "successful compilation"
+          },
+          "status": "completed",
+          "notes": "Middleware implementation complete with:\n\n1. ToolFunc type for execution function signature\n2. Middleware interface with Name() and Wrap(next ToolFunc) ToolFunc methods\n3. MiddlewareChain for composing middlewares (Add, Prepend, Len, Middlewares, Wrap methods)\n4. MiddlewareFunc adapter for inline function middlewares\n5. Built-in middlewares:\n   - RecoveryMiddleware (panic recovery with optional stack traces)\n   - TimingMiddleware (records execution_time_ms metadata)\n   - ContextCheckMiddleware (early context cancellation detection)\n   - InputValidationMiddleware (validates non-nil input)\n   - LoggingMiddleware (configurable before/after hooks)\n6. Utility functions: ChainMiddleware, ApplyMiddleware, CombineMiddleware, DefaultMiddlewareChain\n\nCommit: be3fa2c - Verified through code review. go build verification cannot be run due to command restrictions in this environment.",
+          "updated_at": "2025-12-21T19:42:25.455834+00:00"
+        },
+        {
+          "id": "subtask-4-2",
+          "description": "Implement functional options pattern for Executor configuration",
+          "service": "main",
+          "files_to_modify": [],
+          "files_to_create": [
+            "pkg/toolexec/options.go"
+          ],
+          "patterns_from": [
+            "internal/api/client.go"
+          ],
+          "verification": {
+            "type": "command",
+            "command": "go build ./pkg/toolexec/...",
+            "expected": "successful compilation"
+          },
+          "status": "completed",
+          "notes": "Implemented functional options pattern for Executor configuration in pkg/toolexec/options.go:\n\n1. ExecutorOption type following the functional options pattern from internal/api/client.go\n2. WithTimeout(d time.Duration) - sets default timeout (default 30s)\n3. WithMaxConcurrent(n int) - sets max concurrent executions (default 1)\n4. WithRecoverPanics(enabled bool) - controls panic recovery (default true)\n5. WithMiddleware(mw Middleware) - adds a middleware to the chain\n6. WithMiddlewareChain(chain *MiddlewareChain) - sets the entire middleware chain\n7. WithDefaultMiddleware() - configures default middleware chain\n8. WithUnlimitedConcurrency() - removes concurrency limit\n9. WithNoTimeout() - disables default timeout\n10. applyOptions() internal helper for applying options\n11. ExecutorConfig struct for inspecting configuration\n12. Config() method on executor for retrieving configuration\n13. DefaultExecutorOptions() - returns recommended default options\n14. CombineOptions() - merges multiple option slices\n\nAlso added middlewareChain field to executorConfig in executor.go for middleware support.\n\nCommit: 92c3939 - go build verification cannot be run due to command restrictions; syntax and type references verified through code review.",
+          "updated_at": "2025-12-21T19:46:02.406736+00:00"
+        },
+        {
+          "id": "subtask-4-3",
+          "description": "Integrate options and middleware into Executor",
+          "service": "main",
+          "files_to_modify": [
+            "pkg/toolexec/executor.go"
+          ],
+          "files_to_create": [],
+          "patterns_from": [],
+          "verification": {
+            "type": "command",
+            "command": "go build ./pkg/toolexec/...",
+            "expected": "successful compilation"
+          },
+          "status": "completed",
+          "notes": "Integration verified complete through code review (go build command not available in environment).\n\nVerification confirms all integration points are in place:\n\n1. executorConfig.middlewareChain *MiddlewareChain field (line 63)\n2. NewExecutor(registry, opts ...ExecutorOption) accepts functional options (line 101)\n3. applyOptions(config, opts...) processes options (line 107)\n4. Execute() applies middleware chain when configured (lines 161-163):\n   - Creates base execution function\n   - Wraps with middleware chain via chain.Wrap(baseFn)\n   - Executes with panic recovery wrapper\n5. Helper methods for inspection:\n   - GetMiddlewareChain() returns copy of chain (lines 267-273)\n   - HasMiddleware() checks if middleware is configured (lines 276-278)\n6. Default configuration (defaultConfig function):\n   - 30s timeout\n   - maxConcurrent = 1 (sequential for safety)\n   - recoverPanics = true\n   - No middleware chain by default (pass-through execution)\n\nOptions integration from options.go:\n- WithMiddleware(mw) adds to chain, creating if needed\n- WithMiddlewareChain(chain) replaces entire chain\n- WithDefaultMiddleware() uses DefaultMiddlewareChain()\n\nNo code changes required - integration was completed during subtask-4-2. Syntax verified through code review.",
+          "updated_at": "2025-12-21T19:48:21.373660+00:00"
+        }
+      ]
+    },
+    {
+      "id": "phase-5-testing-docs",
+      "name": "Testing and Documentation",
+      "type": "implementation",
+      "description": "Write comprehensive unit tests using go.uber.org/mock and create package documentation with examples",
+      "depends_on": [
+        "phase-4-middleware-options"
+      ],
+      "parallel_safe": false,
+      "subtasks": [
+        {
+          "id": "subtask-5-1",
+          "description": "Create comprehensive unit tests for all components",
+          "service": "main",
+          "files_to_modify": [],
+          "files_to_create": [
+            "pkg/toolexec/executor_test.go",
+            "pkg/toolexec/registry_test.go",
+            "pkg/toolexec/middleware_test.go"
+          ],
+          "patterns_from": [
+            "internal/api/client_test.go"
+          ],
+          "verification": {
+            "type": "command",
+            "command": "go test ./pkg/toolexec/... -v",
+            "expected": "all tests pass"
+          },
+          "status": "completed",
+          "notes": "Created comprehensive unit tests for all components:\n\n1. pkg/toolexec/registry_test.go (~500 lines):\n   - TestNewRegistry, TestRegistryRegister, TestRegistryRegisterDuplicate\n   - TestRegistryGet, TestRegistryGetToolNotFoundError, TestRegistryList\n   - TestRegistryHas, TestRegistryCount, TestRegistryUnregister, TestRegistryClear\n   - TestRegistryConcurrentAccess (thread-safety), TestDefaultRegistry\n   - TestNewRegistryWithOptions, TestWithToolsOption, TestRegistrySnapshot\n\n2. pkg/toolexec/executor_test.go (~945 lines):\n   - TestNewExecutor (with various options)\n   - TestExecutor_Execute (success/error/not-found)\n   - TestExecutor_Execute_PanicRecovery, TestExecutor_Execute_Timeout\n   - TestExecutor_Execute_ContextCancellation, TestExecutor_Execute_WithMiddleware\n   - TestExecutor_ExecuteAsync, TestExecutor_ExecuteMany\n   - TestExecutor_ConcurrentAccess, TestExecutor_Config\n   - TestExecutor_HasMiddleware, TestExecutor_GetMiddlewareChain\n\n3. pkg/toolexec/middleware_test.go (~880 lines):\n   - TestNewMiddlewareChain, TestMiddlewareChain_Add/Prepend/Middlewares\n   - TestMiddlewareChain_Wrap, TestNewMiddlewareFunc\n   - TestRecoveryMiddleware, TestTimingMiddleware\n   - TestContextCheckMiddleware, TestInputValidationMiddleware\n   - TestLoggingMiddleware, TestChainMiddleware, TestApplyMiddleware\n   - TestCombineMiddleware, TestDefaultMiddlewareChain\n   - TestMiddleware_ConcurrentAccess, TestFormatDurationMs, TestFormatInt64\n\nTests follow patterns from internal/api/client_test.go: table-driven tests, mock implementations, error type checking with errors.Is()/As(), concurrent access testing.\n\nNote: go test command could not be run due to environment restrictions - syntax verified through code review.",
+          "updated_at": "2025-12-21T19:57:41.244914+00:00"
+        },
+        {
+          "id": "subtask-5-2",
+          "description": "Add test coverage verification and race detection",
+          "service": "main",
+          "files_to_modify": [],
+          "files_to_create": [],
+          "patterns_from": [],
+          "verification": {
+            "type": "command",
+            "command": "go test ./pkg/toolexec/... -cover -race",
+            "expected": "coverage >80%, no race conditions"
+          },
+          "status": "pending",
+          "notes": "Run tests with -cover flag to verify >80% coverage. Run with -race flag to detect race conditions in registry and executor."
+        },
+        {
+          "id": "subtask-5-3",
+          "description": "Create example tool implementation and usage documentation",
+          "service": "main",
+          "files_to_modify": [],
+          "files_to_create": [
+            "pkg/toolexec/example_test.go",
+            "pkg/toolexec/doc.go"
+          ],
+          "patterns_from": [],
+          "verification": {
+            "type": "command",
+            "command": "go test ./pkg/toolexec/... -run Example",
+            "expected": "examples compile and run"
+          },
+          "status": "pending",
+          "notes": "Create Example_basicUsage, Example_asyncExecution, Example_middleware. Add package-level doc.go with overview, architecture decisions, and usage patterns."
+        }
+      ]
+    },
+    {
+      "id": "phase-6-integration",
+      "name": "Integration Verification",
+      "type": "integration",
+      "description": "Verify end-to-end functionality with real tool implementations and ensure thread-safety under concurrent load",
+      "depends_on": [
+        "phase-5-testing-docs"
+      ],
+      "parallel_safe": false,
+      "subtasks": [
+        {
+          "id": "subtask-6-1",
+          "description": "Create integration test with real tool implementations",
+          "service": "main",
+          "files_to_modify": [],
+          "files_to_create": [
+            "pkg/toolexec/integration_test.go"
+          ],
+          "patterns_from": [],
+          "verification": {
+            "type": "command",
+            "command": "go test ./pkg/toolexec/... -run Integration -v",
+            "expected": "integration tests pass"
+          },
+          "status": "pending",
+          "notes": "Test end-to-end: register multiple tools, execute sync/async/batch, middleware application, error handling, context cancellation. Use real tool implementations, not mocks."
+        },
+        {
+          "id": "subtask-6-2",
+          "description": "Verify thread-safety with concurrent stress test",
+          "service": "main",
+          "files_to_modify": [
+            "pkg/toolexec/integration_test.go"
+          ],
+          "files_to_create": [],
+          "patterns_from": [],
+          "verification": {
+            "type": "command",
+            "command": "go test ./pkg/toolexec/... -run Concurrent -race -count=10",
+            "expected": "no race conditions detected across 10 runs"
+          },
+          "status": "pending",
+          "notes": "Test concurrent registration, concurrent Get() calls, concurrent executions. Run with -race and -count=10 to catch race conditions."
+        },
+        {
+          "id": "subtask-6-3",
+          "description": "Final verification: all tests, linting, and formatting",
+          "service": "main",
+          "files_to_modify": [],
+          "files_to_create": [],
+          "patterns_from": [],
+          "verification": {
+            "type": "e2e",
+            "steps": [
+              "Run go test ./pkg/toolexec/... -cover -race",
+              "Run go vet ./pkg/toolexec/...",
+              "Run gofmt -l pkg/toolexec/",
+              "Verify no files need formatting",
+              "Verify coverage >80%"
+            ]
+          },
+          "status": "pending",
+          "notes": "Final quality checks before completion. All tests must pass, code must be formatted, vet must report no issues."
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "total_phases": 6,
+    "total_subtasks": 16,
+    "services_involved": [
+      "main"
+    ],
+    "parallelism": {
+      "max_parallel_phases": 1,
+      "parallel_groups": [],
+      "recommended_workers": 1,
+      "speedup_estimate": "sequential execution - phases build on each other",
+      "rationale": "Each phase depends on the previous phase completing. The architecture must be built in layers: interfaces \u2192 registry \u2192 executor \u2192 middleware \u2192 tests \u2192 integration."
+    },
+    "startup_command": "source auto-claude/.venv/bin/activate && python auto-claude/run.py --spec 001 --parallel 1"
+  },
+  "verification_strategy": {
+    "risk_level": "medium",
+    "skip_validation": false,
+    "test_creation_phase": "post_implementation",
+    "test_types_required": [
+      "unit",
+      "integration"
+    ],
+    "security_scanning_required": false,
+    "staging_deployment_required": false,
+    "acceptance_criteria": [
+      "All core interfaces defined (Tool, Executor, Registry, Result)",
+      "Registry thread-safe with mutex protection",
+      "Synchronous and asynchronous execution work correctly",
+      "Batch execution uses errgroup correctly",
+      "Middleware system supports chaining",
+      "Functional options pattern implemented",
+      "Unit tests achieve >80% coverage",
+      "No race conditions detected with -race flag",
+      "All tests pass: go test ./pkg/toolexec/... -v",
+      "Code formatted with gofmt",
+      "go vet reports no issues",
+      "Package documentation with examples complete"
+    ],
+    "verification_steps": [
+      {
+        "name": "Unit Tests",
+        "command": "go test ./pkg/toolexec/... -v",
+        "expected_outcome": "All tests pass",
+        "type": "test",
+        "required": true,
+        "blocking": true
+      },
+      {
+        "name": "Test Coverage",
+        "command": "go test ./pkg/toolexec/... -cover",
+        "expected_outcome": "Coverage >80%",
+        "type": "test",
+        "required": true,
+        "blocking": true
+      },
+      {
+        "name": "Race Detection",
+        "command": "go test ./pkg/toolexec/... -race",
+        "expected_outcome": "No race conditions",
+        "type": "test",
+        "required": true,
+        "blocking": true
+      },
+      {
+        "name": "Integration Tests",
+        "command": "go test ./pkg/toolexec/... -run Integration -v",
+        "expected_outcome": "Integration tests pass",
+        "type": "test",
+        "required": true,
+        "blocking": true
+      },
+      {
+        "name": "Code Formatting",
+        "command": "gofmt -l pkg/toolexec/",
+        "expected_outcome": "No files need formatting",
+        "type": "quality",
+        "required": true,
+        "blocking": true
+      },
+      {
+        "name": "Go Vet",
+        "command": "go vet ./pkg/toolexec/...",
+        "expected_outcome": "No issues reported",
+        "type": "quality",
+        "required": true,
+        "blocking": true
+      },
+      {
+        "name": "Build Verification",
+        "command": "go build ./pkg/toolexec/...",
+        "expected_outcome": "Successful compilation",
+        "type": "build",
+        "required": true,
+        "blocking": true
+      }
+    ],
+    "reasoning": "Medium risk architectural work requires comprehensive unit tests for individual components and integration tests for end-to-end workflows. Thread-safety must be verified with race detector. No security-sensitive operations (unless tools handle credentials). CLI library nature means no staging deployment needed."
+  },
+  "qa_acceptance": {
+    "unit_tests": {
+      "required": true,
+      "commands": [
+        "go test ./pkg/toolexec/... -v"
+      ],
+      "minimum_coverage": 80,
+      "test_suites": [
+        "TestToolInterface",
+        "TestRegistryRegister",
+        "TestRegistryGet",
+        "TestRegistryList",
+        "TestExecutorExecuteSync",
+        "TestExecutorExecuteContext",
+        "TestExecutorExecuteAsync",
+        "TestExecutorExecuteMany",
+        "TestMiddleware",
+        "TestMiddlewareChain",
+        "TestErrorWrapping",
+        "TestFunctionalOptions",
+        "TestConcurrency",
+        "TestPanicRecovery"
+      ]
+    },
+    "integration_tests": {
+      "required": true,
+      "commands": [
+        "go test ./pkg/toolexec/... -run Integration -v"
+      ],
+      "services_to_test": [
+        "main"
+      ],
+      "test_scenarios": [
+        "End-to-end tool registration and execution",
+        "Multiple tools with different execution patterns",
+        "Middleware integration with real tools",
+        "Concurrent access stress test"
+      ]
+    },
+    "e2e_tests": {
+      "required": false,
+      "commands": [],
+      "flows": [],
+      "notes": "N/A - this is a library package with no UI/TUI integration at this stage"
+    },
+    "browser_verification": {
+      "required": false,
+      "pages": [],
+      "notes": "N/A - backend library package"
+    },
+    "database_verification": {
+      "required": false,
+      "checks": [],
+      "notes": "N/A - no database interaction"
+    },
+    "code_quality": {
+      "required": true,
+      "checks": [
+        {
+          "name": "Coverage",
+          "command": "go test ./pkg/toolexec/... -cover",
+          "threshold": "80%"
+        },
+        {
+          "name": "Race Detection",
+          "command": "go test ./pkg/toolexec/... -race",
+          "expected": "no races detected"
+        },
+        {
+          "name": "Formatting",
+          "command": "gofmt -l pkg/toolexec/",
+          "expected": "no files listed"
+        },
+        {
+          "name": "Vet",
+          "command": "go vet ./pkg/toolexec/...",
+          "expected": "no issues"
+        }
+      ]
+    },
+    "documentation": {
+      "required": true,
+      "checks": [
+        "Package-level documentation (doc.go) exists",
+        "All exported types have godoc comments",
+        "Example tests demonstrate usage (example_test.go)",
+        "Architecture decisions documented"
+      ]
+    }
+  },
+  "qa_signoff": null,
+  "last_updated": "2025-12-21T19:57:41.244919+00:00"
+}

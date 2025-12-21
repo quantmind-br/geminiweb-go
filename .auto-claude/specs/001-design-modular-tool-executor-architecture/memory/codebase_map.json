@@ -1,0 +1,25 @@
+{
+  "discovered_files": {
+    "pkg/toolexec/executor.go": {
+      "description": "Executor implementation with synchronous Execute() method. Key patterns: timeout enforcement via context.WithTimeout, panic recovery with debug.Stack(), context error handling (DeadlineExceeded \u2192 TimeoutError, Canceled \u2192 ErrContextCancelled). Uses executorConfig for configuration (30s default timeout, maxConcurrent=1, recoverPanics=true). NewExecutor(nil) falls back to DefaultRegistry().",
+      "category": "architecture",
+      "discovered_at": "2025-12-21T19:34:00.714241+00:00"
+    },
+    "pkg/toolexec/middleware.go": {
+      "description": "Middleware system implementation with ToolFunc type, Middleware interface (Name() + Wrap()), MiddlewareChain for composition, and built-in middlewares (RecoveryMiddleware, TimingMiddleware, ContextCheckMiddleware, InputValidationMiddleware, LoggingMiddleware). DefaultMiddlewareChain() returns recommended defaults. Middlewares are applied in order: first added is outermost wrapper.",
+      "category": "architecture",
+      "discovered_at": "2025-12-21T19:42:32.907928+00:00"
+    },
+    "pkg/toolexec/options.go": {
+      "description": "Functional options pattern for Executor configuration. Key options: WithTimeout, WithMaxConcurrent, WithRecoverPanics, WithMiddleware, WithMiddlewareChain, WithDefaultMiddleware, WithUnlimitedConcurrency, WithNoTimeout. Also includes ExecutorConfig struct for inspecting config, DefaultExecutorOptions() for recommended defaults, and CombineOptions() for merging option slices. Pattern follows internal/api/client.go ClientOption style.",
+      "category": "patterns",
+      "discovered_at": "2025-12-21T19:46:10.519874+00:00"
+    },
+    "pkg/toolexec/*_test.go": {
+      "description": "Comprehensive unit tests for toolexec package. Three test files cover: registry_test.go (~500 lines) tests tool registration, discovery, thread-safety; executor_test.go (~945 lines) tests sync/async/batch execution, timeouts, panic recovery; middleware_test.go (~880 lines) tests middleware chaining, built-in middlewares. All follow table-driven test patterns from internal/api/client_test.go.",
+      "category": "testing",
+      "discovered_at": "2025-12-21T19:58:20.542014+00:00"
+    }
+  },
+  "last_updated": "2025-12-21T19:58:20.542020+00:00"
+}
