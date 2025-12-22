@@ -239,6 +239,10 @@ func (m PersonaManagerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.allPersonas = sortPersonas(msg.personas)
 			m.filteredPersonas = m.allPersonas
 			m.defaultPersona = msg.defaultPersona
+			// Reset cursor to avoid out of bounds after reload
+			if m.cursor >= len(m.filteredPersonas) {
+				m.cursor = max(0, len(m.filteredPersonas)-1)
+			}
 		}
 
 	case personaSavedMsg:
