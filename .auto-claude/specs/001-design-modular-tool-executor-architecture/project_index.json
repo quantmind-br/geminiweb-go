@@ -1,0 +1,44 @@
+{
+  "project_type": "single",
+  "services": {
+    "main": {
+      "path": ".",
+      "tech_stack": ["go", "1.24.1"],
+      "port": null,
+      "dev_command": "go run ./cmd/geminiweb",
+      "test_command": "go test ./...",
+      "build_command": "go build ./cmd/..."
+    }
+  },
+  "infrastructure": {
+    "docker": false,
+    "ci": "GitHub Actions",
+    "database": null
+  },
+  "conventions": {
+    "linter": "go vet",
+    "formatter": "gofmt",
+    "testing": "go test",
+    "test_framework": "go.uber.org/mock (v0.5.0)",
+    "package_organization": {
+      "cmd": "command-line entry points",
+      "internal": "private packages",
+      "pkg": "public API packages (to be created)"
+    },
+    "patterns": {
+      "interfaces": "small, focused interfaces following Go best practices",
+      "error_handling": "custom error types with Unwrap(), Is(), Error() methods",
+      "error_wrapping": "fmt.Errorf with %w verb",
+      "configuration": "functional options pattern",
+      "concurrency": "errgroup from golang.org/x/sync"
+    }
+  },
+  "dependencies": {
+    "cobra": "v1.8.1",
+    "bubbletea": "v1.3.4",
+    "glamour": "v0.10.0",
+    "tls-client": "v1.11.2",
+    "golang.org/x/sync": "v0.19.0",
+    "go.uber.org/mock": "v0.5.0"
+  }
+}

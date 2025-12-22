@@ -1,0 +1,48 @@
+{
+  "task_description": "Design and implement a modular tool executor architecture in Go with interface-based design, registry pattern for tool discovery, and support for synchronous and asynchronous execution.",
+  "files_to_modify": {
+    "main": []
+  },
+  "files_to_create": {
+    "main": [
+      "pkg/toolexec/tool.go",
+      "pkg/toolexec/executor.go",
+      "pkg/toolexec/registry.go",
+      "pkg/toolexec/result.go",
+      "pkg/toolexec/middleware.go",
+      "pkg/toolexec/options.go",
+      "pkg/toolexec/executor_test.go"
+    ]
+  },
+  "files_to_reference": [
+    "internal/api/client.go",
+    "internal/errors/errors.go",
+    "internal/commands/gems.go"
+  ],
+  "patterns": {
+    "interface_design": "See GemReaderInterface in internal/commands/gems.go - small, focused interfaces",
+    "functional_options": "See api.ClientOption in internal/api/client.go - use for configuration",
+    "error_types": "See internal/errors/errors.go - custom error types with Unwrap(), Is(), Error()",
+    "error_wrapping": "Use fmt.Errorf with %w verb to preserve error chains",
+    "thread_safety": "Use sync.RWMutex for concurrent access (see internal/api/client.go line 97)",
+    "context_usage": "All execution methods must accept context.Context as first parameter"
+  },
+  "existing_implementations": {
+    "description": "No existing tool executor framework found. This is greenfield development.",
+    "relevant_files": [
+      "internal/api/client.go - shows functional options pattern",
+      "internal/errors/errors.go - shows custom error type patterns",
+      "internal/commands/gems.go - shows interface-based design"
+    ],
+    "dependencies_available": [
+      "golang.org/x/sync/errgroup - for concurrent execution",
+      "go.uber.org/mock - for unit testing"
+    ]
+  },
+  "architecture_decisions": {
+    "avoid_plugin_package": "Do not use Go's plugin package - has version/CGO reliability issues",
+    "registration_pattern": "Use compile-time registration via init() functions",
+    "concurrency_model": "Use errgroup.WithContext for batch execution",
+    "error_strategy": "Use %w for error wrapping to maintain error chains"
+  }
+}

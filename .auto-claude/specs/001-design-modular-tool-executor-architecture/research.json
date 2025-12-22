@@ -1,0 +1,1092 @@
+{
+  "research_summary": {
+    "task_type": "architectural_design",
+    "task_context": "Design a modular tool executor architecture for geminiweb-go AI CLI/TUI application. Based on sugestao.md proposal for tool execution system allowing AI to execute tools (bash, file operations, search) with security controls.",
+    "external_integrations_researched": 7,
+    "context7_libraries_researched": 2,
+    "research_methodology": "Used Context7 MCP for library documentation, analyzed existing codebase patterns, reviewed sugestao.md proposal"
+  },
+  "task_context": {
+    "existing_architecture": {
+      "language": "Go 1.24.1",
+      "architecture_style": "Clean/Hexagonal Architecture",
+      "key_frameworks": [
+        "Cobra (CLI)",
+        "Bubble Tea (TUI/MVU pattern)",
+        "tls-client (Browser emulation)",
+        "GJSON (JSON parsing)"
+      ],
+      "design_patterns_in_use": [
+        "The Elm Architecture (MVU)",
+        "Functional Options",
+        "Repository Pattern",
+        "Strategy Pattern",
+        "Proxy/Wrapper Pattern"
+      ]
+    },
+    "proposal_from_sugestao_md": {
+      "summary": "Design a tool executor system that allows AI to execute tools (bash, file operations, search) with security controls, confirmation prompts, and integration with the existing TUI streaming architecture",
+      "key_requirements": [
+        "Registry-based tool system",
+        "JSON protocol for tool calls (```tool blocks)",
+        "Security layers (confirmations, blacklists, timeouts)",
+        "Context-aware execution with cancellation",
+        "Integration with Bubble Tea TUI",
+        "Support for streaming responses"
+      ],
+      "proposed_tools": [
+        "BashTool - Execute shell commands",
+        "FileReadTool - Read file contents",
+        "FileWriteTool - Create/modify files",
+        "SearchTool - Search patterns in files"
+      ],
+      "security_model": "Multi-layered with confirmation policies, command blacklists, path validation, timeouts, and output truncation"
+    }
+  },
+  "existing_project_stack": {
+    "language": "Go",
+    "version": "1.24.1",
+    "module": "github.com/diogo/geminiweb",
+    "key_dependencies": [
+      {
+        "name": "cobra",
+        "package": "github.com/spf13/cobra",
+        "version": "v1.8.1",
+        "purpose": "CLI framework",
+        "relevance": "Existing CLI infrastructure that tool executor may integrate with"
+      },
+      {
+        "name": "bubbletea",
+        "package": "github.com/charmbracelet/bubbletea",
+        "version": "v1.3.4",
+        "purpose": "TUI framework (The Elm Architecture for Go)",
+        "relevance": "Interactive UI components that tools must integrate with - critical for confirmation prompts and streaming"
+      },
+      {
+        "name": "glamour",
+        "package": "github.com/charmbracelet/glamour",
+        "version": "v0.10.0",
+        "purpose": "Markdown rendering",
+        "relevance": "Output formatting for tool results"
+      },
+      {
+        "name": "lipgloss",
+        "package": "github.com/charmbracelet/lipgloss",
+        "version": "v1.1.1",
+        "purpose": "Terminal styling",
+        "relevance": "Styling tool executor output and confirmation prompts"
+      },
+      {
+        "name": "tls-client",
+        "package": "github.com/bogdanfinn/tls-client",
+        "version": "v1.11.2",
+        "purpose": "HTTP client with TLS fingerprinting",
+        "relevance": "Network-based tools might use this client"
+      },
+      {
+        "name": "gjson",
+        "package": "github.com/tidwall/gjson",
+        "version": "v1.18.0",
+        "purpose": "JSON parsing",
+        "relevance": "Parsing tool configurations or results"
+      },
+      {
+        "name": "uber-go/mock",
+        "package": "go.uber.org/mock",
+        "version": "v0.5.0",
+        "purpose": "Mock generation for testing",
+        "relevance": "Testing tool implementations with mocks"
+      },
+      {
+        "name": "golang.org/x/sync",
+        "package": "golang.org/x/sync",
+        "version": "v0.19.0",
+        "purpose": "Extended sync primitives",
+        "relevance": "errgroup for concurrent tool execution with error handling"
+      }
+    ]
+  },
+  "integrations_researched": [
+    {
+      "name": "HashiCorp go-plugin",
+      "type": "library",
+      "relevance": "highly_recommended_for_future",
+      "use_case": "Plugin-based architecture for extensible tool system (NOT recommended for initial implementation)",
+      "verified_package": {
+        "name": "github.com/hashicorp/go-plugin",
+        "install_command": "go get github.com/hashicorp/go-plugin",
+        "latest_version": "Latest from main branch",
+        "verified": true
+      },
+      "api_patterns": {
+        "imports": [
+          "github.com/hashicorp/go-plugin",
+          "github.com/hashicorp/go-hclog"
+        ],
+        "initialization": "client := plugin.NewClient(&plugin.ClientConfig{HandshakeConfig: ..., Plugins: ..., Cmd: exec.Command(...)})",
+        "key_concepts": [
+          "RPC-based plugin system (net/rpc or gRPC)",
+          "Process isolation - plugins run as subprocesses",
+          "Handshake protocol for security (MagicCookie)",
+          "Lifecycle management (OnStart, OnStop hooks)",
+          "Bidirectional communication via MuxBroker",
+          "Multi-language support (Go, Python, etc. via gRPC)"
+        ],
+        "core_interfaces": [
+          "plugin.Plugin - Base interface for all plugins",
+          "plugin.GRPCPlugin - For gRPC-based plugins",
+          "Tool interface defined in host, implemented by plugins"
+        ],
+        "handshake_protocol": "1|3|unix|/path/to/socket|grpc - Core version, app version, network, address, protocol",
+        "verified_against": "Context7 MCP /hashicorp/go-plugin + GitHub documentation"
+      },
+      "configuration": {
+        "handshake_config": {
+          "ProtocolVersion": "integer - for compatibility checking",
+          "MagicCookieKey": "string - environment variable key",
+          "MagicCookieValue": "string - secret value for validation"
+        },
+        "client_config": {
+          "HandshakeConfig": "HandshakeConfig struct",
+          "Plugins": "map[string]plugin.Plugin - registry of available plugins",
+          "Cmd": "exec.Command to launch plugin binary",
+          "Logger": "hclog.Logger for structured logging",
+          "AllowedProtocols": "[]plugin.Protocol (grpc, netrpc)",
+          "Managed": "bool - auto cleanup with plugin.CleanupClients()"
+        }
+      },
+      "architecture_benefits": [
+        "Crash isolation - plugin crashes don't crash host process",
+        "Security - plugins only access interfaces given to them",
+        "Language agnostic - tools can be written in any language with gRPC",
+        "Easy installation - just drop plugin binary in directory",
+        "Process lifecycle management built-in",
+        "TLS support for secure communication",
+        "Versioning support via HandshakeConfig",
+        "Automatic connection multiplexing (yamux for net/rpc, HTTP/2 for gRPC)"
+      ],
+      "gotchas": [
+        "Plugins are separate processes - adds RPC overhead",
+        "Need to define clear plugin discovery mechanism (paths, globs)",
+        "gRPC requires protobuf definitions for cross-language plugins",
+        "Subprocess management complexity",
+        "Not suitable for very high-frequency tool calls (RPC latency)",
+        "Plugin binary must match host's expectations (interface compatibility)",
+        "Context cancellation requires careful handling across RPC boundary"
+      ],
+      "recommended_for": [
+        "Future extensibility if third-party tool plugins are needed",
+        "External tool plugins developed by third parties",
+        "Tools requiring strict process isolation (e.g., untrusted code execution)",
+        "Multi-language tool ecosystem",
+        "Long-running tools that need independent lifecycle"
+      ],
+      "not_recommended_for": [
+        "Initial implementation (too complex, unnecessary overhead)",
+        "Simple internal tools (bash, file read/write)",
+        "High-frequency tool calls",
+        "Tight integration with host process state"
+      ],
+      "research_sources": [
+        "https://github.com/hashicorp/go-plugin",
+        "Context7 MCP: /hashicorp/go-plugin",
+        "https://github.com/hashicorp/go-plugin/tree/main/examples",
+        "https://github.com/hashicorp/go-plugin/blob/main/docs/extensive-go-plugin-tutorial.md"
+      ]
+    },
+    {
+      "name": "Uber Fx",
+      "type": "library",
+      "relevance": "optional_for_complex_implementations",
+      "use_case": "Dependency injection and application lifecycle management for tool registry and executors (OPTIONAL)",
+      "verified_package": {
+        "name": "go.uber.org/fx",
+        "install_command": "go get go.uber.org/fx",
+        "latest_version": "v1.x",
+        "verified": true
+      },
+      "api_patterns": {
+        "imports": [
+          "go.uber.org/fx",
+          "go.uber.org/zap (for logging)"
+        ],
+        "initialization": "app := fx.New(fx.Provide(...), fx.Invoke(...)); app.Run()",
+        "key_concepts": [
+          "Constructor-based dependency injection",
+          "Lifecycle management with OnStart/OnStop hooks",
+          "Module system for organizing components (fx.Module)",
+          "Parameter and result objects for backwards compatibility",
+          "Lazy evaluation of dependencies",
+          "Automatic dependency graph resolution",
+          "Validation before startup (fx.ValidateApp)"
+        ],
+        "core_patterns": [
+          "fx.Provide - Register constructors",
+          "fx.Invoke - Execute functions with dependencies",
+          "fx.Module - Group related components",
+          "fx.Lifecycle - Manage component startup/shutdown",
+          "fx.Decorate - Wrap/modify dependencies",
+          "fx.Supply - Provide existing values (config, secrets)"
+        ],
+        "verified_against": "Context7 MCP /uber-go/fx + Uber documentation"
+      },
+      "configuration": {
+        "lifecycle_hooks": {
+          "OnStart": "func(ctx context.Context) error - startup logic",
+          "OnStop": "func(ctx context.Context) error - graceful shutdown",
+          "StartHook": "Simplified hook without context/error",
+          "StopHook": "Simplified cleanup hook",
+          "StartStopHook": "Both in one"
+        },
+        "timeouts": {
+          "StartTimeout": "default 15s, configurable via fx.StartTimeout(duration)",
+          "StopTimeout": "default 15s, configurable via fx.StopTimeout(duration)"
+        },
+        "module_structure": "fx.Module(name, fx.Provide(...), fx.Invoke(...), fx.Decorate(...))"
+      },
+      "architecture_benefits": [
+        "Clean dependency management - no global state",
+        "Modular design - tools can be organized as fx.Modules",
+        "Testability - easy to inject mocks via fx.Supply",
+        "Lifecycle management - graceful startup/shutdown",
+        "Explicit dependencies - constructor parameters are dependencies",
+        "Validation - fx.ValidateApp checks dependency graph before run",
+        "Module encapsulation - fx.Private for module-scoped dependencies"
+      ],
+      "gotchas": [
+        "Learning curve for teams unfamiliar with DI",
+        "Reflection overhead (minimal in most cases)",
+        "Error messages can be verbose for missing dependencies",
+        "Circular dependencies cause panics at startup (fail-fast is good)",
+        "Over-engineering risk for simple applications"
+      ],
+      "recommended_for": [
+        "Complex applications with many interdependent components",
+        "Tool registry initialization and configuration",
+        "Managing tool executor lifecycle across app startup/shutdown",
+        "Organizing security policies and configurations as modules",
+        "Coordinating startup of multiple tool-related services"
+      ],
+      "not_recommended_for": [
+        "Initial simple implementation (manual DI is sufficient)",
+        "Applications with few components (<10)",
+        "When team is unfamiliar with DI patterns"
+      ],
+      "integration_example": {
+        "tool_module": "fx.Module(\"tools\", fx.Provide(NewRegistry, NewExecutor, NewBashTool, NewFileReadTool), fx.Invoke(RegisterDefaultTools))",
+        "security_module": "fx.Module(\"security\", fx.Provide(NewSecurityConfig, NewConfirmationPolicy), fx.Decorate(logger))",
+        "usage": "fx.New(fx.Provide(NewConfig, NewLogger), ToolModule, SecurityModule).Run()"
+      },
+      "research_sources": [
+        "https://github.com/uber-go/fx",
+        "Context7 MCP: /uber-go/fx",
+        "https://uber-go.github.io/fx/"
+      ]
+    },
+    {
+      "name": "Go Standard Library - context",
+      "type": "standard_library",
+      "relevance": "critical_required",
+      "use_case": "Cancellation, timeouts, and deadline management for tool execution",
+      "verified_package": {
+        "name": "context",
+        "install_command": "Built-in to Go standard library",
+        "version": "Go 1.24.1",
+        "verified": true
+      },
+      "api_patterns": {
+        "imports": ["context"],
+        "key_functions": [
+          "context.Background() - Root context",
+          "context.WithCancel(parent) - Manual cancellation",
+          "context.WithTimeout(parent, duration) - Time-based cancellation",
+          "context.WithDeadline(parent, time) - Deadline-based cancellation",
+          "context.WithValue(parent, key, value) - Request-scoped values (use sparingly)"
+        ],
+        "usage_pattern": "ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second); defer cancel(); result, err := tool.Execute(ctx, args)",
+        "verified_against": "Go standard library documentation"
+      },
+      "architecture_benefits": [
+        "Graceful cancellation of long-running tool executions",
+        "Timeout enforcement for security (prevent hung processes)",
+        "Propagation of cancellation across goroutines",
+        "Request-scoped metadata (e.g., user ID, session ID)",
+        "Standard interface across all Go libraries"
+      ],
+      "gotchas": [
+        "Context must be first parameter by convention (func Execute(ctx context.Context, ...))",
+        "WithValue should be used sparingly (type-unsafe, can lead to coupling)",
+        "Always call cancel() to prevent context leaks (use defer)",
+        "Don't store contexts in structs (pass as parameters)",
+        "Check ctx.Done() in long-running loops to respect cancellation"
+      ],
+      "recommended_for": [
+        "ALL tool Execute() methods should accept context.Context",
+        "Timeout enforcement on bash commands (30s default per proposal)",
+        "Cancellation when user interrupts TUI",
+        "Coordinating shutdown of concurrent tool executions",
+        "Passing security policies via context.Value (if needed)"
+      ],
+      "required_patterns": {
+        "tool_interface": "type Tool interface { Execute(ctx context.Context, args map[string]any) (*Result, error) }",
+        "executor_pattern": "ctx, cancel := context.WithTimeout(ctx, securityConfig.MaxExecutionTime); defer cancel()",
+        "command_execution": "cmd := exec.CommandContext(ctx, \"bash\", \"-c\", cmdStr)"
+      },
+      "research_sources": [
+        "https://pkg.go.dev/context",
+        "https://go.dev/blog/context"
+      ]
+    },
+    {
+      "name": "Go Standard Library - os/exec",
+      "type": "standard_library",
+      "relevance": "critical_required",
+      "use_case": "Executing shell commands for BashTool with context support",
+      "verified_package": {
+        "name": "os/exec",
+        "install_command": "Built-in to Go standard library",
+        "version": "Go 1.24.1",
+        "verified": true
+      },
+      "api_patterns": {
+        "imports": ["os/exec", "context"],
+        "key_functions": [
+          "exec.CommandContext(ctx, name, args...) - Create command with cancellation",
+          "cmd.CombinedOutput() - Run and capture stdout+stderr together",
+          "cmd.Output() - Capture stdout only",
+          "cmd.Run() - Run command and wait for completion",
+          "cmd.Start() + cmd.Wait() - Async execution with control",
+          "cmd.StdoutPipe() / cmd.StderrPipe() - Stream output"
+        ],
+        "security_patterns": [
+          "ALWAYS use exec.CommandContext for cancellable execution",
+          "Set cmd.Dir to restrict working directory",
+          "Set cmd.Env to control environment variables",
+          "Validate command strings against blacklist before execution",
+          "Use explicit command and args (avoid shell=true when possible)"
+        ],
+        "verified_against": "Go standard library documentation"
+      },
+      "architecture_benefits": [
+        "Context-aware execution with timeouts",
+        "Separate stdout/stderr or combined output",
+        "Process control (signal sending, wait, kill)",
+        "Environment and working directory control",
+        "Standard library - no external dependencies"
+      ],
+      "gotchas": [
+        "Commands executed via shell have injection risks - validate input carefully",
+        "Use 'bash -c' for shell features, but validate input",
+        "Process may not respect context cancellation if it ignores signals (SIGTERM)",
+        "Zombie processes if cmd.Wait() not called after cmd.Start()",
+        "Output buffers can fill up - need to consume stdout/stderr or use pipes",
+        "Context cancellation sends SIGKILL, not graceful shutdown"
+      ],
+      "recommended_for": [
+        "BashTool implementation (primary use case)",
+        "Any tool that needs to execute external processes",
+        "Enforcing timeouts on command execution",
+        "Capturing command output for AI feedback"
+      ],
+      "security_implementation": {
+        "blacklist_check": "for _, blocked := range config.BlockedCommands { if strings.Contains(cmdStr, blocked) { return error } }",
+        "timeout": "ctx, cancel := context.WithTimeout(ctx, 30*time.Second)",
+        "working_dir": "cmd.Dir = config.WorkingDirectory // Restrict to safe directory",
+        "output_truncation": "if len(output) > 100*1024 { output = output[:100*1024]; truncated = true }"
+      },
+      "research_sources": [
+        "https://pkg.go.dev/os/exec",
+        "https://go.dev/blog/context"
+      ]
+    },
+    {
+      "name": "Go Standard Library - sync",
+      "type": "standard_library",
+      "relevance": "important_required",
+      "use_case": "Thread-safe tool registry, concurrent tool execution limiting",
+      "verified_package": {
+        "name": "sync",
+        "install_command": "Built-in to Go standard library",
+        "version": "Go 1.24.1",
+        "verified": true
+      },
+      "api_patterns": {
+        "imports": ["sync"],
+        "key_types": [
+          "sync.Mutex / sync.RWMutex - Mutual exclusion locks",
+          "sync.WaitGroup - Wait for collection of goroutines",
+          "sync.Once - Execute function exactly once",
+          "sync.Map - Concurrent map (alternative to map+mutex)",
+          "sync.Pool - Object pooling for reusable resources"
+        ],
+        "registry_pattern": "type Registry struct { tools map[string]Tool; mu sync.RWMutex } // RWMutex allows multiple readers",
+        "verified_against": "Go standard library documentation"
+      },
+      "architecture_benefits": [
+        "Thread-safe tool registry access (Register during init, Get during execution)",
+        "Concurrent tool execution control (limit with semaphore)",
+        "Resource pooling for reusable tool instances",
+        "Safe initialization of shared resources (sync.Once)",
+        "Multiple readers, single writer access pattern (RWMutex)"
+      ],
+      "gotchas": [
+        "Don't copy mutexes - pass structs containing mutexes by pointer",
+        "RWMutex: multiple readers OR one writer (not both)",
+        "sync.Map only beneficial for specific use cases (frequent read, infrequent write)",
+        "Deadlocks if lock acquisition order isn't consistent",
+        "Always defer mu.Unlock() to prevent lock leaks on panic"
+      ],
+      "recommended_for": [
+        "Tool Registry implementation (RWMutex for concurrent reads during execution)",
+        "Limiting concurrent tool executions (semaphore with buffered channel or sync.WaitGroup)",
+        "Thread-safe configuration access",
+        "Coordinating multiple tool executions"
+      ],
+      "implementation_patterns": {
+        "registry": "func (r *Registry) Register(t Tool) { r.mu.Lock(); defer r.mu.Unlock(); r.tools[t.Name()] = t }",
+        "lookup": "func (r *Registry) Get(name string) (Tool, bool) { r.mu.RLock(); defer r.mu.RUnlock(); t, ok := r.tools[name]; return t, ok }",
+        "concurrency_limit": "semaphore := make(chan struct{}, maxConcurrent); semaphore <- struct{}{}; defer func() { <-semaphore }()"
+      },
+      "research_sources": [
+        "https://pkg.go.dev/sync"
+      ]
+    },
+    {
+      "name": "Go Standard Library - encoding/json",
+      "type": "standard_library",
+      "relevance": "critical_required",
+      "use_case": "Parsing tool call JSON blocks (```tool) and serializing tool results",
+      "verified_package": {
+        "name": "encoding/json",
+        "install_command": "Built-in to Go standard library",
+        "version": "Go 1.24.1",
+        "verified": true
+      },
+      "api_patterns": {
+        "imports": ["encoding/json"],
+        "key_functions": [
+          "json.Unmarshal(data, &v) - Deserialize JSON to struct",
+          "json.Marshal(v) - Serialize struct to JSON",
+          "json.NewDecoder(r).Decode(&v) - Stream decoding",
+          "json.NewEncoder(w).Encode(v) - Stream encoding"
+        ],
+        "struct_tags": "type ToolCall struct { Name string `json:\"name\"`; Args map[string]any `json:\"args\"`; Reason string `json:\"reason\"` }",
+        "verified_against": "Go standard library documentation"
+      },
+      "architecture_benefits": [
+        "Well-tested JSON parsing for tool protocol",
+        "Struct tags for field mapping and validation",
+        "Support for map[string]any for dynamic arguments",
+        "Stream processing for large payloads",
+        "Standard library - no dependencies"
+      },
+      "gotchas": [
+        "map[string]any requires type assertions to extract values",
+        "Unmarshaling into any loses type information",
+        "Unknown fields ignored by default (use json.Decoder.DisallowUnknownFields for strict parsing)",
+        "JSON numbers unmarshaled as float64 by default (careful with integers)",
+        "Empty structs unmarshal to {} not null"
+      ],
+      "recommended_for": [
+        "Parsing ```tool blocks from AI responses",
+        "Serializing ToolResult for history storage",
+        "Tool argument validation and parsing",
+        "Result formatting for AI feedback"
+      ],
+      "protocol_implementation": {
+        "tool_call": "type ToolCall struct { Name string `json:\"name\"`; Args map[string]any `json:\"args\"`; Reason string `json:\"reason\"` }",
+        "tool_result": "type Result struct { Output string `json:\"output\"`; Success bool `json:\"success\"`; Truncated bool `json:\"truncated\"`; ExecutionTime time.Duration `json:\"execution_time_ms\"`; Error string `json:\"error,omitempty\"` }",
+        "parsing": "var call ToolCall; if err := json.Unmarshal([]byte(match[1]), &call); err != nil { return err }"
+      },
+      "research_sources": [
+        "https://pkg.go.dev/encoding/json",
+        "https://go.dev/blog/json"
+      ]
+    },
+    {
+      "name": "Go Standard Library - regexp",
+      "type": "standard_library",
+      "relevance": "important_required",
+      "use_case": "Extracting ```tool blocks from AI response text, validating commands",
+      "verified_package": {
+        "name": "regexp",
+        "install_command": "Built-in to Go standard library",
+        "version": "Go 1.24.1",
+        "verified": true
+      },
+      "api_patterns": {
+        "imports": ["regexp"],
+        "key_functions": [
+          "regexp.Compile(expr) - Compile regex (check error)",
+          "regexp.MustCompile(expr) - Panic on error (for package-level vars)",
+          "re.FindAllStringSubmatch(s, -1) - Find all matches with capture groups",
+          "re.ReplaceAllString(s, repl) - Replace matches",
+          "re.MatchString(s) - Test if pattern matches"
+        ],
+        "tool_block_pattern": "var toolBlockRegex = regexp.MustCompile(`(?s)```tool\\n(.+?)\\n````) // (?s) allows . to match newlines",
+        "verified_against": "Go standard library documentation"
+      },
+      "architecture_benefits": [
+        "Robust pattern matching for tool blocks in streaming responses",
+        "Capture groups for extracting JSON content",
+        "Efficient compiled regex reuse (compile once, use many times)",
+        "Thread-safe compiled regexes"
+      ],
+      "gotchas": [
+        "Greedy vs non-greedy matching (.+? is non-greedy)",
+        "(?s) flag enables . to match newlines (dot-all mode)",
+        "Escape special characters (e.g., \\n for newline in pattern)",
+        "Compiled regexes are thread-safe (can be package-level vars)",
+        "RE2 syntax (no backreferences, lookahead)"
+      ],
+      "recommended_for": [
+        "Parsing ```tool blocks from streaming AI responses",
+        "Validating command patterns in security checks",
+        "Extracting tool calls from conversation history",
+        "Blacklist pattern matching"
+      ],
+      "implementation_patterns": {
+        "tool_parser": "var toolBlockRegex = regexp.MustCompile(`(?s)```tool\\n(.+?)\\n````)",
+        "parse_function": "matches := toolBlockRegex.FindAllStringSubmatch(text, -1); for _, match := range matches { jsonContent := match[1]; ... }",
+        "blacklist_check": "for _, pattern := range blacklist { if matched, _ := regexp.MatchString(pattern, cmd); matched { return error } }"
+      },
+      "research_sources": [
+        "https://pkg.go.dev/regexp",
+        "https://github.com/google/re2/wiki/Syntax"
+      ]
+    }
+  ],
+  "architectural_patterns_researched": [
+    {
+      "pattern": "Registry Pattern",
+      "relevance": "critical",
+      "description": "Central registry for tool registration and lookup - CORE PATTERN",
+      "implementation": {
+        "type_definition": "type Registry struct { tools map[string]Tool; mu sync.RWMutex }",
+        "register_method": "func (r *Registry) Register(t Tool) error",
+        "lookup_method": "func (r *Registry) Get(name string) (Tool, bool)",
+        "list_method": "func (r *Registry) List() []Tool"
+      },
+      "benefits": [
+        "Centralized tool management",
+        "Runtime tool registration via init() functions",
+        "Thread-safe access with RWMutex",
+        "Discoverability of available tools",
+        "Easy to test by registering mock tools"
+      ],
+      "recommended_for": "Core tool registry implementation in internal/tools/registry.go"
+    },
+    {
+      "pattern": "Strategy Pattern",
+      "relevance": "critical",
+      "description": "Each tool is a strategy implementing a common Tool interface - CORE PATTERN",
+      "implementation": {
+        "interface_definition": "type Tool interface { Name() string; Description() string; Execute(ctx context.Context, args map[string]any) (*Result, error); RequiresConfirmation(args map[string]any) bool }",
+        "concrete_strategies": ["BashTool", "FileReadTool", "FileWriteTool", "SearchTool"]
+      },
+      "benefits": [
+        "Uniform interface for all tools",
+        "Easy to add new tools without modifying executor",
+        "Testability - each tool can be tested independently",
+        "Runtime tool selection based on name from AI"
+      ],
+      "recommended_for": "Tool interface design in internal/tools/ - MUST implement this"
+    },
+    {
+      "pattern": "Command Pattern",
+      "relevance": "important",
+      "description": "Tool calls are encapsulated as command objects with execute semantics",
+      "implementation": {
+        "command_object": "type ToolCall struct { Name string; Args map[string]any; Reason string }",
+        "result_object": "type Result struct { Output string; Success bool; Truncated bool; ExecutionTime time.Duration; Error string }",
+        "invoker": "Executor that receives ToolCall and invokes appropriate Tool"
+      },
+      "benefits": [
+        "Decouples tool invocation from execution",
+        "Tool calls can be logged, queued, or replayed",
+        "Supports undo/redo (if implemented later)",
+        "Enables command history and audit trail"
+      ],
+      "recommended_for": "ToolCall and Result types in internal/tools/"
+    },
+    {
+      "pattern": "Chain of Responsibility",
+      "relevance": "recommended",
+      "description": "Security policies form a chain of validators before tool execution",
+      "implementation": {
+        "validator_interface": "type Validator interface { Validate(ctx context.Context, call *ToolCall) error }",
+        "chain": "BlacklistValidator -> PathValidator -> ConfirmationValidator -> Executor",
+        "composition": "func ChainValidators(validators ...Validator) Validator"
+      },
+      "benefits": [
+        "Composable security policies",
+        "Easy to add/remove validators",
+        "Clear separation of validation concerns",
+        "Testable in isolation"
+      ],
+      "recommended_for": "Security policy implementation in internal/tools/policy.go"
+    },
+    {
+      "pattern": "Observer Pattern",
+      "relevance": "optional",
+      "description": "Tools emit events (started, completed, failed) for logging and metrics",
+      "implementation": {
+        "event_types": ["ToolExecutionStarted", "ToolExecutionCompleted", "ToolExecutionFailed"],
+        "observer_interface": "type ToolObserver interface { OnToolEvent(event ToolEvent) }",
+        "subject": "Executor maintains list of observers and notifies on events"
+      },
+      "benefits": [
+        "Decoupled logging and metrics",
+        "Extensible monitoring",
+        "Audit trail for compliance"
+      ],
+      "recommended_for": "Future enhancement for observability (Phase 5)"
+    },
+    {
+      "pattern": "Functional Options",
+      "relevance": "recommended",
+      "description": "Configure tools and executor with optional parameters - already used in project",
+      "implementation": {
+        "option_type": "type Option func(*Config)",
+        "example": "func WithTimeout(d time.Duration) Option { return func(c *Config) { c.Timeout = d } }",
+        "usage": "executor := NewExecutor(WithTimeout(30*time.Second), WithMaxConcurrent(1))"
+      },
+      "benefits": [
+        "Flexible, backward-compatible configuration",
+        "No breaking changes when adding new options",
+        "Self-documenting API"
+      ],
+      "recommended_for": "Executor and tool configuration - consistent with existing codebase patterns"
+    }
+  ],
+  "security_considerations": [
+    {
+      "threat": "Command Injection",
+      "severity": "critical",
+      "likelihood": "high",
+      "mitigation": [
+        "Use exec.CommandContext with explicit args array (avoid shell concatenation)",
+        "Maintain blacklist of dangerous patterns (rm -rf /, dd, mkfs, fork bombs)",
+        "Validate command strings with regex before execution",
+        "Require user confirmation for ALL bash commands",
+        "Never trust AI-generated commands blindly"
+      ],
+      "implementation": "See BashTool in sugestao.md lines 195-269"
+    },
+    {
+      "threat": "Path Traversal",
+      "severity": "high",
+      "likelihood": "medium",
+      "mitigation": [
+        "Use filepath.Clean() to normalize paths",
+        "Check filepath.Rel() to ensure paths are within allowed directories",
+        "Maintain blocklist of sensitive paths (.env, .ssh/*, *.pem, *credentials*)",
+        "Whitelist allowed directories if possible",
+        "Validate paths before ANY file operation"
+      ],
+      "implementation": "SecurityConfig.BlockedPaths in sugestao.md lines 169-175"
+    },
+    {
+      "threat": "Denial of Service",
+      "severity": "medium",
+      "likelihood": "medium",
+      "mitigation": [
+        "Enforce timeouts using context.WithTimeout (default 30s)",
+        "Truncate output to prevent memory exhaustion (100KB limit per sugestao.md)",
+        "Limit concurrent tool executions (MaxConcurrent=1 by default)",
+        "Rate limiting on tool calls per session (future)",
+        "Kill processes that exceed timeout"
+      ],
+      "implementation": "SecurityConfig lines 162-177 in sugestao.md"
+    },
+    {
+      "threat": "Privilege Escalation",
+      "severity": "medium",
+      "likelihood": "low",
+      "mitigation": [
+        "Run tools with minimum necessary privileges",
+        "Don't execute as root user",
+        "Consider sandboxing (future: seccomp, namespaces, containers)",
+        "Require explicit user confirmation for dangerous operations",
+        "No sudo/su execution without explicit whitelist"
+      ],
+      "implementation": "Confirmation policy in sugestao.md lines 150-159"
+    },
+    {
+      "threat": "Information Disclosure",
+      "severity": "medium",
+      "likelihood": "medium",
+      "mitigation": [
+        "Sanitize error messages before returning to AI",
+        "Redact sensitive information from outputs",
+        "Block access to credential files (.env, .pem, *password*)",
+        "Audit and log all file reads",
+        "Don't expose full paths in error messages"
+      ],
+      "implementation": "BlockedPaths pattern matching"
+    }
+  ],
+  "design_recommendations": [
+    {
+      "priority": "critical",
+      "category": "Architecture",
+      "recommendation": "Start with simple interface-based design, NOT go-plugin",
+      "rationale": "Go-plugin adds unnecessary complexity and RPC overhead for internal tools. Reserve for future if third-party plugins needed.",
+      "implementation": "Define Tool interface + Registry pattern in internal/tools/"
+    },
+    {
+      "priority": "critical",
+      "category": "Interface Design",
+      "recommendation": "Use context.Context as first parameter in ALL tool methods",
+      "rationale": "Enables cancellation, timeouts, and request-scoped values. Essential for security.",
+      "example": "type Tool interface { Execute(ctx context.Context, args map[string]any) (*Result, error) }"
+    },
+    {
+      "priority": "critical",
+      "category": "Security",
+      "recommendation": "Implement multi-layered security validation (blacklist + confirmation + timeout + truncation)",
+      "rationale": "Defense in depth prevents bypass. Each layer provides independent protection.",
+      "implementation": "Chain of Responsibility pattern for validators"
+    },
+    {
+      "priority": "high",
+      "category": "TUI Integration",
+      "recommendation": "Tool execution must be asynchronous to avoid blocking Bubble Tea event loop",
+      "rationale": "Bubble Tea is based on MVU pattern. Blocking Update() freezes UI.",
+      "implementation": "Use channels to communicate results: go executeToolAsync(call); return m, waitForToolResult()"
+    },
+    {
+      "priority": "high",
+      "category": "Error Handling",
+      "recommendation": "Tools should NEVER panic - always return errors",
+      "rationale": "Panics crash the application. Errors can be handled gracefully and shown to user.",
+      "implementation": "Recover from panics in executor and convert to errors"
+    },
+    {
+      "priority": "medium",
+      "category": "Dependency Injection",
+      "recommendation": "Manual DI is sufficient for initial implementation, defer Fx until complexity justifies it",
+      "rationale": "Fx adds learning curve. Start simple, refactor later if needed.",
+      "implementation": "Pass SecurityConfig and Registry to constructors explicitly"
+    },
+    {
+      "priority": "medium",
+      "category": "Observability",
+      "recommendation": "Add structured logging (slog) for tool execution events",
+      "rationale": "Critical for debugging and security auditing. slog is stdlib in Go 1.21+.",
+      "implementation": "Log tool calls, results, errors, timing with structured fields"
+    },
+    {
+      "priority": "low",
+      "category": "Future Extensibility",
+      "recommendation": "Design interfaces with future plugin system in mind, but don't implement it yet",
+      "rationale": "Interface design should be stable. Implementation can change later.",
+      "implementation": "Keep Tool interface simple and well-documented"
+    }
+  ],
+  "design_alternatives": [
+    {
+      "alternative": "Simple interface-based in-process execution",
+      "recommendation": "RECOMMENDED for initial implementation",
+      "pros": [
+        "Low overhead - no RPC latency",
+        "Simple implementation - ~500 LOC total",
+        "Direct access to application context",
+        "Fast iteration during development",
+        "Easy debugging",
+        "Matches existing codebase patterns"
+      ],
+      "cons": [
+        "No process isolation - tool crash can crash application",
+        "All tools in same binary (larger size)",
+        "Not suitable for untrusted code execution",
+        "Shared memory space (security concern)"
+      ],
+      "implementation_effort": "Low (1-2 days)",
+      "recommended_for": "MVP and initial rollout"
+    },
+    {
+      "alternative": "HashiCorp go-plugin based architecture",
+      "recommendation": "Consider for future if third-party plugins needed",
+      "pros": [
+        "Process isolation and crash safety",
+        "Language-agnostic tool development",
+        "Clear plugin API boundaries",
+        "Production-ready lifecycle management",
+        "Used by Terraform, Vault, etc."
+      ],
+      "cons": [
+        "Higher complexity (~2000+ LOC)",
+        "RPC overhead (latency)",
+        "More complex deployment (multiple binaries)",
+        "Overkill for simple internal tools",
+        "Requires protobuf for gRPC cross-language"
+      ],
+      "implementation_effort": "High (5-7 days)",
+      "recommended_for": "Future enhancement if third-party plugins are needed"
+    },
+    {
+      "alternative": "Hybrid: in-process for safe tools, plugin for dangerous tools",
+      "recommendation": "Consider after MVP if isolation is needed for specific tools",
+      "pros": [
+        "Best of both worlds - performance + safety",
+        "Performance where it matters (file ops in-process)",
+        "Isolation for risky operations (bash in subprocess)"
+      ],
+      "cons": [
+        "More complex architecture - two execution paths",
+        "Two paths to maintain and test",
+        "Unclear boundary between safe/dangerous",
+        "Inconsistent tool experience"
+      ],
+      "implementation_effort": "Medium-High (4-5 days)",
+      "recommended_for": "Consider after initial implementation if specific tools need isolation"
+    }
+  ],
+  "protocol_specification": {
+    "tool_call_format": {
+      "description": "AI generates JSON in fenced code block to invoke tools",
+      "format": "```tool\\n{\"name\": \"tool_name\", \"args\": {...}, \"reason\": \"explanation\"}\\n```",
+      "example": "```tool\\n{\"name\": \"bash\", \"args\": {\"command\": \"ls -la\"}, \"reason\": \"List directory contents\"}\\n```",
+      "parsing": "Use regexp to extract blocks, then json.Unmarshal to parse",
+      "validation": "Check name exists in registry, args match tool's expected schema"
+    },
+    "tool_result_format": {
+      "description": "Executor returns structured result to AI",
+      "format": "{\"tool\": \"name\", \"success\": bool, \"output\": \"string\", \"truncated\": bool, \"execution_time_ms\": int, \"error\": \"string\"}",
+      "serialization": "json.Marshal(result) and send back to AI as system message"
+    },
+    "streaming_integration": {
+      "challenge": "AI responses are streamed in chunks - tool blocks may be partial",
+      "solution": "Buffer chunks until complete ```tool block is detected, then parse",
+      "implementation": "Accumulate text, run regex after each chunk, execute when block complete"
+    }
+  },
+  "relevant_existing_code_patterns": {
+    "cobra_commands": {
+      "location": "internal/commands/",
+      "pattern": "CLI command structure",
+      "relevance": "Tool commands could be integrated as subcommands if CLI access needed"
+    },
+    "bubble_tea_tui": {
+      "location": "internal/tui/",
+      "pattern": "MVU (Model-View-Update) pattern",
+      "relevance": "CRITICAL - tool execution must integrate with Update() and not block event loop. Use channels for async communication."
+    },
+    "streaming_api": {
+      "location": "internal/api/",
+      "pattern": "Already handles streaming JSON responses from Gemini",
+      "relevance": "Tool parser needs to work with partial streaming responses - buffer and parse when complete"
+    },
+    "session_management": {
+      "location": "ChatSessionInterface",
+      "pattern": "Session context and metadata",
+      "relevance": "Tool execution context (security policies, session ID) can be stored in session metadata"
+    },
+    "configuration": {
+      "location": "internal/config/",
+      "pattern": "Configuration management",
+      "relevance": "Security policies and tool settings should be stored here - SecurityConfig, ConfirmationPolicy"
+    },
+    "functional_options": {
+      "location": "Used throughout codebase (e.g., api.GeminiClient)",
+      "pattern": "type Option func(*Config)",
+      "relevance": "Use same pattern for tool and executor configuration - consistent with codebase style"
+    }
+  },
+  "implementation_phases": {
+    "phase_1_infrastructure": {
+      "priority": "High",
+      "tasks": [
+        "Create internal/tools/ package structure",
+        "Define Tool interface (Name, Description, Execute, RequiresConfirmation)",
+        "Implement Registry with thread-safe map",
+        "Implement Parser for extracting ```tool blocks with regexp",
+        "Define ToolCall and Result types",
+        "Add unit tests for registry and parser"
+      ],
+      "estimated_effort": "1 day",
+      "dependencies": []
+    },
+    "phase_2_bash_tool": {
+      "priority": "High",
+      "tasks": [
+        "Implement SecurityConfig with blacklist, timeouts, etc.",
+        "Implement BashTool with context support",
+        "Add command validation (blacklist checking)",
+        "Add output truncation (100KB limit)",
+        "Add timeout enforcement (30s default)",
+        "Unit tests for BashTool with mocks"
+      ],
+      "estimated_effort": "1 day",
+      "dependencies": ["phase_1_infrastructure"]
+    },
+    "phase_3_tui_integration": {
+      "priority": "High",
+      "tasks": [
+        "Add tool call interception in responseMsg handler",
+        "Implement confirmation modal in TUI",
+        "Implement async tool execution (channels to avoid blocking)",
+        "Handle tool results and send back to AI",
+        "Add error display in TUI",
+        "Integration tests"
+      ],
+      "estimated_effort": "1-2 days",
+      "dependencies": ["phase_1_infrastructure", "phase_2_bash_tool"]
+    },
+    "phase_4_additional_tools": {
+      "priority": "Medium",
+      "tasks": [
+        "Implement FileReadTool with path validation",
+        "Implement FileWriteTool with confirmation",
+        "Implement SearchTool (grep-like)",
+        "Add tool-specific unit tests"
+      ],
+      "estimated_effort": "1 day",
+      "dependencies": ["phase_2_bash_tool"]
+    },
+    "phase_5_persistence": {
+      "priority": "Medium",
+      "tasks": [
+        "Extend Message type with ToolCall and ToolResult fields",
+        "Update history serialization/deserialization",
+        "Update export functions (Markdown, JSON)",
+        "Migration for existing history files"
+      ],
+      "estimated_effort": "0.5 day",
+      "dependencies": ["phase_3_tui_integration"]
+    },
+    "phase_6_polishing": {
+      "priority": "Low",
+      "tasks": [
+        "Add structured logging with slog",
+        "Add execution metrics (timing, success rate)",
+        "Add configuration file support for security policies",
+        "Documentation and examples"
+      ],
+      "estimated_effort": "1 day",
+      "dependencies": ["phase_5_persistence"]
+    }
+  },
+  "testing_strategy": {
+    "unit_tests": [
+      "Tool interface implementations (mock args, check results)",
+      "Registry operations (register, get, thread safety)",
+      "Parser for ```tool blocks (various formats, edge cases)",
+      "Security validators (blacklist, path validation)",
+      "Output truncation logic"
+    ],
+    "integration_tests": [
+      "End-to-end tool execution flow",
+      "TUI integration (tool call -> execution -> result)",
+      "Streaming response parsing",
+      "Error handling paths"
+    ],
+    "security_tests": [
+      "Command injection attempts",
+      "Path traversal attempts",
+      "Timeout enforcement",
+      "Concurrent execution limits",
+      "Malformed JSON handling"
+    ]
+  },
+  "unverified_claims": [],
+  "gotchas_and_pitfalls": [
+    {
+      "category": "Bubble Tea Integration",
+      "gotcha": "Blocking Update() method freezes entire TUI",
+      "details": "Bubble Tea's MVU pattern requires Update() to return quickly. Long-running tool execution will freeze the UI.",
+      "mitigation": "Use goroutines + channels. Spawn tool execution in background, send result via channel, listen for result in Update()",
+      "severity": "Critical"
+    },
+    {
+      "category": "Context Cancellation",
+      "gotcha": "Processes may not respect context cancellation immediately",
+      "details": "exec.CommandContext sends SIGKILL on cancel, but process may not die instantly. Zombie processes possible.",
+      "mitigation": "Always call cmd.Wait() after cmd.Start(). Use defer for cleanup.",
+      "severity": "High"
+    },
+    {
+      "category": "JSON Parsing",
+      "gotcha": "map[string]any requires type assertions - can panic",
+      "details": "args[\"command\"].(string) panics if type is wrong or key missing",
+      "mitigation": "Always use comma-ok idiom: cmdStr, ok := args[\"command\"].(string); if !ok { return error }",
+      "severity": "High"
+    },
+    {
+      "category": "Regex Parsing",
+      "gotcha": "Greedy matching can capture multiple tool blocks as one",
+      "details": "```tool.+``` is greedy, will match from first ``` to last ```",
+      "mitigation": "Use non-greedy: ```tool.+?``` and (?s) flag for multiline",
+      "severity": "Medium"
+    },
+    {
+      "category": "Security",
+      "gotcha": "Blacklist-based security is inherently incomplete",
+      "details": "Impossible to blacklist all dangerous commands. Clever attackers can bypass.",
+      "mitigation": "Defense in depth: blacklist + confirmation + timeout + audit. Consider whitelist for production.",
+      "severity": "High"
+    },
+    {
+      "category": "Error Handling",
+      "gotcha": "Tool panics can crash the application",
+      "details": "Uncaught panic in tool.Execute() propagates up",
+      "mitigation": "Recover from panics in executor: defer func() { if r := recover(); r != nil { err = fmt.Errorf(\"panic: %v\", r) } }()",
+      "severity": "Critical"
+    },
+    {
+      "category": "Streaming",
+      "gotcha": "Tool blocks may arrive in multiple chunks",
+      "details": "AI streams response. ```tool block might be split across multiple chunks.",
+      "mitigation": "Buffer accumulated text, run regex after each chunk, wait for complete block before parsing",
+      "severity": "Medium"
+    }
+  ],
+  "questions_for_clarification": [
+    {
+      "question": "Should tool execution be enabled by default or require opt-in?",
+      "impact": "Security and user experience - affects default configuration",
+      "recommendation": "Disabled by default, enable via flag or persona setting for safety"
+    },
+    {
+      "question": "Should there be a confirmation prompt for EVERY tool or just dangerous ones?",
+      "impact": "User experience vs security trade-off",
+      "recommendation": "Per sugestao.md: bash and file_write require confirmation, read_file and search don't"
+    },
+    {
+      "question": "What should happen if a tool times out? Retry or fail?",
+      "impact": "Error handling and reliability",
+      "recommendation": "Fail and return error to AI. Let AI decide to retry with different approach."
+    },
+    {
+      "question": "Should tool execution be available in CLI mode or only TUI mode?",
+      "impact": "Scope of implementation",
+      "recommendation": "Start with TUI only (confirmation modal easier), add CLI support later"
+    }
+  ],
+  "next_steps_for_planning": [
+    "Define exact Tool interface specification (method signatures)",
+    "Design SecurityConfig struct fields and defaults",
+    "Specify tool call JSON schema validation",
+    "Design confirmation prompt UX in TUI (modal, inline, etc.)",
+    "Plan error handling strategy (types, wrapping, display)",
+    "Determine testing strategy and test cases",
+    "Design history storage format for tool calls",
+    "Create implementation plan with milestones"
+  ],
+  "research_sources": [
+    "Project go.mod file - Existing dependencies",
+    "Project sugestao.md - Detailed tool executor proposal",
+    "Project README.md - Architecture and patterns",
+    "Context7 MCP: /hashicorp/go-plugin - Plugin architecture research",
+    "Context7 MCP: /uber-go/fx - Dependency injection research",
+    "Go standard library documentation - context, os/exec, sync, encoding/json, regexp",
+    "Existing codebase patterns - internal/commands/, internal/tui/, internal/api/"
+  ],
+  "context7_libraries_used": [
+    "/hashicorp/go-plugin",
+    "/uber-go/fx"
+  ],
+  "created_at": "2025-12-21T16:30:00Z",
+  "updated_at": "2025-12-21T16:35:00Z"
+}

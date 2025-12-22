@@ -1,0 +1,73 @@
+{
+  "complexity": "complex",
+  "workflow_type": "feature",
+  "confidence": 0.75,
+  "reasoning": "This is greenfield architectural design work requiring research into modular executor patterns, no existing tool execution framework in the codebase, and likely cross-cutting changes across commands, API client, and potentially TUI layers. The sparse requirements increase uncertainty but indicate need for thorough discovery and planning phases.",
+
+  "analysis": {
+    "scope": {
+      "estimated_files": 15,
+      "estimated_services": 1,
+      "is_cross_cutting": true,
+      "notes": "Will likely need new packages (internal/executor, internal/tools), modifications to commands layer for tool registration, API client integration for tool execution, and potentially TUI updates for tool interaction. The modular nature suggests multiple abstraction layers."
+    },
+    "integrations": {
+      "external_services": [],
+      "new_dependencies": [],
+      "research_needed": true,
+      "notes": "No external services, but requires research into Go patterns for plugin architectures, modular executor designs, and tool registration systems. Need to investigate patterns like plugin interfaces, factory patterns, and dependency injection for tool loading."
+    },
+    "infrastructure": {
+      "docker_changes": false,
+      "database_changes": false,
+      "config_changes": true,
+      "notes": "May need configuration for tool registration, discovery, and execution policies. Tool configurations might be added to existing config system (internal/config). No infrastructure changes but architectural patterns need definition."
+    },
+    "knowledge": {
+      "patterns_exist": false,
+      "research_required": true,
+      "unfamiliar_tech": [],
+      "notes": "The codebase follows Clean Architecture with Cobra CLI and Bubble Tea TUI but has no existing tool executor pattern. Need to research: Go plugin systems, modular executor architectures, tool lifecycle management, concurrent execution patterns, and how to integrate with existing command structure."
+    },
+    "risk": {
+      "level": "medium",
+      "concerns": [
+        "Architectural changes could impact existing command structure",
+        "Tool registration mechanism needs to be flexible yet maintainable",
+        "Concurrent tool execution requires careful goroutine management",
+        "Integration with existing Clean Architecture patterns must be clean",
+        "Tool error handling and timeout management needs robust design"
+      ],
+      "notes": "Medium risk because this is foundational architectural work. Poor design could create technical debt. However, the modular nature allows for incremental implementation and testing."
+    }
+  },
+
+  "recommended_phases": [
+    "discovery",
+    "requirements",
+    "research",
+    "context",
+    "spec_writing",
+    "self_critique",
+    "planning",
+    "validation"
+  ],
+
+  "flags": {
+    "needs_research": true,
+    "needs_self_critique": true,
+    "needs_infrastructure_setup": false
+  },
+
+  "validation_recommendations": {
+    "risk_level": "medium",
+    "skip_validation": false,
+    "minimal_mode": false,
+    "test_types_required": ["unit", "integration"],
+    "security_scan_required": false,
+    "staging_deployment_required": false,
+    "reasoning": "Architectural changes affecting multiple packages require unit tests for individual tool components and integration tests for tool executor orchestration. No security-sensitive operations unless tools handle credentials. CLI nature means no staging deployment needed."
+  },
+
+  "created_at": "2025-12-21T16:09:05.000000Z"
+}
