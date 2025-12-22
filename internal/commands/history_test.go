@@ -118,12 +118,27 @@ func TestHistoryFavoriteCommand(t *testing.T) {
 		t.Errorf("Expected use 'favorite <ref>', got %s", historyFavoriteCmd.Use)
 	}
 
+	if historyFavoriteCmd.Short != "Toggle favorite status" {
+		t.Errorf("Expected Short 'Toggle favorite status', got %s", historyFavoriteCmd.Short)
+	}
+
 	if historyFavoriteCmd.RunE == nil {
 		t.Error("RunE should not be nil")
 	}
 
 	if historyFavoriteCmd.Args == nil {
 		t.Error("Args validation should be configured")
+	}
+
+	// Test with Dependencies (constructor function)
+	deps := &Dependencies{}
+	cmd := NewHistoryFavoriteCmd(deps)
+	if cmd == nil {
+		t.Fatal("NewHistoryFavoriteCmd() returned nil")
+	}
+
+	if cmd.Use != "favorite <ref>" {
+		t.Errorf("Expected Use 'favorite <ref>', got %s", cmd.Use)
 	}
 }
 
@@ -140,6 +155,17 @@ func TestHistoryExportCommand(t *testing.T) {
 	if historyExportCmd.Args == nil {
 		t.Error("Args validation should be configured")
 	}
+
+	// Test with Dependencies (constructor function)
+	deps := &Dependencies{}
+	cmd := NewHistoryExportCmd(deps)
+	if cmd == nil {
+		t.Fatal("NewHistoryExportCmd() returned nil")
+	}
+
+	if cmd.Use != "export <ref>" {
+		t.Errorf("Expected Use 'export <ref>', got %s", cmd.Use)
+	}
 }
 
 func TestHistorySearchCommand(t *testing.T) {
@@ -148,12 +174,39 @@ func TestHistorySearchCommand(t *testing.T) {
 		t.Errorf("Expected use 'search <query>', got %s", historySearchCmd.Use)
 	}
 
+	if historySearchCmd.Short != "Search conversations" {
+		t.Errorf("Expected Short 'Search conversations', got %s", historySearchCmd.Short)
+	}
+
 	if historySearchCmd.RunE == nil {
 		t.Error("RunE should not be nil")
 	}
 
 	if historySearchCmd.Args == nil {
 		t.Error("Args validation should be configured")
+	}
+
+	// Test that the --content flag exists
+	flag := historySearchCmd.Flags().Lookup("content")
+	if flag == nil {
+		t.Error("missing 'content' flag")
+	}
+
+	// Test with Dependencies (constructor function)
+	deps := &Dependencies{}
+	cmd := NewHistorySearchCmd(deps)
+	if cmd == nil {
+		t.Fatal("NewHistorySearchCmd() returned nil")
+	}
+
+	if cmd.Use != "search <query>" {
+		t.Errorf("Expected Use 'search <query>', got %s", cmd.Use)
+	}
+
+	// Verify flag on constructed command
+	flag = cmd.Flags().Lookup("content")
+	if flag == nil {
+		t.Error("missing 'content' flag on constructed command")
 	}
 }
 

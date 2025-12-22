@@ -18,6 +18,7 @@ import (
 	"github.com/diogo/geminiweb/internal/history"
 	"github.com/diogo/geminiweb/internal/models"
 	"github.com/diogo/geminiweb/internal/render"
+	"github.com/diogo/geminiweb/pkg/toolexec"
 )
 
 func TestModelInit(t *testing.T) {
@@ -5639,3 +5640,329 @@ func TestModel_RenderHistorySelector_Extended(t *testing.T) {
 
 // Note: mockGeminiClientWithUpload.FetchGems is already defined above (line 2873)
 // and now supports fetchGemsResult and fetchGemsErr fields
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TESTS FOR LOW COVERAGE FUNCTIONS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+func TestUploadFile(t *testing.T) {
+	t.Run("successful upload", func(t *testing.T) {
+		mockClient := &mockGeminiClientWithUpload{
+			uploadFileResult: &api.UploadedFile{
+				FileName: "test.txt",
+				MIMEType: "text/plain",
+				Size:     100,
+			},
+		}
+
+		m := Model{client: mockClient}
+		cmd := m.uploadFile("/path/to/file.txt")
+		result := cmd()
+
+		if msg, ok := result.(fileUploadedMsg); ok {
+			if msg.err != nil {
+				t.Errorf("unexpected error: %v", msg.err)
+			}
+			if msg.file == nil {
+				t.Error("expected file to be set")
+			}
+		} else {
+			t.Error("expected fileUploadedMsg")
+		}
+	})
+
+	t.Run("upload error", func(t *testing.T) {
+		mockClient := &mockGeminiClientWithUpload{
+			uploadFileErr: fmt.Errorf("upload failed"),
+		}
+
+		m := Model{client: mockClient}
+		cmd := m.uploadFile("/path/to/file.txt")
+		result := cmd()
+
+		if msg, ok := result.(fileUploadedMsg); ok {
+			if msg.err == nil {
+				t.Error("expected error")
+			}
+		} else {
+			t.Error("expected fileUploadedMsg")
+		}
+	})
+}
+
+func TestDownloadSelectedImages(t *testing.T) {
+	t.Run("successful download", func(t *testing.T) {
+		mockClient := &mockGeminiClientWithDownload{
+			downloadFunc: func(output *models.ModelOutput, indices []int, opts api.ImageDownloadOptions) ([]string, error) {
+				return []string{"/path/img1.jpg", "/path/img2.jpg"}, nil
+			},
+		}
+
+		m := Model{
+			client: mockClient,
+			lastOutput: &models.ModelOutput{
+				Candidates: []models.Candidate{
+					{
+						GeneratedImages: []models.GeneratedImage{
+							{URL: "http://example.com/img1.jpg"},
+							{URL: "http://example.com/img2.jpg"},
+						},
+					},
+				},
+				Chosen: 0,
+			},
+		}
+
+		cmd := m.downloadSelectedImages([]int{0, 1}, "/tmp")
+		result := cmd()
+
+		if msg, ok := result.(downloadImagesResultMsg); ok {
+			if msg.err != nil {
+				t.Errorf("unexpected error: %v", msg.err)
+			}
+			if msg.count != 2 {
+				t.Errorf("expected count 2, got %d", msg.count)
+			}
+		} else {
+			t.Error("expected downloadImagesResultMsg")
+		}
+	})
+
+	t.Run("no output available", func(t *testing.T) {
+		mockClient := &mockGeminiClientWithDownload{}
+		m := Model{client: mockClient, lastOutput: nil}
+
+		cmd := m.downloadSelectedImages([]int{0}, "/tmp")
+		result := cmd()
+
+		if msg, ok := result.(downloadImagesResultMsg); ok {
+			if msg.err == nil {
+				t.Error("expected error when no output available")
+			}
+		} else {
+			t.Error("expected downloadImagesResultMsg")
+		}
+	})
+
+	t.Run("download error", func(t *testing.T) {
+		mockClient := &mockGeminiClientWithDownload{
+			downloadFunc: func(output *models.ModelOutput, indices []int, opts api.ImageDownloadOptions) ([]string, error) {
+				return nil, fmt.Errorf("download failed")
+			},
+		}
+
+		m := Model{
+			client: mockClient,
+			lastOutput: &models.ModelOutput{
+				Candidates: []models.Candidate{
+					{
+						GeneratedImages: []models.GeneratedImage{
+							{URL: "http://example.com/img1.jpg"},
+						},
+					},
+				},
+				Chosen: 0,
+			},
+		}
+
+		cmd := m.downloadSelectedImages([]int{0}, "/tmp")
+		result := cmd()
+
+		if msg, ok := result.(downloadImagesResultMsg); ok {
+			if msg.err == nil {
+				t.Error("expected error")
+			}
+		} else {
+			t.Error("expected downloadImagesResultMsg")
+		}
+	})
+}
+
+func TestUpdateToolConfirmation(t *testing.T) {
+	t.Run("ctrl+c quits", func(t *testing.T) {
+		m := Model{
+			confirmingTool: true,
+			width:          80,
+			height:         24,
+		}
+
+		msg := tea.KeyMsg{Type: tea.KeyCtrlC}
+		_, cmd := m.updateToolConfirmation(msg)
+
+		if cmd == nil {
+			t.Error("expected quit command")
+		}
+	})
+
+	t.Run("y confirms tool execution", func(t *testing.T) {
+		mockCall := toolexec.ToolCall{
+			Name: "test_tool",
+			Args: map[string]any{},
+		}
+
+		m := Model{
+			confirmingTool:  true,
+			toolConfirmCall: &mockCall,
+		}
+
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}}
+		updatedModel, cmd := m.updateToolConfirmation(msg)
+
+		if typedModel, ok := updatedModel.(Model); ok {
+			if typedModel.confirmingTool {
+				t.Error("confirmingTool should be false after confirmation")
+			}
+			if typedModel.toolConfirmCall != nil {
+				t.Error("toolConfirmCall should be cleared")
+			}
+		}
+
+		if cmd == nil {
+			t.Error("expected command after confirmation")
+		}
+	})
+
+	t.Run("n denies tool execution", func(t *testing.T) {
+		mockCall := toolexec.ToolCall{
+			Name: "test_tool",
+			Args: map[string]any{},
+		}
+
+		m := Model{
+			confirmingTool:  true,
+			toolConfirmCall: &mockCall,
+		}
+
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}}
+		updatedModel, cmd := m.updateToolConfirmation(msg)
+
+		if typedModel, ok := updatedModel.(Model); ok {
+			if typedModel.confirmingTool {
+				t.Error("confirmingTool should be false after denial")
+			}
+			if typedModel.toolConfirmCall != nil {
+				t.Error("toolConfirmCall should be cleared")
+			}
+		}
+
+		if cmd == nil {
+			t.Error("expected command after denial")
+		}
+	})
+
+	t.Run("esc denies tool execution", func(t *testing.T) {
+		mockCall := toolexec.ToolCall{
+			Name: "test_tool",
+			Args: map[string]any{},
+		}
+
+		m := Model{
+			confirmingTool:  true,
+			toolConfirmCall: &mockCall,
+		}
+
+		msg := tea.KeyMsg{Type: tea.KeyEsc}
+		updatedModel, cmd := m.updateToolConfirmation(msg)
+
+		if typedModel, ok := updatedModel.(Model); ok {
+			if typedModel.confirmingTool {
+				t.Error("confirmingTool should be false after denial")
+			}
+		}
+
+		if cmd == nil {
+			t.Error("expected command after denial")
+		}
+	})
+
+	t.Run("handles nil toolConfirmCall gracefully", func(t *testing.T) {
+		m := Model{
+			confirmingTool:  true,
+			toolConfirmCall: nil,
+		}
+
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}}
+		updatedModel, _ := m.updateToolConfirmation(msg)
+
+		if typedModel, ok := updatedModel.(Model); ok {
+			if typedModel.confirmingTool {
+				t.Error("confirmingTool should be false")
+			}
+		}
+	})
+
+	t.Run("WindowSizeMsg updates dimensions", func(t *testing.T) {
+		m := Model{
+			confirmingTool: true,
+			width:          80,
+			height:         24,
+		}
+
+		msg := tea.WindowSizeMsg{Width: 100, Height: 40}
+		updatedModel, _ := m.updateToolConfirmation(msg)
+
+		if typedModel, ok := updatedModel.(Model); ok {
+			if typedModel.width != 100 {
+				t.Errorf("expected width 100, got %d", typedModel.width)
+			}
+			if typedModel.height != 40 {
+				t.Errorf("expected height 40, got %d", typedModel.height)
+			}
+		}
+	})
+}
+
+func TestModel_HandleFileCommand(t *testing.T) {
+	t.Run("uploads file successfully", func(t *testing.T) {
+		ta := createTextarea()
+		ta.SetValue("/file test.txt")
+		s := spinner.New()
+		mockSession := &mockChatSession{}
+		mockClient := &mockGeminiClientWithUpload{
+			uploadFileResult: &api.UploadedFile{
+				FileName: "test.txt",
+				MIMEType: "text/plain",
+			},
+		}
+
+		m := Model{
+			textarea: ta,
+			spinner:  s,
+			session:  mockSession,
+			client:   mockClient,
+			ready:    true,
+		}
+
+		msg := tea.KeyMsg{Type: tea.KeyEnter}
+		updatedModel, _ := m.Update(msg)
+
+		_ = updatedModel.(Model)
+	})
+
+	t.Run("handles upload error", func(t *testing.T) {
+		ta := createTextarea()
+		ta.SetValue("/file test.txt")
+		s := spinner.New()
+		mockSession := &mockChatSession{}
+		mockClient := &mockGeminiClientWithUpload{
+			uploadFileErr: fmt.Errorf("file not found"),
+		}
+
+		m := Model{
+			textarea: ta,
+			spinner:  s,
+			session:  mockSession,
+			client:   mockClient,
+			ready:    true,
+		}
+
+		msg := tea.KeyMsg{Type: tea.KeyEnter}
+		updatedModel, _ := m.Update(msg)
+
+		if typedModel, ok := updatedModel.(Model); ok {
+			if typedModel.err == nil {
+				t.Error("expected error")
+			}
+		}
+	})
+}

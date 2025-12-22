@@ -64,8 +64,8 @@ func (m *mockGemsClient) UpdateGem(gemID, name, prompt, description string) (*mo
 	return nil, nil
 }
 func (m *mockGemsClient) DeleteGem(gemID string) error { return nil }
-func (m *mockGemsClient) Gems() *models.GemJar           { return m.gems }
-func (m *mockGemsClient) IsAutoCloseEnabled() bool       { return false }
+func (m *mockGemsClient) Gems() *models.GemJar         { return m.gems }
+func (m *mockGemsClient) IsAutoCloseEnabled() bool     { return false }
 func (m *mockGemsClient) GetGem(id, name string) *models.Gem {
 	return nil
 }
@@ -717,12 +717,12 @@ func TestTruncate(t *testing.T) {
 		maxLen   int
 		expected string
 	}{
-		{"hello", 10, "hello"},           // String fits, no truncation
-		{"hello world", 8, "hello..."},   // String truncated with "..."
-		{"hi", 2, "hi"},                  // String fits exactly
-		{"hello", 3, "hel"},              // maxLen <= 3, just truncate without "..."
-		{"a", 1, "a"},                    // Single char fits
-		{"hello world", 5, "he..."},      // Truncate with "..."
+		{"hello", 10, "hello"},         // String fits, no truncation
+		{"hello world", 8, "hello..."}, // String truncated with "..."
+		{"hi", 2, "hi"},                // String fits exactly
+		{"hello", 3, "hel"},            // maxLen <= 3, just truncate without "..."
+		{"a", 1, "a"},                  // Single char fits
+		{"hello world", 5, "he..."},    // Truncate with "..."
 	}
 
 	for _, tt := range tests {
@@ -1255,5 +1255,423 @@ func TestSortGems_MixedTypes(t *testing.T) {
 	}
 	if sorted[3].Name != "Zebra System" {
 		t.Errorf("Expected fourth gem to be 'Zebra System', got %s", sorted[3].Name)
+	}
+}
+
+// TestGemsModel_resetForm tests the resetForm method
+func TestGemsModel_resetForm(t *testing.T) {
+	client := createMockClient()
+	m := NewGemsModel(client, false)
+
+	// Set some values in the form
+	m.formInputs[formFieldName].SetValue("Test Name")
+	m.formInputs[formFieldDescription].SetValue("Test Description")
+	m.formInputs[formFieldPrompt].SetValue("Test Prompt")
+	m.promptTextarea.SetValue("Multi-line\nprompt")
+	m.formFocus = 2
+	m.useTextarea = true
+
+	// Reset the form
+	m.resetForm()
+
+	// Verify all values are cleared
+	if m.formInputs[formFieldName].Value() != "" {
+		t.Error("Name field should be empty after reset")
+	}
+	if m.formInputs[formFieldDescription].Value() != "" {
+		t.Error("Description field should be empty after reset")
+	}
+	if m.formInputs[formFieldPrompt].Value() != "" {
+		t.Error("Prompt field should be empty after reset")
+	}
+	if m.promptTextarea.Value() != "" {
+		t.Error("Prompt textarea should be empty after reset")
+	}
+	if m.formFocus != 0 {
+		t.Errorf("formFocus should be 0 after reset, got %d", m.formFocus)
+	}
+	if m.useTextarea {
+		t.Error("useTextarea should be false after reset")
+	}
+}
+
+// TestGemsModel_populateForm tests the populateForm method
+func TestGemsModel_populateForm(t *testing.T) {
+	client := createMockClient()
+	m := NewGemsModel(client, false)
+
+	gem := &models.Gem{
+		ID:          "test-id",
+		Name:        "Test Gem",
+		Description: "Test Description",
+		Prompt:      "Test Prompt",
+	}
+
+	m.populateForm(gem)
+
+	if m.formInputs[formFieldName].Value() != "Test Gem" {
+		t.Errorf("Name field should be 'Test Gem', got '%s'", m.formInputs[formFieldName].Value())
+	}
+	if m.formInputs[formFieldDescription].Value() != "Test Description" {
+		t.Errorf("Description field should be 'Test Description', got '%s'", m.formInputs[formFieldDescription].Value())
+	}
+	if m.formInputs[formFieldPrompt].Value() != "Test Prompt" {
+		t.Errorf("Prompt field should be 'Test Prompt', got '%s'", m.formInputs[formFieldPrompt].Value())
+	}
+	if m.promptTextarea.Value() != "Test Prompt" {
+		t.Errorf("Prompt textarea should be 'Test Prompt', got '%s'", m.promptTextarea.Value())
+	}
+	if m.formFocus != 0 {
+		t.Errorf("formFocus should be 0 after populate, got %d", m.formFocus)
+	}
+}
+
+// TestGemsModel_populateForm_MultilinePrompt tests populateForm with multiline prompt
+func TestGemsModel_populateForm_MultilinePrompt(t *testing.T) {
+	client := createMockClient()
+	m := NewGemsModel(client, false)
+
+	gem := &models.Gem{
+		ID:          "test-id",
+		Name:        "Test Gem",
+		Description: "Test Description",
+		Prompt:      "Line 1\nLine 2\nLine 3",
+	}
+
+	m.populateForm(gem)
+
+	if !m.useTextarea {
+		t.Error("useTextarea should be true for multiline prompt")
+	}
+	if m.promptTextarea.Value() != "Line 1\nLine 2\nLine 3" {
+		t.Errorf("Prompt textarea should have multiline content, got '%s'", m.promptTextarea.Value())
+	}
+}
+
+// TestGemsModel_updateFocusedInput tests updateFocusedInput method
+func TestGemsModel_updateFocusedInput(t *testing.T) {
+	client := createMockClient()
+	m := NewGemsModel(client, false)
+
+	// Test updating name input - need to focus the field first
+	m.view = gemsViewCreate
+	m.formFocus = formFieldName
+	m.focusCurrentField()
+	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}}
+	m.updateFocusedInput(msg)
+
+	if m.formInputs[formFieldName].Value() != "a" {
+		t.Errorf("Name field should be 'a', got '%s'", m.formInputs[formFieldName].Value())
+	}
+}
+
+// TestGemsModel_blurCurrentField tests blurCurrentField method
+func TestGemsModel_blurCurrentField(t *testing.T) {
+	client := createMockClient()
+	m := NewGemsModel(client, false)
+
+	// Focus a field and then blur it
+	m.formFocus = formFieldName
+	m.focusCurrentField()
+	if !m.formInputs[formFieldName].Focused() {
+		t.Error("Name field should be focused")
+	}
+
+	m.blurCurrentField()
+	if m.formInputs[formFieldName].Focused() {
+		t.Error("Name field should not be focused after blur")
+	}
+}
+
+// TestGemsModel_focusCurrentField tests focusCurrentField method
+func TestGemsModel_focusCurrentField(t *testing.T) {
+	client := createMockClient()
+	m := NewGemsModel(client, false)
+
+	// Test focusing each field
+	tests := []struct {
+		field      int
+		fieldName  string
+		isTextarea bool
+	}{
+		{formFieldName, "Name", false},
+		{formFieldDescription, "Description", false},
+		{formFieldPrompt, "Prompt", false},
+	}
+
+	for _, tt := range tests {
+		m.formFocus = tt.field
+		m.focusCurrentField()
+
+		if tt.isTextarea {
+			if !m.promptTextarea.Focused() {
+				t.Errorf("%s textarea should be focused", tt.fieldName)
+			}
+		} else {
+			if !m.formInputs[tt.field].Focused() {
+				t.Errorf("%s field should be focused", tt.fieldName)
+			}
+		}
+	}
+}
+
+// TestGemsModel_submitForm tests submitForm method
+func TestGemsModel_submitForm(t *testing.T) {
+	client := createMockClient()
+	m := NewGemsModel(client, false)
+
+	// Set up form for creating a new gem
+	m.formInputs[formFieldName].SetValue("New Gem")
+	m.formInputs[formFieldDescription].SetValue("Description")
+	m.formInputs[formFieldPrompt].SetValue("Prompt")
+	m.view = gemsViewCreate
+
+	updatedModel, cmd := m.submitForm()
+	typedModel := updatedModel.(GemsModel)
+
+	if !typedModel.submitting {
+		t.Error("Should be submitting after submitForm")
+	}
+	if cmd == nil {
+		t.Error("submitForm should return a command")
+	}
+}
+
+// TestGemsModel_submitForm_Update tests submitForm for update
+func TestGemsModel_submitForm_Update(t *testing.T) {
+	client := createMockClient()
+	m := NewGemsModel(client, false)
+
+	// Set up form for updating
+	m.selectedGem = &models.Gem{ID: "existing-id", Name: "Old Name"}
+	m.formInputs[formFieldName].SetValue("Updated Name")
+	m.formInputs[formFieldDescription].SetValue("New Description")
+	m.formInputs[formFieldPrompt].SetValue("New Prompt")
+	m.view = gemsViewEdit
+
+	updatedModel, cmd := m.submitForm()
+	typedModel := updatedModel.(GemsModel)
+
+	if !typedModel.submitting {
+		t.Error("Should be submitting after submitForm")
+	}
+	if cmd == nil {
+		t.Error("submitForm should return a command")
+	}
+}
+
+// TestGemsModel_loadGems tests loadGems method
+func TestGemsModel_loadGems(t *testing.T) {
+	client := createMockClient()
+	m := NewGemsModel(client, false)
+
+	cmd := m.loadGems()
+	if cmd == nil {
+		t.Error("loadGems should return a command")
+	}
+
+	// Execute the command to trigger the message
+	msg := cmd()
+	if _, ok := msg.(gemsLoadedMsg); !ok {
+		t.Error("Command should return gemsLoadedMsg")
+	}
+}
+
+// TestGemsModel_createGem tests createGem method
+func TestGemsModel_createGem(t *testing.T) {
+	client := createMockClient()
+	m := NewGemsModel(client, false)
+
+	cmd := m.createGem("Test Gem", "Prompt", "Description")
+	if cmd == nil {
+		t.Error("createGem should return a command")
+	}
+
+	// Execute the command
+	msg := cmd()
+	if _, ok := msg.(gemCreatedMsg); !ok {
+		t.Error("Command should return gemCreatedMsg")
+	}
+}
+
+// TestGemsModel_updateGem tests updateGem method
+func TestGemsModel_updateGem(t *testing.T) {
+	client := createMockClient()
+	m := NewGemsModel(client, false)
+
+	cmd := m.updateGem("test-id", "Updated Name", "New Prompt", "New Description")
+	if cmd == nil {
+		t.Error("updateGem should return a command")
+	}
+
+	// Execute the command
+	msg := cmd()
+	if _, ok := msg.(gemUpdatedMsg); !ok {
+		t.Error("Command should return gemUpdatedMsg")
+	}
+}
+
+// TestGemsModel_deleteGem tests deleteGem method
+func TestGemsModel_deleteGem(t *testing.T) {
+	client := createMockClient()
+	m := NewGemsModel(client, false)
+
+	cmd := m.deleteGem("test-id", "Test Gem")
+	if cmd == nil {
+		t.Error("deleteGem should return a command")
+	}
+
+	// Execute the command
+	msg := cmd()
+	if _, ok := msg.(gemDeletedMsg); !ok {
+		t.Error("Command should return gemDeletedMsg")
+	}
+}
+
+// TestGemsModel_handleFormInput_Escape tests handleFormInput with escape key
+func TestGemsModel_handleFormInput_Escape(t *testing.T) {
+	client := createMockClient()
+	m := NewGemsModel(client, false)
+	m.view = gemsViewCreate
+	m.formInputs[formFieldName].SetValue("Test")
+
+	msg := tea.KeyMsg{Type: tea.KeyEscape}
+	updatedModel, cmd := m.handleFormInput(msg)
+	typedModel := updatedModel.(GemsModel)
+
+	if typedModel.view != gemsViewList {
+		t.Error("Should return to list view on escape")
+	}
+	if typedModel.formInputs[formFieldName].Value() != "" {
+		t.Error("Form should be reset on escape")
+	}
+	if cmd != nil {
+		t.Error("Should not return command on escape")
+	}
+}
+
+// TestGemsModel_handleFormInput_Tab tests handleFormInput with tab key
+func TestGemsModel_handleFormInput_Tab(t *testing.T) {
+	client := createMockClient()
+	m := NewGemsModel(client, false)
+	m.formFocus = 0
+
+	msg := tea.KeyMsg{Type: tea.KeyTab}
+	updatedModel, cmd := m.handleFormInput(msg)
+	typedModel := updatedModel.(GemsModel)
+
+	if typedModel.formFocus != 1 {
+		t.Errorf("Should move to next field on tab, got focus %d", typedModel.formFocus)
+	}
+	if cmd == nil {
+		t.Error("Should return blink command on tab")
+	}
+}
+
+// TestGemsModel_handleFormInput_ShiftTab tests handleFormInput with shift+tab
+func TestGemsModel_handleFormInput_ShiftTab(t *testing.T) {
+	client := createMockClient()
+	m := NewGemsModel(client, false)
+	m.formFocus = 1
+
+	// Create shift+tab key message
+	msg := tea.KeyMsg{Type: tea.KeyShiftTab}
+	updatedModel, cmd := m.handleFormInput(msg)
+	typedModel := updatedModel.(GemsModel)
+
+	if typedModel.formFocus != 0 {
+		t.Errorf("Should move to previous field on shift+tab, got focus %d", typedModel.formFocus)
+	}
+	if cmd == nil {
+		t.Error("Should return blink command on shift+tab")
+	}
+}
+
+// TestGemsModel_handleFormInput_CtrlC tests handleFormInput with ctrl+c
+func TestGemsModel_handleFormInput_CtrlC(t *testing.T) {
+	client := createMockClient()
+	m := NewGemsModel(client, false)
+
+	msg := tea.KeyMsg{Type: tea.KeyCtrlC}
+	_, cmd := m.handleFormInput(msg)
+
+	if cmd == nil {
+		t.Error("Should return quit command on ctrl+c")
+	}
+}
+
+// TestGemsModel_handleDeleteConfirm tests handleDeleteConfirm method
+func TestGemsModel_handleDeleteConfirm_Yes(t *testing.T) {
+	client := createMockClient()
+	m := NewGemsModel(client, false)
+	m.selectedGem = &models.Gem{ID: "test-id", Name: "Test Gem"}
+	m.view = gemsViewDelete
+
+	// Send 'y' to confirm
+	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}}
+	updatedModel, cmd := m.handleDeleteConfirm(msg)
+	typedModel := updatedModel.(GemsModel)
+
+	// Should be submitting and return a delete command
+	if !typedModel.submitting {
+		t.Error("Should be submitting after 'y'")
+	}
+	if cmd == nil {
+		t.Error("Should return delete command")
+	}
+	// Note: view doesn't change to list view until delete completes
+}
+
+// TestGemsModel_handleDeleteConfirm_No tests handleDeleteConfirm with 'n'
+func TestGemsModel_handleDeleteConfirm_No(t *testing.T) {
+	client := createMockClient()
+	m := NewGemsModel(client, false)
+	m.selectedGem = &models.Gem{ID: "test-id", Name: "Test Gem"}
+	m.view = gemsViewDelete
+
+	// Send 'n' to cancel
+	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}}
+	updatedModel, cmd := m.handleDeleteConfirm(msg)
+	typedModel := updatedModel.(GemsModel)
+
+	if typedModel.view != gemsViewList {
+		t.Error("Should return to list view on cancel")
+	}
+	// Note: selectedGem is NOT cleared on cancel
+	if cmd != nil {
+		t.Error("Should not return command on cancel")
+	}
+}
+
+// TestGemsModel_handleDeleteConfirm_Escape tests handleDeleteConfirm with escape
+func TestGemsModel_handleDeleteConfirm_Escape(t *testing.T) {
+	client := createMockClient()
+	m := NewGemsModel(client, false)
+	m.selectedGem = &models.Gem{ID: "test-id", Name: "Test Gem"}
+	m.view = gemsViewDelete
+
+	msg := tea.KeyMsg{Type: tea.KeyEscape}
+	updatedModel, cmd := m.handleDeleteConfirm(msg)
+	typedModel := updatedModel.(GemsModel)
+
+	if typedModel.view != gemsViewList {
+		t.Error("Should return to list view on escape")
+	}
+	if cmd != nil {
+		t.Error("Should not return command on escape")
+	}
+}
+
+// TestGemsModel_handleDeleteConfirm_CtrlC tests handleDeleteConfirm with ctrl+c
+func TestGemsModel_handleDeleteConfirm_CtrlC(t *testing.T) {
+	client := createMockClient()
+	m := NewGemsModel(client, false)
+	m.view = gemsViewDelete
+
+	msg := tea.KeyMsg{Type: tea.KeyCtrlC}
+	_, cmd := m.handleDeleteConfirm(msg)
+
+	if cmd == nil {
+		t.Error("Should return quit command on ctrl+c")
 	}
 }

@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/diogo/geminiweb/internal/api"
+	"github.com/diogo/geminiweb/internal/config"
+	"github.com/diogo/geminiweb/internal/history"
 	"github.com/diogo/geminiweb/internal/models"
 	"github.com/diogo/geminiweb/internal/tui"
 )
@@ -14,6 +16,8 @@ type mockTUI struct {
 	runGemsResult tui.GemsTUIResult
 	runGemsErr    error
 	runChatErr    error
+	historyRes    tui.HistorySelectorResult
+	historyErr    error
 }
 
 func (m *mockTUI) RunGemsTUI(client api.GeminiClientInterface, includeHidden bool) (tui.GemsTUIResult, error) {
@@ -21,6 +25,14 @@ func (m *mockTUI) RunGemsTUI(client api.GeminiClientInterface, includeHidden boo
 }
 
 func (m *mockTUI) RunChatWithSession(client api.GeminiClientInterface, session tui.ChatSessionInterface, modelName string) error {
+	return m.runChatErr
+}
+
+func (m *mockTUI) RunHistorySelector(store tui.HistoryStore, modelName string) (tui.HistorySelectorResult, error) {
+	return m.historyRes, m.historyErr
+}
+
+func (m *mockTUI) RunChatWithInitialPrompt(client api.GeminiClientInterface, session tui.ChatSessionInterface, modelName string, conv *history.Conversation, store tui.HistoryStoreInterface, gemName string, persona *config.Persona, initialPrompt string) error {
 	return m.runChatErr
 }
 
@@ -127,11 +139,11 @@ func TestRunGemsDelete_Table(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "gem not found",
-			args: []string{"missing"},
-			gems: []*models.Gem{},
+			name:    "gem not found",
+			args:    []string{"missing"},
+			gems:    []*models.Gem{},
 			wantErr: true,
-			errMsg: "gem 'missing' not found",
+			errMsg:  "gem 'missing' not found",
 		},
 		{
 			name: "cannot delete system gem",
@@ -140,7 +152,7 @@ func TestRunGemsDelete_Table(t *testing.T) {
 				{ID: "system-gem", Name: "System", Predefined: true},
 			},
 			wantErr: true,
-			errMsg: "cannot delete system gems",
+			errMsg:  "cannot delete system gems",
 		},
 	}
 
@@ -213,11 +225,11 @@ func TestRunGemsUpdate_Table(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "gem not found",
-			args: []string{"missing"},
-			gems: []*models.Gem{},
+			name:    "gem not found",
+			args:    []string{"missing"},
+			gems:    []*models.Gem{},
 			wantErr: true,
-			errMsg: "gem 'missing' not found",
+			errMsg:  "gem 'missing' not found",
 		},
 		{
 			name: "cannot update system gem",
@@ -226,7 +238,7 @@ func TestRunGemsUpdate_Table(t *testing.T) {
 				{ID: "sys-1", Name: "System", Predefined: true},
 			},
 			wantErr: true,
-			errMsg: "cannot update system gems",
+			errMsg:  "cannot update system gems",
 		},
 	}
 
@@ -329,152 +341,218 @@ func TestRunGemsList_Table(t *testing.T) {
 				return
 			}
 
-						if tt.wantErr && !strings.Contains(err.Error(), tt.errMsg) {
+			if tt.wantErr && !strings.Contains(err.Error(), tt.errMsg) {
+				t.Errorf("runGemsList() error = %v, errMsg %v", err, tt.errMsg)
+			}
+		})
+	}
+}
 
-							t.Errorf("runGemsList() error = %v, errMsg %v", err, tt.errMsg)
+func TestRunGemsShow_Table(t *testing.T) {
+	oldCreateFunc := createGemsClientFunc
+	defer func() { createGemsClientFunc = oldCreateFunc }()
 
+	tests := []struct {
+		name    string
+		args    []string
+		gems    []*models.Gem
+		wantErr bool
+		errMsg  string
+	}{
+		{
+			name: "success show custom gem",
+			args: []string{"gem-123"},
+			gems: []*models.Gem{
+				{ID: "gem-123", Name: "My Gem", Description: "Desc", Prompt: "Prompt"},
+			},
+			wantErr: false,
+		},
+		{
+			name: "success show system gem",
+			args: []string{"sys-1"},
+			gems: []*models.Gem{
+				{ID: "sys-1", Name: "System", Predefined: true},
+			},
+			wantErr: false,
+		},
+		{
+			name:    "gem not found",
+			args:    []string{"missing"},
+			gems:    []*models.Gem{},
+			wantErr: true,
+			errMsg:  "gem 'missing' not found",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockClient := &mockGeminiClientForGems{
+				mockGeminiClient: &mockGeminiClient{
+					fetchGemsFunc: func(includeHidden bool) (*models.GemJar, error) {
+						jar := make(models.GemJar)
+						for _, g := range tt.gems {
+							jar[g.ID] = g
 						}
-
-					})
-
-				}
-
+						return &jar, nil
+					},
+				},
 			}
 
-			
-
-			func TestRunGemsShow_Table(t *testing.T) {
-
-				oldCreateFunc := createGemsClientFunc
-
-				defer func() { createGemsClientFunc = oldCreateFunc }()
-
-			
-
-				tests := []struct {
-
-					name    string
-
-					args    []string
-
-					gems    []*models.Gem
-
-					wantErr bool
-
-					errMsg  string
-
-				}{
-
-					{
-
-						name: "success show custom gem",
-
-						args: []string{"gem-123"},
-
-						gems: []*models.Gem{
-
-							{ID: "gem-123", Name: "My Gem", Description: "Desc", Prompt: "Prompt"},
-
-						},
-
-						wantErr: false,
-
-					},
-
-					{
-
-						name: "success show system gem",
-
-						args: []string{"sys-1"},
-
-						gems: []*models.Gem{
-
-							{ID: "sys-1", Name: "System", Predefined: true},
-
-						},
-
-						wantErr: false,
-
-					},
-
-					{
-
-						name:    "gem not found",
-
-						args:    []string{"missing"},
-
-						gems:    []*models.Gem{},
-
-						wantErr: true,
-
-						errMsg:  "gem 'missing' not found",
-
-					},
-
-				}
-
-			
-
-				for _, tt := range tests {
-
-					t.Run(tt.name, func(t *testing.T) {
-
-						mockClient := &mockGeminiClientForGems{
-
-							mockGeminiClient: &mockGeminiClient{
-
-								fetchGemsFunc: func(includeHidden bool) (*models.GemJar, error) {
-
-									jar := make(models.GemJar)
-
-									for _, g := range tt.gems {
-
-										jar[g.ID] = g
-
-									}
-
-									return &jar, nil
-
-								},
-
-							},
-
-						}
-
-			
-
-						createGemsClientFunc = func() (api.GeminiClientInterface, error) {
-
-							return mockClient, nil
-
-						}
-
-			
-
-						err := runGemsShow(nil, tt.args)
-
-			
-
-						if (err != nil) != tt.wantErr {
-
-							t.Errorf("runGemsShow() error = %v, wantErr %v", err, tt.wantErr)
-
-							return
-
-						}
-
-			
-
-						if tt.wantErr && !strings.Contains(err.Error(), tt.errMsg) {
-
-							t.Errorf("runGemsShow() error = %v, errMsg %v", err, tt.errMsg)
-
-						}
-
-					})
-
-				}
-
+			createGemsClientFunc = func() (api.GeminiClientInterface, error) {
+				return mockClient, nil
 			}
 
-			
+			err := runGemsShow(nil, tt.args)
+
+			if (err != nil) != tt.wantErr {
+				t.Errorf("runGemsShow() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+
+			if tt.wantErr && !strings.Contains(err.Error(), tt.errMsg) {
+				t.Errorf("runGemsShow() error = %v, errMsg %v", err, tt.errMsg)
+			}
+		})
+	}
+}
+
+// TestNewGemsDeleteCmd tests the command constructor
+func TestNewGemsDeleteCmd(t *testing.T) {
+	deps := &Dependencies{}
+	cmd := NewGemsDeleteCmd(deps)
+
+	if cmd == nil {
+		t.Fatal("NewGemsDeleteCmd() returned nil")
+	}
+
+	if cmd.Use != "delete <id-or-name>" {
+		t.Errorf("expected Use 'delete <id-or-name>', got '%s'", cmd.Use)
+	}
+
+	if cmd.Short != "Delete a gem" {
+		t.Errorf("expected Short 'Delete a gem', got '%s'", cmd.Short)
+	}
+
+	if cmd.Args == nil {
+		t.Error("Args should not be nil")
+	}
+
+	if cmd.RunE == nil {
+		t.Error("RunE should not be nil")
+	}
+}
+
+// TestNewGemsShowCmd tests the command constructor
+func TestNewGemsShowCmd(t *testing.T) {
+	deps := &Dependencies{}
+	cmd := NewGemsShowCmd(deps)
+
+	if cmd == nil {
+		t.Fatal("NewGemsShowCmd() returned nil")
+	}
+
+	if cmd.Use != "show <id-or-name>" {
+		t.Errorf("expected Use 'show <id-or-name>', got '%s'", cmd.Use)
+	}
+
+	if cmd.Short != "Show gem details" {
+		t.Errorf("expected Short 'Show gem details', got '%s'", cmd.Short)
+	}
+
+	if cmd.Args == nil {
+		t.Error("Args should not be nil")
+	}
+
+	if cmd.RunE == nil {
+		t.Error("RunE should not be nil")
+	}
+}
+
+// TestNewGemsCreateCmd tests the command constructor
+func TestNewGemsCreateCmd(t *testing.T) {
+	deps := &Dependencies{}
+	cmd := NewGemsCreateCmd(deps)
+
+	if cmd == nil {
+		t.Fatal("NewGemsCreateCmd() returned nil")
+	}
+
+	if cmd.Use != "create <name>" {
+		t.Errorf("expected Use 'create <name>', got '%s'", cmd.Use)
+	}
+
+	if cmd.Short != "Create a new gem" {
+		t.Errorf("expected Short 'Create a new gem', got '%s'", cmd.Short)
+	}
+
+	if cmd.Args == nil {
+		t.Error("Args should not be nil")
+	}
+
+	if cmd.RunE == nil {
+		t.Error("RunE should not be nil")
+	}
+
+	// Verify flags
+	flag := cmd.Flags().Lookup("prompt")
+	if flag == nil {
+		t.Error("missing 'prompt' flag")
+	}
+
+	flag = cmd.Flags().Lookup("file")
+	if flag == nil {
+		t.Error("missing 'file' flag")
+	}
+
+	flag = cmd.Flags().Lookup("description")
+	if flag == nil {
+		t.Error("missing 'description' flag")
+	}
+}
+
+// TestNewGemsUpdateCmd tests the command constructor
+func TestNewGemsUpdateCmd(t *testing.T) {
+	deps := &Dependencies{}
+	cmd := NewGemsUpdateCmd(deps)
+
+	if cmd == nil {
+		t.Fatal("NewGemsUpdateCmd() returned nil")
+	}
+
+	if cmd.Use != "update <id-or-name>" {
+		t.Errorf("expected Use 'update <id-or-name>', got '%s'", cmd.Use)
+	}
+
+	if cmd.Short != "Update an existing gem" {
+		t.Errorf("expected Short 'Update an existing gem', got '%s'", cmd.Short)
+	}
+
+	if cmd.Args == nil {
+		t.Error("Args should not be nil")
+	}
+
+	if cmd.RunE == nil {
+		t.Error("RunE should not be nil")
+	}
+
+	// Verify flags
+	flag := cmd.Flags().Lookup("prompt")
+	if flag == nil {
+		t.Error("missing 'prompt' flag")
+	}
+
+	flag = cmd.Flags().Lookup("file")
+	if flag == nil {
+		t.Error("missing 'file' flag")
+	}
+
+	flag = cmd.Flags().Lookup("description")
+	if flag == nil {
+		t.Error("missing 'description' flag")
+	}
+
+	flag = cmd.Flags().Lookup("name")
+	if flag == nil {
+		t.Error("missing 'name' flag")
+	}
+}
