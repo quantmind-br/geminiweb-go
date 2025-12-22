@@ -14,11 +14,11 @@ import (
 
 	"github.com/diogo/geminiweb/internal/api"
 	"github.com/diogo/geminiweb/internal/config"
+	apierrors "github.com/diogo/geminiweb/internal/errors"
 	"github.com/diogo/geminiweb/internal/history"
 	"github.com/diogo/geminiweb/internal/models"
 	"github.com/diogo/geminiweb/internal/render"
 )
-
 
 func TestModelInit(t *testing.T) {
 	// For now, just test that function exists and doesn't panic
@@ -132,16 +132,15 @@ func TestUpdateViewport(t *testing.T) {
 	_ = model.updateViewport
 }
 
-
 func TestModel_Update_WindowSize(t *testing.T) {
 	// Create a minimal model with initialized textarea
 	ta := textarea.New()
 	ta.SetWidth(80)
 
 	m := Model{
-		width:   80,
-		height:  24,
-		ready:   false,
+		width:    80,
+		height:   24,
+		ready:    false,
 		textarea: ta,
 	}
 
@@ -213,9 +212,9 @@ func TestModel_Update_Escape(t *testing.T) {
 
 func TestModel_Update_AnimationTick(t *testing.T) {
 	m := Model{
-		ready:           true,
-		loading:         true,
-		animationFrame:  0,
+		ready:          true,
+		loading:        true,
+		animationFrame: 0,
 	}
 
 	// Simulate animation tick
@@ -473,9 +472,9 @@ func TestErrMsg_Struct(t *testing.T) {
 
 // mockChatSession is a mock of *api.ChatSession for testing
 type mockChatSession struct {
-	sendMessageFunc    func(prompt string, files []*api.UploadedFile) (*models.ModelOutput, error)
-	sendMessageCalled  bool
-	gemID              string
+	sendMessageFunc   func(prompt string, files []*api.UploadedFile) (*models.ModelOutput, error)
+	sendMessageCalled bool
+	gemID             string
 }
 
 func (m *mockChatSession) SendMessage(prompt string, files []*api.UploadedFile) (*models.ModelOutput, error) {
@@ -942,12 +941,12 @@ func TestModel_View_ShowsActiveGem(t *testing.T) {
 
 // mockHistoryStoreForModel is a mock implementation of HistoryStoreInterface for testing
 type mockHistoryStoreForModel struct {
-	addMessageCalls    []struct{ id, role, content, thoughts string }
+	addMessageCalls     []struct{ id, role, content, thoughts string }
 	updateMetadataCalls []struct{ id, cid, rid, rcid string }
-	updateTitleCalls   []struct{ id, title string }
-	addMessageErr      error
-	updateMetadataErr  error
-	updateTitleErr     error
+	updateTitleCalls    []struct{ id, title string }
+	addMessageErr       error
+	updateMetadataErr   error
+	updateTitleErr      error
 }
 
 func (m *mockHistoryStoreForModel) AddMessage(id, role, content, thoughts string) error {
@@ -2559,9 +2558,9 @@ func TestModel_LineContinuation(t *testing.T) {
 
 func TestParseCommand(t *testing.T) {
 	tests := []struct {
-		name      string
-		input     string
-		expected  ParsedCommand
+		name     string
+		input    string
+		expected ParsedCommand
 	}{
 		{
 			name:  "simple command without args",
@@ -2841,6 +2840,8 @@ type mockGeminiClientWithUpload struct {
 	uploadFileErr    error
 	uploadFileCalled bool
 	uploadFilePath   string
+	fetchGemsResult  *models.GemJar
+	fetchGemsErr     error
 }
 
 func (m *mockGeminiClientWithUpload) Init() error                 { return nil }
@@ -2870,7 +2871,10 @@ func (m *mockGeminiClientWithUpload) UploadFile(filePath string) (*api.UploadedF
 func (m *mockGeminiClientWithUpload) RefreshFromBrowser() (bool, error) { return false, nil }
 func (m *mockGeminiClientWithUpload) IsBrowserRefreshEnabled() bool     { return false }
 func (m *mockGeminiClientWithUpload) FetchGems(includeHidden bool) (*models.GemJar, error) {
-	return nil, nil
+	if m.fetchGemsErr != nil {
+		return nil, m.fetchGemsErr
+	}
+	return m.fetchGemsResult, nil
 }
 func (m *mockGeminiClientWithUpload) CreateGem(name, prompt, description string) (*models.Gem, error) {
 	return nil, nil
@@ -3016,6 +3020,41 @@ func TestModel_FileCommand(t *testing.T) {
 		if !strings.Contains(typedModel.err.Error(), "usage:") {
 			t.Errorf("expected usage error, got: %v", typedModel.err)
 		}
+	})
+
+	t.Run("file command with valid file uploads", func(t *testing.T) {
+		// Create a temp file
+		tmpFile := "/tmp/test_upload_" + fmt.Sprintf("%d", time.Now().UnixNano())
+		_ = os.WriteFile(tmpFile, []byte("test content"), 0644)
+		defer func() { _ = os.Remove(tmpFile) }()
+
+		ta := createTextarea()
+		ta.SetValue("/file " + tmpFile)
+		s := spinner.New()
+		mockSession := &mockChatSession{}
+		mockClient := &mockGeminiClientWithUpload{
+			uploadFileResult: &api.UploadedFile{FileName: "test.txt"},
+		}
+
+		m := Model{
+			textarea: ta,
+			spinner:  s,
+			session:  mockSession,
+			client:   mockClient,
+			ready:    true,
+			viewport: viewport.New(100, 20),
+			messages: []chatMessage{},
+		}
+
+		msg := tea.KeyMsg{Type: tea.KeyEnter}
+		updatedModel, _ := m.Update(msg)
+		typedModel := updatedModel.(Model)
+
+		// Should not have error
+		if typedModel.err != nil {
+			t.Errorf("unexpected error: %v", typedModel.err)
+		}
+		// Should be loading (upload in progress)
 	})
 }
 
@@ -4571,3 +4610,981 @@ func TestModel_Update_InitialPromptMsg(t *testing.T) {
 		t.Error("loading should be true after initialPromptMsg")
 	}
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SAVE/IMAGE DOWNLOAD TESTS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+func TestModel_HandleSaveCommand(t *testing.T) {
+	t.Run("shows error when no last output", func(t *testing.T) {
+		ta := createTextarea()
+		s := spinner.New()
+
+		m := Model{
+			textarea:   ta,
+			spinner:    s,
+			ready:      true,
+			lastOutput: nil,
+		}
+
+		updatedModel, _ := m.handleSaveCommand("")
+		typedModel := updatedModel.(Model)
+
+		if typedModel.err == nil {
+			t.Error("expected error when no last output")
+		}
+		if !strings.Contains(typedModel.err.Error(), "no images to save") {
+			t.Errorf("expected 'no images to save' error, got: %v", typedModel.err)
+		}
+	})
+
+	t.Run("opens image selector", func(t *testing.T) {
+		ta := createTextarea()
+		s := spinner.New()
+		output := &models.ModelOutput{
+			Candidates: []models.Candidate{{
+				WebImages: []models.WebImage{{URL: "https://example.com/img.jpg", Title: "Test"}},
+			}},
+			Chosen: 0,
+		}
+
+		m := Model{
+			textarea:   ta,
+			spinner:    s,
+			ready:      true,
+			lastOutput: output,
+			width:      100,
+			height:     40,
+		}
+
+		updatedModel, _ := m.handleSaveCommand("")
+		typedModel := updatedModel.(Model)
+
+		if !typedModel.selectingImages {
+			t.Error("should be in image selection mode")
+		}
+	})
+}
+
+func TestModel_DownloadSelectedImages(t *testing.T) {
+	t.Run("downloads selected images", func(t *testing.T) {
+		images := []models.WebImage{{URL: "https://example.com/1.jpg"}}
+		mockClient := &mockGeminiClientWithDownload{}
+		mockClient.downloadFunc = func(output *models.ModelOutput, indices []int, opts api.ImageDownloadOptions) ([]string, error) {
+			return []string{"/tmp/1.jpg"}, nil
+		}
+
+		output := &models.ModelOutput{
+			Candidates: []models.Candidate{{WebImages: images}},
+			Chosen:     0,
+		}
+
+		m := Model{client: mockClient, lastOutput: output}
+		cmd := m.downloadSelectedImages([]int{0}, "/tmp")
+		result := cmd()
+
+		msg, ok := result.(downloadImagesResultMsg)
+		if !ok {
+			t.Errorf("expected downloadImagesResultMsg, got %T", result)
+			return
+		}
+		if msg.err != nil || msg.count != 1 {
+			t.Errorf("unexpected result: err=%v, count=%d", msg.err, msg.count)
+		}
+	})
+}
+
+func TestModel_UploadFile(t *testing.T) {
+	t.Run("uploads file successfully", func(t *testing.T) {
+		mockClient := &mockGeminiClientWithUpload{
+			uploadFileResult: &api.UploadedFile{FileName: "test.txt", MIMEType: "text/plain"},
+		}
+
+		m := Model{client: mockClient}
+		cmd := m.uploadFile("/tmp/test.txt")
+		result := cmd()
+
+		msg, ok := result.(fileUploadedMsg)
+		if !ok {
+			t.Errorf("expected fileUploadedMsg, got %T", result)
+			return
+		}
+		if msg.err != nil || msg.file == nil {
+			t.Error("unexpected result")
+		}
+	})
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// UPDATE IMAGE SELECTION
+// ═══════════════════════════════════════════════════════════════════════════════
+
+func TestModel_UpdateImageSelection(t *testing.T) {
+	t.Run("handles window size", func(t *testing.T) {
+		images := []models.WebImage{{URL: "1.jpg"}, {URL: "2.jpg"}}
+		selector := NewImageSelectorModel(images, "/tmp")
+		selector.ready = true
+
+		m := Model{selectingImages: true, imageSelector: selector}
+		msg := tea.WindowSizeMsg{Width: 100, Height: 50}
+		updatedModel, _ := m.updateImageSelection(msg)
+		typedModel := updatedModel.(Model)
+
+		if typedModel.imageSelector.width != 100 {
+			t.Errorf("width = %d, want 100", typedModel.imageSelector.width)
+		}
+	})
+
+	t.Run("passes key to selector", func(t *testing.T) {
+		images := []models.WebImage{{URL: "1.jpg"}, {URL: "2.jpg"}}
+		selector := NewImageSelectorModel(images, "/tmp")
+		selector.ready = true
+
+		m := Model{selectingImages: true, imageSelector: selector}
+		msg := tea.KeyMsg{Type: tea.KeyDown}
+		updatedModel, _ := m.updateImageSelection(msg)
+		typedModel := updatedModel.(Model)
+
+		if typedModel.imageSelector.cursor != 1 {
+			t.Errorf("cursor = %d, want 1", typedModel.imageSelector.cursor)
+		}
+	})
+
+	t.Run("confirms selection", func(t *testing.T) {
+		images := []models.WebImage{{URL: "1.jpg"}}
+		selector := NewImageSelectorModel(images, "/tmp")
+		selector.ready = true
+		selector.selected[0] = true
+
+		mockClient := &mockGeminiClientWithDownload{}
+		m := Model{
+			selectingImages: true,
+			imageSelector:   selector,
+			client:          mockClient,
+			lastOutput: &models.ModelOutput{
+				Candidates: []models.Candidate{{WebImages: images}},
+				Chosen:     0,
+			},
+		}
+
+		msg := tea.KeyMsg{Type: tea.KeyEnter}
+		updatedModel, cmd := m.updateImageSelection(msg)
+		typedModel := updatedModel.(Model)
+
+		if typedModel.selectingImages {
+			t.Error("should exit selection mode")
+		}
+		if cmd == nil {
+			t.Error("should return download command")
+		}
+	})
+
+	t.Run("cancels selection", func(t *testing.T) {
+		images := []models.WebImage{{URL: "1.jpg"}}
+		selector := NewImageSelectorModel(images, "/tmp")
+		selector.ready = true
+
+		m := Model{selectingImages: true, imageSelector: selector}
+		msg := tea.KeyMsg{Type: tea.KeyEscape}
+		updatedModel, _ := m.updateImageSelection(msg)
+		typedModel := updatedModel.(Model)
+
+		if typedModel.selectingImages {
+			t.Error("should exit selection mode after cancel")
+		}
+	})
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// EXPORT COMMAND
+// ═══════════════════════════════════════════════════════════════════════════════
+
+func TestModel_ExportCommand_Extended(t *testing.T) {
+	t.Run("detects overwrite", func(t *testing.T) {
+		tmpFile := "/tmp/test_overwrite_" + fmt.Sprintf("%d", time.Now().UnixNano()) + ".md"
+		_ = os.WriteFile(tmpFile, []byte("existing"), 0644)
+		defer func() { _ = os.Remove(tmpFile) }()
+
+		mockStore := &mockFullHistoryStoreWithExport{
+			mockFullHistoryStore: mockFullHistoryStore{},
+			ExportToMarkdownFunc: func(id string) (string, error) {
+				return "exported content", nil
+			},
+		}
+
+		cmd := exportCommand(mockStore, "conv-123", "markdown", tmpFile)
+		result := cmd()
+
+		msg, ok := result.(exportResultMsg)
+		if !ok {
+			t.Errorf("expected exportResultMsg, got %T", result)
+			return
+		}
+		if !msg.overwrite {
+			t.Error("overwrite should be true")
+		}
+	})
+
+	t.Run("handles store error", func(t *testing.T) {
+		tmpFile := "/tmp/test_error_" + fmt.Sprintf("%d", time.Now().UnixNano()) + ".md"
+		defer func() { _ = os.Remove(tmpFile) }()
+
+		mockStore := &mockFullHistoryStoreWithExport{
+			mockFullHistoryStore: mockFullHistoryStore{},
+			ExportToMarkdownFunc: func(id string) (string, error) {
+				return "", fmt.Errorf("store error")
+			},
+		}
+
+		cmd := exportCommand(mockStore, "conv-123", "markdown", tmpFile)
+		result := cmd()
+
+		msg, ok := result.(exportResultMsg)
+		if !ok {
+			t.Errorf("expected exportResultMsg, got %T", result)
+			return
+		}
+		if msg.err == nil || !strings.Contains(msg.err.Error(), "export failed") {
+			t.Error("expected export failed error")
+		}
+	})
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// UPDATE() EDGE CASES
+// ═══════════════════════════════════════════════════════════════════════════════
+
+func TestModel_Update_EscapeDuringLoading(t *testing.T) {
+	t.Run("esc during loading cancels loading", func(t *testing.T) {
+		m := Model{ready: true, loading: true}
+		msg := tea.KeyMsg{Type: tea.KeyEscape}
+		updatedModel, _ := m.Update(msg)
+		typedModel := updatedModel.(Model)
+
+		if typedModel.loading {
+			t.Error("loading should be false after esc")
+		}
+	})
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// VIEW() EDGE CASES
+// ═══════════════════════════════════════════════════════════════════════════════
+
+func TestModel_View_ExtensionIndicator(t *testing.T) {
+	t.Run("shows extension indicator", func(t *testing.T) {
+		ta := createTextarea()
+		s := spinner.New()
+		vp := viewport.New(100, 20)
+
+		m := Model{
+			ready:             true,
+			textarea:          ta,
+			spinner:           s,
+			viewport:          vp,
+			width:             100,
+			height:            40,
+			detectedExtension: models.ExtGmail,
+		}
+
+		view := m.View()
+		if !strings.Contains(view, "@Gmail") {
+			t.Error("view should show @Gmail extension indicator")
+		}
+	})
+}
+
+func TestModel_View_ErrorDisplay(t *testing.T) {
+	t.Run("shows error in view", func(t *testing.T) {
+		ta := createTextarea()
+		s := spinner.New()
+		vp := viewport.New(100, 20)
+
+		m := Model{
+			ready:    true,
+			textarea: ta,
+			spinner:  s,
+			viewport: vp,
+			width:    100,
+			height:   40,
+			err:      fmt.Errorf("test error"),
+		}
+
+		view := m.View()
+		if !strings.Contains(view, "Error") || !strings.Contains(view, "test error") {
+			t.Error("view should show error")
+		}
+	})
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SEND MESSAGE WITH ATTACHMENTS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+func TestModel_SendMessageWithAttachments_Extended(t *testing.T) {
+	t.Run("sends with attachments", func(t *testing.T) {
+		ta := createTextarea()
+		s := spinner.New()
+
+		var receivedFiles []*api.UploadedFile
+		mockSession := &mockChatSession{
+			sendMessageFunc: func(prompt string, files []*api.UploadedFile) (*models.ModelOutput, error) {
+				receivedFiles = files
+				return &models.ModelOutput{
+					Candidates: []models.Candidate{{Text: "response"}},
+				}, nil
+			},
+		}
+
+		m := Model{
+			textarea:    ta,
+			spinner:     s,
+			session:     mockSession,
+			ready:       true,
+			viewport:    viewport.New(100, 20),
+			attachments: []*api.UploadedFile{{FileName: "test.txt"}},
+		}
+
+		cmd := m.sendMessageWithAttachments("analyze this")
+		result := cmd()
+
+		if msg, ok := result.(responseMsg); ok {
+			if msg.output == nil {
+				t.Error("should have output")
+			}
+			if len(receivedFiles) != 1 {
+				t.Errorf("expected 1 file, got %d", len(receivedFiles))
+			}
+		} else {
+			t.Errorf("expected responseMsg, got %T", result)
+		}
+	})
+
+	t.Run("applies persona", func(t *testing.T) {
+		ta := createTextarea()
+		s := spinner.New()
+
+		var receivedPrompt string
+		mockSession := &mockChatSession{
+			sendMessageFunc: func(prompt string, files []*api.UploadedFile) (*models.ModelOutput, error) {
+				receivedPrompt = prompt
+				return &models.ModelOutput{
+					Candidates: []models.Candidate{{Text: "response"}},
+				}, nil
+			},
+		}
+
+		m := Model{
+			textarea: ta,
+			spinner:  s,
+			session:  mockSession,
+			ready:    true,
+			viewport: viewport.New(100, 20),
+			persona: &config.Persona{
+				Name:         "Test",
+				SystemPrompt: "You are helpful",
+			},
+		}
+
+		cmd := m.sendMessageWithAttachments("hello")
+		result := cmd()
+
+		if msg, ok := result.(responseMsg); ok {
+			if msg.output == nil {
+				t.Error("should have output")
+			}
+			if !strings.Contains(receivedPrompt, "You are helpful") {
+				t.Errorf("expected system prompt, got: %s", receivedPrompt)
+			}
+		} else {
+			t.Errorf("expected responseMsg, got %T", result)
+		}
+	})
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// FORMAT ERROR
+// ═══════════════════════════════════════════════════════════════════════════════
+
+func TestModel_FormatError_Extended(t *testing.T) {
+	m := Model{}
+
+	t.Run("auth error", func(t *testing.T) {
+		err := apierrors.NewAuthError("not authenticated")
+		result := m.formatError(err)
+		if !strings.Contains(result, "auto-login") {
+			t.Error("should show auto-login hint")
+		}
+	})
+
+	t.Run("rate limit error", func(t *testing.T) {
+		err := apierrors.NewUsageLimitError("model-name")
+		result := m.formatError(err)
+		if !strings.Contains(result, "limit reached") {
+			t.Error("should show limit hint")
+		}
+	})
+
+	t.Run("network error", func(t *testing.T) {
+		err := apierrors.NewNetworkError("fetch", fmt.Errorf("connection failed"))
+		result := m.formatError(err)
+		if !strings.Contains(result, "internet connection") {
+			t.Error("should show connection hint")
+		}
+	})
+
+	t.Run("timeout error", func(t *testing.T) {
+		err := apierrors.NewTimeoutError("request timed out")
+		result := m.formatError(err)
+		if !strings.Contains(result, "timed out") {
+			t.Error("should show timeout hint")
+		}
+	})
+
+	t.Run("with HTTP status", func(t *testing.T) {
+		err := apierrors.NewAPIError(401, "endpoint", "unauthorized")
+		result := m.formatError(err)
+		if !strings.Contains(result, "HTTP Status: 401") {
+			t.Error("should show HTTP status")
+		}
+	})
+
+	t.Run("with error code", func(t *testing.T) {
+		err := apierrors.NewAPIErrorWithCode(apierrors.ErrCodeUsageLimitExceeded, "endpoint")
+		result := m.formatError(err)
+		if !strings.Contains(result, "Error Code") {
+			t.Error("should show error code")
+		}
+	})
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// UPDATE() MESSAGE HANDLERS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+func TestModel_Update_DownloadImagesResultMsg(t *testing.T) {
+	t.Run("handles successful download", func(t *testing.T) {
+		m := Model{ready: true}
+		msg := downloadImagesResultMsg{paths: []string{"/tmp/1.jpg"}, count: 1}
+		updatedModel, _ := m.Update(msg)
+		typedModel := updatedModel.(Model)
+
+		if typedModel.err == nil {
+			t.Error("should have feedback")
+		}
+		if !strings.Contains(typedModel.err.Error(), "Downloaded 1 image") {
+			t.Errorf("expected success message, got: %v", typedModel.err)
+		}
+	})
+
+	t.Run("handles download error", func(t *testing.T) {
+		m := Model{ready: true}
+		msg := downloadImagesResultMsg{err: fmt.Errorf("download failed")}
+		updatedModel, _ := m.Update(msg)
+		typedModel := updatedModel.(Model)
+
+		if typedModel.err == nil || !strings.Contains(typedModel.err.Error(), "download failed") {
+			t.Error("should show download error")
+		}
+	})
+
+	t.Run("handles no images downloaded", func(t *testing.T) {
+		m := Model{ready: true}
+		msg := downloadImagesResultMsg{paths: []string{}, count: 0}
+		updatedModel, _ := m.Update(msg)
+		typedModel := updatedModel.(Model)
+
+		if typedModel.err == nil || !strings.Contains(typedModel.err.Error(), "no images were downloaded") {
+			t.Error("should show no images message")
+		}
+	})
+}
+
+func TestModel_Update_FileUploadedMsg(t *testing.T) {
+	t.Run("handles successful upload", func(t *testing.T) {
+		m := Model{ready: true, attachments: nil}
+		file := &api.UploadedFile{FileName: "test.txt"}
+		msg := fileUploadedMsg{file: file}
+		updatedModel, _ := m.Update(msg)
+		typedModel := updatedModel.(Model)
+
+		if len(typedModel.attachments) != 1 {
+			t.Errorf("attachments = %d, want 1", len(typedModel.attachments))
+		}
+	})
+
+	t.Run("handles upload error", func(t *testing.T) {
+		m := Model{ready: true}
+		msg := fileUploadedMsg{err: fmt.Errorf("upload failed")}
+		updatedModel, _ := m.Update(msg)
+		typedModel := updatedModel.(Model)
+
+		if typedModel.err == nil || !strings.Contains(typedModel.err.Error(), "file upload failed") {
+			t.Error("should show upload error")
+		}
+	})
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MOCKS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+type mockGeminiClientWithDownload struct {
+	downloadFunc func(output *models.ModelOutput, indices []int, opts api.ImageDownloadOptions) ([]string, error)
+}
+
+func (m *mockGeminiClientWithDownload) Init() error                                      { return nil }
+func (m *mockGeminiClientWithDownload) Close()                                           {}
+func (m *mockGeminiClientWithDownload) GetAccessToken() string                           { return "" }
+func (m *mockGeminiClientWithDownload) GetCookies() *config.Cookies                      { return nil }
+func (m *mockGeminiClientWithDownload) GetModel() models.Model                           { return models.Model{} }
+func (m *mockGeminiClientWithDownload) SetModel(model models.Model)                      {}
+func (m *mockGeminiClientWithDownload) IsClosed() bool                                   { return false }
+func (m *mockGeminiClientWithDownload) StartChat(model ...models.Model) *api.ChatSession { return nil }
+func (m *mockGeminiClientWithDownload) StartChatWithOptions(opts ...api.ChatOption) *api.ChatSession {
+	return nil
+}
+func (m *mockGeminiClientWithDownload) GenerateContent(prompt string, opts *api.GenerateOptions) (*models.ModelOutput, error) {
+	return nil, nil
+}
+func (m *mockGeminiClientWithDownload) UploadImage(filePath string) (*api.UploadedImage, error) {
+	return nil, nil
+}
+func (m *mockGeminiClientWithDownload) UploadFile(filePath string) (*api.UploadedFile, error) {
+	return nil, nil
+}
+func (m *mockGeminiClientWithDownload) RefreshFromBrowser() (bool, error) { return false, nil }
+func (m *mockGeminiClientWithDownload) IsBrowserRefreshEnabled() bool     { return false }
+func (m *mockGeminiClientWithDownload) FetchGems(includeHidden bool) (*models.GemJar, error) {
+	return nil, nil
+}
+func (m *mockGeminiClientWithDownload) CreateGem(name, prompt, description string) (*models.Gem, error) {
+	return nil, nil
+}
+func (m *mockGeminiClientWithDownload) UpdateGem(gemID, name, prompt, description string) (*models.Gem, error) {
+	return nil, nil
+}
+func (m *mockGeminiClientWithDownload) DeleteGem(gemID string) error       { return nil }
+func (m *mockGeminiClientWithDownload) Gems() *models.GemJar               { return nil }
+func (m *mockGeminiClientWithDownload) IsAutoCloseEnabled() bool           { return false }
+func (m *mockGeminiClientWithDownload) GetGem(id, name string) *models.Gem { return nil }
+func (m *mockGeminiClientWithDownload) BatchExecute(requests []api.RPCData) ([]api.BatchResponse, error) {
+	return nil, nil
+}
+func (m *mockGeminiClientWithDownload) DownloadImage(img models.WebImage, opts api.ImageDownloadOptions) (string, error) {
+	return "", nil
+}
+func (m *mockGeminiClientWithDownload) DownloadGeneratedImage(img models.GeneratedImage, opts api.ImageDownloadOptions) (string, error) {
+	return "", nil
+}
+func (m *mockGeminiClientWithDownload) DownloadAllImages(output *models.ModelOutput, opts api.ImageDownloadOptions) ([]string, error) {
+	return nil, nil
+}
+func (m *mockGeminiClientWithDownload) DownloadSelectedImages(output *models.ModelOutput, indices []int, opts api.ImageDownloadOptions) ([]string, error) {
+	if m.downloadFunc != nil {
+		return m.downloadFunc(output, indices, opts)
+	}
+	return nil, nil
+}
+
+type mockFullHistoryStoreWithExport struct {
+	mockFullHistoryStore
+	ExportToMarkdownFunc func(id string) (string, error)
+	ExportToJSONFunc     func(id string) ([]byte, error)
+}
+
+func (m *mockFullHistoryStoreWithExport) ExportToMarkdown(id string) (string, error) {
+	if m.ExportToMarkdownFunc != nil {
+		return m.ExportToMarkdownFunc(id)
+	}
+	return "", nil
+}
+
+func (m *mockFullHistoryStoreWithExport) ExportToJSON(id string) ([]byte, error) {
+	if m.ExportToJSONFunc != nil {
+		return m.ExportToJSONFunc(id)
+	}
+	return nil, nil
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// LOAD GEMS FOR CHAT - COMPREHENSIVE TESTS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+func TestModel_LoadGemsForChat_Comprehensive(t *testing.T) {
+	t.Run("handles client not available", func(t *testing.T) {
+		m := Model{client: nil}
+		cmd := m.loadGemsForChat()
+		msg := cmd()
+
+		gemsMsg, ok := msg.(gemsLoadedForChatMsg)
+		if !ok {
+			t.Errorf("expected gemsLoadedForChatMsg, got %T", msg)
+			return
+		}
+		if gemsMsg.err == nil {
+			t.Error("expected error when client is nil")
+		}
+		if !strings.Contains(gemsMsg.err.Error(), "client not available") {
+			t.Errorf("expected 'client not available' error, got: %v", gemsMsg.err)
+		}
+	})
+
+	t.Run("handles fetch error", func(t *testing.T) {
+		mockClient := &mockGeminiClientWithUpload{
+			fetchGemsErr: fmt.Errorf("fetch failed"),
+		}
+		m := Model{client: mockClient}
+		cmd := m.loadGemsForChat()
+		msg := cmd()
+
+		gemsMsg, ok := msg.(gemsLoadedForChatMsg)
+		if !ok {
+			t.Errorf("expected gemsLoadedForChatMsg, got %T", msg)
+			return
+		}
+		if gemsMsg.err == nil {
+			t.Error("expected error from FetchGems")
+		}
+		if !strings.Contains(gemsMsg.err.Error(), "fetch failed") {
+			t.Errorf("expected 'fetch failed' error, got: %v", gemsMsg.err)
+		}
+	})
+
+	t.Run("sorts gems correctly", func(t *testing.T) {
+		// Create gems with different types and names
+		gem1 := &models.Gem{ID: "1", Name: "System Gem", Predefined: true}
+		gem2 := &models.Gem{ID: "2", Name: "Custom B", Predefined: false}
+		gem3 := &models.Gem{ID: "3", Name: "Custom A", Predefined: false}
+
+		jar := models.GemJar{
+			"1": gem1,
+			"2": gem2,
+			"3": gem3,
+		}
+
+		mockClient := &mockGeminiClientWithUpload{
+			fetchGemsResult: &jar,
+		}
+		m := Model{client: mockClient}
+		cmd := m.loadGemsForChat()
+		msg := cmd()
+
+		gemsMsg, ok := msg.(gemsLoadedForChatMsg)
+		if !ok {
+			t.Errorf("expected gemsLoadedForChatMsg, got %T", msg)
+			return
+		}
+		if gemsMsg.err != nil {
+			t.Errorf("unexpected error: %v", gemsMsg.err)
+		}
+		if len(gemsMsg.gems) != 3 {
+			t.Errorf("expected 3 gems, got %d", len(gemsMsg.gems))
+		}
+
+		// First should be custom A (alphabetically first custom)
+		if gemsMsg.gems[0].Name != "Custom A" {
+			t.Errorf("first gem should be 'Custom A', got %s", gemsMsg.gems[0].Name)
+		}
+		// Second should be custom B
+		if gemsMsg.gems[1].Name != "Custom B" {
+			t.Errorf("second gem should be 'Custom B', got %s", gemsMsg.gems[1].Name)
+		}
+		// Third should be system gem
+		if gemsMsg.gems[2].Name != "System Gem" {
+			t.Errorf("third gem should be 'System Gem', got %s", gemsMsg.gems[2].Name)
+		}
+	})
+
+	t.Run("handles empty gem jar", func(t *testing.T) {
+		jar := models.GemJar{}
+		mockClient := &mockGeminiClientWithUpload{
+			fetchGemsResult: &jar,
+		}
+		m := Model{client: mockClient}
+		cmd := m.loadGemsForChat()
+		msg := cmd()
+
+		gemsMsg, ok := msg.(gemsLoadedForChatMsg)
+		if !ok {
+			t.Errorf("expected gemsLoadedForChatMsg, got %T", msg)
+			return
+		}
+		if gemsMsg.err != nil {
+			t.Errorf("unexpected error: %v", gemsMsg.err)
+		}
+		if len(gemsMsg.gems) != 0 {
+			t.Errorf("expected 0 gems, got %d", len(gemsMsg.gems))
+		}
+	})
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// UPDATE HISTORY SELECTION - ADDITIONAL TESTS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+func TestModel_UpdateHistorySelection_Extended(t *testing.T) {
+	convs := []*history.Conversation{
+		{ID: "1", Title: "Chat 1"},
+		{ID: "2", Title: "Chat 2"},
+	}
+
+	t.Run("handles window size", func(t *testing.T) {
+		m := Model{
+			selectingHistory: true,
+			historyList:      convs,
+		}
+
+		msg := tea.WindowSizeMsg{Width: 100, Height: 50}
+		updatedModel, _ := m.updateHistorySelection(msg)
+		typedModel := updatedModel.(Model)
+
+		if typedModel.width != 100 {
+			t.Errorf("width = %d, want 100", typedModel.width)
+		}
+		if typedModel.height != 50 {
+			t.Errorf("height = %d, want 50", typedModel.height)
+		}
+	})
+
+	t.Run("handles historyLoadedForChatMsg with error", func(t *testing.T) {
+		m := Model{
+			selectingHistory: true,
+			historyLoading:   true,
+		}
+
+		msg := historyLoadedForChatMsg{err: fmt.Errorf("load failed")}
+		updatedModel, _ := m.updateHistorySelection(msg)
+		typedModel := updatedModel.(Model)
+
+		if typedModel.historyLoading {
+			t.Error("historyLoading should be false")
+		}
+		if typedModel.selectingHistory {
+			t.Error("selectingHistory should be false on error")
+		}
+		if typedModel.err == nil {
+			t.Error("err should be set")
+		}
+	})
+
+	t.Run("handles historyLoadedForChatMsg success", func(t *testing.T) {
+		m := Model{
+			selectingHistory: true,
+			historyLoading:   true,
+		}
+
+		msg := historyLoadedForChatMsg{conversations: convs}
+		updatedModel, _ := m.updateHistorySelection(msg)
+		typedModel := updatedModel.(Model)
+
+		if typedModel.historyLoading {
+			t.Error("historyLoading should be false")
+		}
+		if len(typedModel.historyList) != 2 {
+			t.Errorf("historyList length = %d, want 2", len(typedModel.historyList))
+		}
+	})
+
+	t.Run("ctrl+c quits", func(t *testing.T) {
+		m := Model{
+			selectingHistory: true,
+			historyList:      convs,
+		}
+
+		msg := tea.KeyMsg{Type: tea.KeyCtrlC}
+		_, cmd := m.updateHistorySelection(msg)
+
+		if cmd == nil {
+			t.Error("ctrl+c should return quit command")
+		}
+	})
+
+	t.Run("enter selects new conversation", func(t *testing.T) {
+		mockStore := &mockFullHistoryStore{
+			createConversation: &history.Conversation{ID: "new", Title: "New"},
+		}
+		m := Model{
+			selectingHistory: true,
+			historyList:      convs,
+			historyCursor:    0, // "New Conversation"
+			fullHistoryStore: mockStore,
+		}
+
+		msg := tea.KeyMsg{Type: tea.KeyEnter}
+		updatedModel, _ := m.updateHistorySelection(msg)
+		typedModel := updatedModel.(Model)
+
+		if typedModel.selectingHistory {
+			t.Error("should exit selection mode")
+		}
+		if typedModel.conversation == nil {
+			t.Error("should have new conversation")
+		}
+	})
+
+	t.Run("enter selects existing conversation", func(t *testing.T) {
+		mockSession := &mockChatSession{}
+		m := Model{
+			selectingHistory: true,
+			historyList:      convs,
+			historyCursor:    1, // First conversation
+			session:          mockSession,
+		}
+
+		msg := tea.KeyMsg{Type: tea.KeyEnter}
+		updatedModel, _ := m.updateHistorySelection(msg)
+		typedModel := updatedModel.(Model)
+
+		if typedModel.selectingHistory {
+			t.Error("should exit selection mode")
+		}
+		if typedModel.conversation == nil {
+			t.Error("should have selected conversation")
+		}
+	})
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// RENDER GEM SELECTOR - ADDITIONAL TESTS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+func TestModel_RenderGemSelector_Extended(t *testing.T) {
+	t.Run("shows loading", func(t *testing.T) {
+		m := Model{
+			selectingGem: true,
+			gemsLoading:  true,
+			width:        80,
+			height:       24,
+		}
+
+		view := m.renderGemSelector()
+		if !strings.Contains(view, "Loading") {
+			t.Error("should show loading message")
+		}
+	})
+
+	t.Run("shows no gems found", func(t *testing.T) {
+		m := Model{
+			selectingGem: true,
+			gemsLoading:  false,
+			gemsList:     []*models.Gem{},
+			width:        80,
+			height:       24,
+		}
+
+		view := m.renderGemSelector()
+		if !strings.Contains(view, "No gems") {
+			t.Error("should show no gems message")
+		}
+	})
+
+	t.Run("shows filter no matches", func(t *testing.T) {
+		m := Model{
+			selectingGem: true,
+			gemsLoading:  false,
+			gemsList: []*models.Gem{
+				{ID: "1", Name: "Test Gem"},
+			},
+			gemsFilter: "xyz",
+			width:      80,
+			height:     24,
+		}
+
+		view := m.renderGemSelector()
+		if !strings.Contains(view, "No gems match filter") {
+			t.Error("should show no matches message")
+		}
+	})
+
+	t.Run("shows scroll indicators", func(t *testing.T) {
+		// Create many gems to trigger scrolling
+		gems := make([]*models.Gem, 20)
+		for i := 0; i < 20; i++ {
+			gems[i] = &models.Gem{ID: fmt.Sprintf("%d", i), Name: fmt.Sprintf("Gem %d", i)}
+		}
+
+		m := Model{
+			selectingGem: true,
+			gemsLoading:  false,
+			gemsList:     gems,
+			gemsCursor:   15,
+			width:        80,
+			height:       10, // Small height to force scrolling
+		}
+
+		view := m.renderGemSelector()
+		if !strings.Contains(view, "more") {
+			t.Error("should show scroll indicators")
+		}
+	})
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// RENDER HISTORY SELECTOR - ADDITIONAL TESTS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+func TestModel_RenderHistorySelector_Extended(t *testing.T) {
+	t.Run("shows loading", func(t *testing.T) {
+		m := Model{
+			selectingHistory: true,
+			historyLoading:   true,
+			width:            80,
+			height:           24,
+		}
+
+		view := m.renderHistorySelector()
+		if !strings.Contains(view, "Loading") {
+			t.Error("should show loading message")
+		}
+	})
+
+	t.Run("shows filter no matches", func(t *testing.T) {
+		m := Model{
+			selectingHistory: true,
+			historyLoading:   false,
+			historyList: []*history.Conversation{
+				{ID: "1", Title: "Test Chat"},
+			},
+			historyFilter: "xyz",
+			width:         80,
+			height:        24,
+		}
+
+		view := m.renderHistorySelector()
+		if !strings.Contains(view, "No conversations match filter") {
+			t.Error("should show no matches message")
+		}
+	})
+
+	t.Run("shows scroll indicators", func(t *testing.T) {
+		convs := make([]*history.Conversation, 20)
+		for i := 0; i < 20; i++ {
+			convs[i] = &history.Conversation{
+				ID:    fmt.Sprintf("%d", i),
+				Title: fmt.Sprintf("Chat %d", i),
+			}
+		}
+
+		m := Model{
+			selectingHistory: true,
+			historyLoading:   false,
+			historyList:      convs,
+			historyCursor:    15,
+			width:            80,
+			height:           10,
+		}
+
+		view := m.renderHistorySelector()
+		if !strings.Contains(view, "more") {
+			t.Error("should show scroll indicators")
+		}
+	})
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MOCK EXTENSIONS FOR NEW TESTS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Note: mockGeminiClientWithUpload.FetchGems is already defined above (line 2873)
+// and now supports fetchGemsResult and fetchGemsErr fields

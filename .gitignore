@@ -80,3 +80,6 @@ TASKS.md
 
 # Local tooling
 .ai/venv/
+
+# Auto Claude data directory
+.auto-claude/

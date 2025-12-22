@@ -129,16 +129,16 @@ type Model struct {
 	activeGemName string // Name of currently active gem
 
 	// History/conversation state
-	conversation *history.Conversation   // Current conversation (nil for unsaved)
-	historyStore HistoryStoreInterface   // Store for persisting messages
+	conversation *history.Conversation // Current conversation (nil for unsaved)
+	historyStore HistoryStoreInterface // Store for persisting messages
 
 	// History selection state (for /history command)
-	selectingHistory  bool
-	historyList       []*history.Conversation
-	historyCursor     int
-	historyLoading    bool
-	historyFilter     string
-	fullHistoryStore  FullHistoryStore  // Full store interface for /history command
+	selectingHistory bool
+	historyList      []*history.Conversation
+	historyCursor    int
+	historyLoading   bool
+	historyFilter    string
+	fullHistoryStore FullHistoryStore // Full store interface for /history command
 
 	// File attachments (for /file and /image commands)
 	attachments []*api.UploadedFile
@@ -1897,8 +1897,8 @@ func (m Model) updateImageSelection(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.imageSelector, cmd = m.imageSelector.Update(msg)
 
-		// Check if selection is complete
-		if m.imageSelector.IsConfirmed() {
+		// Check if selection is complete (confirmed or cancelled)
+		if m.imageSelector.IsConfirmed() || m.imageSelector.IsCancelled() {
 			m.selectingImages = false
 
 			if m.imageSelector.IsCancelled() {
