@@ -14,9 +14,9 @@
 - [x] Task: Refactor `internal/commands/root.go` to support dependency injection for client creation. 696bbd3
 - [x] Task: Implement table-driven tests for `internal/commands/gems.go` (List, Create, Delete). 1592a7c
 - [x] Task: Implement tests for `internal/commands/chat.go` (Session initialization flags). 2afd5c1
-- [ ] Task: Implement tests for `internal/commands/autologin.go` (Browser detection logic).
-
+- [x] Task: Implement tests for `internal/commands/autologin.go` (Browser detection logic). 0aea272
 ## Phase 4: Error Handling Standardization
+
 - [ ] Task: Create a centralized error printing helper in `internal/tui/styles` using `lipgloss`.
 - [ ] Task: Refactor `cmd/geminiweb/main.go` to use the new error helper for top-level command errors.
 - [ ] Task: Conductor - User Manual Verification 'Error Handling Standardization' (Protocol in workflow.md)
