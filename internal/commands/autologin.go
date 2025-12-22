@@ -3,11 +3,9 @@ package commands
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
-
 	"github.com/diogo/geminiweb/internal/browser"
 	"github.com/diogo/geminiweb/internal/config"
 )
@@ -17,10 +15,12 @@ var (
 	autoLoginList    bool
 )
 
-var autoLoginCmd = &cobra.Command{
-	Use:   "auto-login",
-	Short: "Extract authentication cookies from browser",
-	Long: `Automatically extract Gemini authentication cookies from your browser.
+// NewAutoLoginCmd creates a new auto-login command
+func NewAutoLoginCmd(deps *Dependencies) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "auto-login",
+		Short: "Extract authentication cookies from browser",
+		Long: `Automatically extract Gemini authentication cookies from your browser.
 
 This command reads cookies directly from your browser's cookie store,
 eliminating the need to manually export and import cookies.
@@ -29,7 +29,7 @@ Supported browsers: chrome, chromium, firefox, edge, opera
 
 IMPORTANT:
 - Close the browser before running this command to avoid database locks
-- You must be logged into gemini.google.com in the browser
+- You must be logged into geminiweb.google.com in the browser
 - On macOS, you may be prompted for keychain access (Chrome uses Keychain to encrypt cookies)
 
 Examples:
@@ -37,22 +37,30 @@ Examples:
   geminiweb auto-login -b chrome    # Extract from Chrome
   geminiweb auto-login -b firefox   # Extract from Firefox
   geminiweb auto-login --list       # List available browsers`,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		if autoLoginList {
-			return runListBrowsers()
-		}
-		return runAutoLogin(autoLoginBrowser)
-	},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if autoLoginList {
+				return runListBrowsers()
+			}
+			return runAutoLogin(deps, autoLoginBrowser)
+		},
+	}
+
+	cmd.Flags().StringVarP(&autoLoginBrowser, "browser", "b", "auto",
+		"Browser to extract cookies from (chrome, chromium, firefox, edge, opera, auto)")
+	cmd.Flags().BoolVarP(&autoLoginList, "list", "l", false,
+		"List available browsers with cookie stores")
+
+	return cmd
 }
+
+// Backward compatibility global
+var autoLoginCmd = NewAutoLoginCmd(nil)
 
 func init() {
-	autoLoginCmd.Flags().StringVarP(&autoLoginBrowser, "browser", "b", "auto",
-		"Browser to extract cookies from (chrome, chromium, firefox, edge, opera, auto)")
-	autoLoginCmd.Flags().BoolVarP(&autoLoginList, "list", "l", false,
-		"List available browsers with cookie stores")
+	// Root flags and commands are handled in NewRootCmd
 }
 
-func runAutoLogin(browserName string) error {
+func runAutoLogin(deps *Dependencies, browserName string) error {
 	targetBrowser, err := browser.ParseBrowser(browserName)
 	if err != nil {
 		return err
@@ -65,7 +73,13 @@ func runAutoLogin(browserName string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	result, err := browser.ExtractGeminiCookies(ctx, targetBrowser)
+	var result *browser.ExtractResult
+	if deps != nil && deps.BrowserExtractor != nil {
+		result, err = deps.BrowserExtractor.ExtractGeminiCookies(ctx, targetBrowser)
+	} else {
+		result, err = browser.ExtractGeminiCookies(ctx, targetBrowser)
+	}
+
 	if err != nil {
 		return fmt.Errorf("failed to extract cookies: %w", err)
 	}
@@ -138,5 +152,5 @@ func SupportedBrowsersHelp() string {
 	for i, b := range browsers {
 		names[i] = string(b)
 	}
-	return strings.Join(names, ", ")
+	return "Supported browsers: " + fmt.Sprintf("%v", names)
 }

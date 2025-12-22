@@ -23,6 +23,9 @@ type Dependencies struct {
 
 	// TUI is the terminal user interface.
 	TUI TUIInterface
+
+	// BrowserExtractor is the browser cookie extractor.
+	BrowserExtractor api.BrowserCookieExtractor
 }
 
 // DefaultTUI is the production implementation of TUIInterface.

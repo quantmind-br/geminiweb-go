@@ -499,12 +499,33 @@ func runQuery(deps *Dependencies, prompt string, rawOutput bool) error {
 	bubble := assistantBubbleStyle.Width(bubbleWidth).Render(rendered)
 	fmt.Println(bubble)
 
-	return nil
-}
+		return nil
 
+	}
 
-// getTerminalWidth returns the terminal width or a default value
-func getTerminalWidth() int {
+	
+
+	// truncate truncates a string to maxLen and adds ellipsis if needed
+
+	func truncate(s string, maxLen int) string {
+
+		if len(s) <= maxLen {
+
+			return s
+
+		}
+
+		return s[:maxLen] + "..."
+
+	}
+
+	
+
+	// getTerminalWidth returns the terminal width or a default value
+
+	func getTerminalWidth() int {
+
+	
 	width, _, err := term.GetSize(int(os.Stdout.Fd()))
 	if err != nil || width <= 0 {
 		return 80 // default width

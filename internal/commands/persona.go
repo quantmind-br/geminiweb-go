@@ -35,52 +35,87 @@ func (r *StdInReader) ReadString(delim byte) (string, error) {
 	return r.reader.ReadString(delim)
 }
 
-var personaCmd = &cobra.Command{
-	Use:   "persona",
-	Short: "Manage chat personas",
-	Long:  `View and manage personas (system prompts) for chat sessions.`,
+// NewPersonaCmd creates a new persona command
+func NewPersonaCmd(deps *Dependencies) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "persona",
+		Short: "Manage chat personas",
+		Long:  `View and manage personas (system prompts) for chat sessions.`, 
+	}
+
+	cmd.AddCommand(NewPersonaListCmd(deps))
+	cmd.AddCommand(NewPersonaShowCmd(deps))
+	cmd.AddCommand(NewPersonaAddCmd(deps))
+	cmd.AddCommand(NewPersonaDeleteCmd(deps))
+	cmd.AddCommand(NewPersonaSetDefaultCmd(deps))
+
+	return cmd
 }
 
-var personaListCmd = &cobra.Command{
-	Use:   "list",
-	Short: "List available personas",
-	RunE:  runPersonaList,
+func NewPersonaListCmd(deps *Dependencies) *cobra.Command {
+	return &cobra.Command{
+		Use:   "list",
+		Short: "List available personas",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runPersonaList(cmd, args)
+		},
+	}
 }
 
-var personaShowCmd = &cobra.Command{
-	Use:   "show <name>",
-	Short: "Show persona details",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runPersonaShow,
+func NewPersonaShowCmd(deps *Dependencies) *cobra.Command {
+	return &cobra.Command{
+		Use:   "show <name>",
+		Short: "Show persona details",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runPersonaShow(cmd, args)
+		},
+	}
 }
 
-var personaAddCmd = &cobra.Command{
-	Use:   "add <name>",
-	Short: "Add a new persona",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runPersonaAdd,
+func NewPersonaAddCmd(deps *Dependencies) *cobra.Command {
+	return &cobra.Command{
+		Use:   "add <name>",
+		Short: "Add a new persona",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runPersonaAdd(cmd, args)
+		},
+	}
 }
 
-var personaDeleteCmd = &cobra.Command{
-	Use:   "delete <name>",
-	Short: "Delete a persona",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runPersonaDelete,
+func NewPersonaDeleteCmd(deps *Dependencies) *cobra.Command {
+	return &cobra.Command{
+		Use:   "delete <name>",
+		Short: "Delete a persona",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runPersonaDelete(cmd, args)
+		},
+	}
 }
 
-var personaSetDefaultCmd = &cobra.Command{
-	Use:   "default <name>",
-	Short: "Set default persona",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runPersonaSetDefault,
+func NewPersonaSetDefaultCmd(deps *Dependencies) *cobra.Command {
+	return &cobra.Command{
+		Use:   "default <name>",
+		Short: "Set default persona",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runPersonaSetDefault(cmd, args)
+		},
+	}
 }
+
+// Backward compatibility globals
+var personaCmd = NewPersonaCmd(nil)
+var personaListCmd = NewPersonaListCmd(nil)
+var personaShowCmd = NewPersonaShowCmd(nil)
+var personaAddCmd = NewPersonaAddCmd(nil)
+var personaDeleteCmd = NewPersonaDeleteCmd(nil)
+var personaSetDefaultCmd = NewPersonaSetDefaultCmd(nil)
 
 func init() {
-	personaCmd.AddCommand(personaListCmd)
-	personaCmd.AddCommand(personaShowCmd)
-	personaCmd.AddCommand(personaAddCmd)
-	personaCmd.AddCommand(personaDeleteCmd)
-	personaCmd.AddCommand(personaSetDefaultCmd)
+	// Root flags and commands are handled in NewRootCmd
 }
 
 func runPersonaList(cmd *cobra.Command, args []string) error {
@@ -189,6 +224,6 @@ func runPersonaSetDefault(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	fmt.Printf("Default persona set to '%s'.\n", name)
+	fmt.Printf("Persona '%s' set as default.\n", name)
 	return nil
 }

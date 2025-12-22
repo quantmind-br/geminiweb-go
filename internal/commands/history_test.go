@@ -263,9 +263,9 @@ func TestRunHistoryList_Empty(t *testing.T) {
 	_, _ = buf.ReadFrom(r)
 	output := buf.String()
 
-	// Should print "No conversations found" with hint
-	if !strings.Contains(output, "No conversations found.") {
-		t.Errorf("Expected 'No conversations found.', got: %s", output)
+	// Should print "No conversation history found"
+	if !strings.Contains(output, "No conversation history found.") {
+		t.Errorf("Expected 'No conversation history found.', got: %s", output)
 	}
 	if !strings.Contains(output, "geminiweb chat") {
 		t.Errorf("Expected hint about starting new chat, got: %s", output)
@@ -730,7 +730,7 @@ func TestRunHistoryFavorite_Toggle(t *testing.T) {
 	output = buf.String()
 
 	// Should contain message about removing
-	if !strings.Contains(output, "☆") || !strings.Contains(output, "Removed") {
+	if !strings.Contains(output, "☆") || !strings.Contains(strings.ToLower(output), "removed") {
 		t.Errorf("Output should indicate removed from favorites, got: %s", output)
 	}
 

@@ -114,11 +114,11 @@ Examples:
 
 	// Add subcommands
 	cmd.AddCommand(NewChatCmd(deps))
-	cmd.AddCommand(configCmd)
-	cmd.AddCommand(importCookiesCmd)
-	cmd.AddCommand(autoLoginCmd)
-	cmd.AddCommand(historyCmd)
-	cmd.AddCommand(personaCmd)
+	cmd.AddCommand(NewConfigCmd(deps))
+	cmd.AddCommand(NewImportCookiesCmd(deps))
+	cmd.AddCommand(NewAutoLoginCmd(deps))
+	cmd.AddCommand(NewHistoryCmd(deps))
+	cmd.AddCommand(NewPersonaCmd(deps))
 	cmd.AddCommand(NewGemsCmd(deps))
 
 	return cmd

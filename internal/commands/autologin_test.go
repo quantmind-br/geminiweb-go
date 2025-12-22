@@ -12,7 +12,7 @@ func TestRunAutoLogin(t *testing.T) {
 	// or integration tests that actually interact with the browser
 
 	// Test with invalid browser (should fail at parse stage)
-	err := runAutoLogin("invalid-browser")
+	err := runAutoLogin(nil, "invalid-browser")
 	if err == nil {
 		t.Error("runAutoLogin with invalid browser should return error")
 	}
@@ -41,7 +41,7 @@ func TestRunAutoLogin_Timeout(t *testing.T) {
 
 	// Test with auto browser selection and very short timeout
 	// This should fail with timeout or "browser not found" error
-	err := runAutoLogin("auto")
+	err := runAutoLogin(nil, "auto")
 	// We don't check for specific error since it depends on browser availability
 	// The important thing is that it doesn't panic and returns an error appropriately
 	if err != nil && !strings.Contains(err.Error(), "unsupported browser") {
@@ -70,7 +70,7 @@ func TestRunAutoLogin_ValidBrowser(t *testing.T) {
 
 	// Test with valid browser name but expect failure due to no actual browser
 	// This tests that the function handles the case gracefully
-	err := runAutoLogin("chrome")
+	err := runAutoLogin(nil, "chrome")
 	if err != nil {
 		// Expected to fail since there's no actual browser
 		// Just verify it returns an error and doesn't panic
