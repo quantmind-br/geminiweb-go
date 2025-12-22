@@ -10,6 +10,8 @@
 //   - Tool: The interface that all executable tools must implement
 //   - Registry: Manages tool registration and discovery
 //   - Executor: Handles tool execution with context support and middleware
+//   - SecurityPolicy: Validates tool executions against security rules
+//   - ConfirmationHandler: Requests user confirmation for dangerous operations
 //   - Middleware: Enables cross-cutting concerns like logging, timing, and validation
 //
 // # Quick Start
@@ -66,6 +68,7 @@
 //	    Name() string
 //	    Description() string
 //	    Execute(ctx context.Context, input *Input) (*Output, error)
+//	    RequiresConfirmation(args map[string]any) bool
 //	}
 //
 // Tools should:
@@ -73,6 +76,7 @@
 //   - Check ctx.Done() before and during long-running operations
 //   - Return meaningful errors with context
 //   - Use the Input helper methods (GetParamString, GetParamInt, etc.) for type-safe access
+//   - Implement RequiresConfirmation() to declare when user consent is needed
 //
 // # Registry
 //
@@ -104,17 +108,24 @@
 //
 // The Executor handles tool execution with various features:
 //
+//   - Security validation via SecurityPolicy (blacklist/path checking)
+//   - User confirmation via ConfirmationHandler
 //   - Timeout enforcement (30 seconds default)
 //   - Panic recovery
 //   - Middleware chain execution
 //   - Synchronous and asynchronous execution modes
 //   - Batch execution with concurrency control
+//   - Output truncation (100KB default)
+//
+// Execution flow: security validation → confirmation → middleware → execution
 //
 // Create an executor with options:
 //
 //	executor := NewExecutor(registry,
 //	    WithTimeout(60*time.Second),
 //	    WithMaxConcurrent(4),
+//	    WithSecurityPolicy(DefaultSecurityPolicy()),
+//	    WithConfirmationHandler(&AutoApproveHandler{}),
 //	    WithDefaultMiddleware(),
 //	)
 //
@@ -178,6 +189,8 @@
 //   - ErrTimeout: Execution timed out
 //   - ErrPanicRecovered: Panic occurred during execution
 //   - ErrContextCancelled: Context was cancelled
+//   - ErrUserDenied: User denied confirmation for tool execution
+//   - ErrSecurityViolation: Tool execution blocked by security policy
 //
 // Check error types using errors.Is:
 //
@@ -226,6 +239,75 @@
 //
 //	output := NewFailedOutput("Operation failed: invalid input")
 //
+// # Output Truncation
+//
+// Large outputs can be truncated to prevent memory exhaustion:
+//
+//	// Truncate to default limit (100KB)
+//	output := NewOutput().WithData(largeData).TruncateDefault()
+//
+//	// Truncate to custom limit
+//	output := NewOutput().WithTruncatedData(largeData, 10*1024) // 10KB
+//
+//	// Check if output was truncated
+//	if output.Truncated {
+//	    fmt.Println("Output was truncated")
+//	}
+//
+// # Security Policy
+//
+// SecurityPolicy validates tool executions before they run. The package provides
+// built-in validators:
+//
+//   - BlacklistValidator: Blocks dangerous bash commands (rm -rf /, dd, mkfs)
+//   - PathValidator: Blocks access to sensitive files (.env, .ssh/, *.pem)
+//   - CompositeSecurityPolicy: Chains multiple validators together
+//
+// Example:
+//
+//	// Use default security policy (blacklist + path validation)
+//	executor := NewExecutor(registry, WithSecurityPolicy(DefaultSecurityPolicy()))
+//
+//	// Custom blacklist
+//	blacklist := NewBlacklistValidator("rm -rf", "dd if=", "mkfs")
+//	executor := NewExecutor(registry, WithSecurityPolicy(blacklist))
+//
+//	// Handle security violations
+//	_, err := executor.Execute(ctx, "bash", input)
+//	if errors.Is(err, ErrSecurityViolation) {
+//	    // Command was blocked by security policy
+//	}
+//
+// # Confirmation Handler
+//
+// ConfirmationHandler requests user confirmation before executing dangerous tools.
+// Tools declare when confirmation is needed via RequiresConfirmation():
+//
+//	type DangerousTool struct{}
+//
+//	func (t *DangerousTool) RequiresConfirmation(args map[string]any) bool {
+//	    // Require confirmation for destructive operations
+//	    cmd, _ := args["command"].(string)
+//	    return strings.Contains(cmd, "delete")
+//	}
+//
+// Built-in handlers:
+//
+//   - AutoApproveHandler: Automatically approves all requests (non-interactive)
+//   - AutoDenyHandler: Automatically denies all requests (highly restricted)
+//   - ConfirmationFunc: Adapter for using functions as handlers
+//
+// Example:
+//
+//	// Auto-approve in non-interactive mode
+//	executor := NewExecutor(registry, WithConfirmationHandler(&AutoApproveHandler{}))
+//
+//	// Handle user denial
+//	_, err := executor.Execute(ctx, "dangerous-tool", input)
+//	if errors.Is(err, ErrUserDenied) {
+//	    // User declined to confirm execution
+//	}
+//
 // # Thread Safety
 //
 // The Registry is thread-safe using sync.RWMutex, optimized for read-heavy workloads.
@@ -256,4 +338,7 @@
 //   - Set appropriate concurrency limits for batch operations
 //   - Use the logging middleware for observability
 //   - Consider implementing custom middleware for metrics collection
+//   - Enable security policy to block dangerous commands
+//   - Configure confirmation handler for user consent on destructive operations
+//   - Use output truncation to prevent memory exhaustion from large outputs
 package toolexec

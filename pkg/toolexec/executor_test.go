@@ -954,3 +954,327 @@ func TestToolExecution(t *testing.T) {
 		t.Error("ToolExecution.Input param 'key' != 'value'")
 	}
 }
+
+// TestExecutorSecurityViolation tests that the executor returns ErrSecurityViolation
+// when the security policy blocks a tool execution.
+func TestExecutorSecurityViolation(t *testing.T) {
+	t.Run("blacklist validator blocks dangerous commands", func(t *testing.T) {
+		registry := NewRegistry()
+		tool := NewMockTool("bash", "A bash tool")
+		if err := registry.Register(tool); err != nil {
+			t.Fatalf("Failed to register tool: %v", err)
+		}
+
+		// Create executor with blacklist validator
+		exec := NewExecutor(registry, WithSecurityPolicy(DefaultBlacklistValidator()))
+
+		// Try to execute a blocked command
+		input := NewInput().WithParam("command", "rm -rf /")
+		_, err := exec.Execute(context.Background(), "bash", input)
+
+		if err == nil {
+			t.Error("Execute() should return error for blocked command")
+			return
+		}
+
+		if !IsSecurityViolationError(err) {
+			t.Errorf("Execute() error should be SecurityViolationError, got: %T (%v)", err, err)
+		}
+
+		if !errors.Is(err, ErrSecurityViolation) {
+			t.Errorf("Execute() error should wrap ErrSecurityViolation")
+		}
+	})
+
+	t.Run("path validator blocks sensitive files", func(t *testing.T) {
+		registry := NewRegistry()
+		tool := NewMockTool("file_read", "A file read tool")
+		if err := registry.Register(tool); err != nil {
+			t.Fatalf("Failed to register tool: %v", err)
+		}
+
+		// Create executor with path validator
+		exec := NewExecutor(registry, WithSecurityPolicy(DefaultPathValidator()))
+
+		// Try to read a blocked path
+		input := NewInput().WithParam("path", ".env")
+		_, err := exec.Execute(context.Background(), "file_read", input)
+
+		if err == nil {
+			t.Error("Execute() should return error for blocked path")
+			return
+		}
+
+		if !IsSecurityViolationError(err) {
+			t.Errorf("Execute() error should be SecurityViolationError, got: %T (%v)", err, err)
+		}
+	})
+
+	t.Run("composite security policy chains validators", func(t *testing.T) {
+		registry := NewRegistry()
+		bashTool := NewMockTool("bash", "A bash tool")
+		fileTool := NewMockTool("file_read", "A file read tool")
+		if err := registry.Register(bashTool); err != nil {
+			t.Fatalf("Failed to register bash tool: %v", err)
+		}
+		if err := registry.Register(fileTool); err != nil {
+			t.Fatalf("Failed to register file tool: %v", err)
+		}
+
+		// Create executor with default composite policy
+		exec := NewExecutor(registry, WithSecurityPolicy(DefaultSecurityPolicy()))
+
+		// Test blacklist (bash command)
+		input1 := NewInput().WithParam("command", "rm -rf /")
+		_, err := exec.Execute(context.Background(), "bash", input1)
+		if !IsSecurityViolationError(err) {
+			t.Error("Expected SecurityViolationError for blocked bash command")
+		}
+
+		// Test path validator (file read)
+		input2 := NewInput().WithParam("path", ".ssh/id_rsa")
+		_, err = exec.Execute(context.Background(), "file_read", input2)
+		if !IsSecurityViolationError(err) {
+			t.Error("Expected SecurityViolationError for blocked path")
+		}
+	})
+}
+
+// TestExecutorUserDenied tests that the executor returns ErrUserDenied
+// when the user denies confirmation for a tool execution.
+func TestExecutorUserDenied(t *testing.T) {
+	t.Run("user denies confirmation", func(t *testing.T) {
+		registry := NewRegistry()
+		tool := NewMockTool("dangerous-tool", "A dangerous tool").
+			WithRequiresConfirmation(true)
+		if err := registry.Register(tool); err != nil {
+			t.Fatalf("Failed to register tool: %v", err)
+		}
+
+		// Create executor with auto-deny handler
+		exec := NewExecutor(registry, WithConfirmationHandler(&AutoDenyHandler{}))
+
+		_, err := exec.Execute(context.Background(), "dangerous-tool", NewInput())
+
+		if err == nil {
+			t.Error("Execute() should return error when user denies")
+			return
+		}
+
+		if !IsUserDeniedError(err) {
+			t.Errorf("Execute() error should be UserDeniedError, got: %T (%v)", err, err)
+		}
+
+		if !errors.Is(err, ErrUserDenied) {
+			t.Errorf("Execute() error should wrap ErrUserDenied")
+		}
+	})
+
+	t.Run("user approves confirmation", func(t *testing.T) {
+		registry := NewRegistry()
+		tool := NewMockTool("dangerous-tool", "A dangerous tool").
+			WithRequiresConfirmation(true).
+			WithExecuteFunc(func(ctx context.Context, input *Input) (*Output, error) {
+				return NewOutput().WithMessage("executed"), nil
+			})
+		if err := registry.Register(tool); err != nil {
+			t.Fatalf("Failed to register tool: %v", err)
+		}
+
+		// Create executor with auto-approve handler
+		exec := NewExecutor(registry, WithConfirmationHandler(&AutoApproveHandler{}))
+
+		output, err := exec.Execute(context.Background(), "dangerous-tool", NewInput())
+
+		if err != nil {
+			t.Errorf("Execute() unexpected error: %v", err)
+		}
+
+		if output == nil {
+			t.Error("Execute() returned nil output")
+		}
+	})
+
+	t.Run("tool not requiring confirmation skips handler", func(t *testing.T) {
+		registry := NewRegistry()
+		tool := NewMockTool("safe-tool", "A safe tool").
+			WithRequiresConfirmation(false).
+			WithExecuteFunc(func(ctx context.Context, input *Input) (*Output, error) {
+				return NewOutput().WithMessage("executed"), nil
+			})
+		if err := registry.Register(tool); err != nil {
+			t.Fatalf("Failed to register tool: %v", err)
+		}
+
+		// Create executor with auto-deny handler (should not be called)
+		exec := NewExecutor(registry, WithConfirmationHandler(&AutoDenyHandler{}))
+
+		output, err := exec.Execute(context.Background(), "safe-tool", NewInput())
+
+		if err != nil {
+			t.Errorf("Execute() unexpected error: %v", err)
+		}
+
+		if output == nil {
+			t.Error("Execute() returned nil output")
+		}
+	})
+}
+
+// TestNilSecurityPolicy tests that the executor handles nil security policy gracefully.
+func TestNilSecurityPolicy(t *testing.T) {
+	t.Run("nil security policy skips validation", func(t *testing.T) {
+		registry := NewRegistry()
+		tool := NewMockTool("bash", "A bash tool").
+			WithExecuteFunc(func(ctx context.Context, input *Input) (*Output, error) {
+				return NewOutput().WithMessage("executed"), nil
+			})
+		if err := registry.Register(tool); err != nil {
+			t.Fatalf("Failed to register tool: %v", err)
+		}
+
+		// Create executor without security policy (nil by default)
+		exec := NewExecutor(registry)
+
+		// Execute a command that would be blocked by security policy
+		input := NewInput().WithParam("command", "rm -rf /")
+		output, err := exec.Execute(context.Background(), "bash", input)
+
+		// Should succeed because no security policy
+		if err != nil {
+			t.Errorf("Execute() unexpected error: %v", err)
+		}
+
+		if output == nil {
+			t.Error("Execute() returned nil output")
+		}
+	})
+
+	t.Run("explicit nil security policy", func(t *testing.T) {
+		registry := NewRegistry()
+		tool := NewMockTool("bash", "A bash tool").
+			WithExecuteFunc(func(ctx context.Context, input *Input) (*Output, error) {
+				return NewOutput().WithMessage("executed"), nil
+			})
+		if err := registry.Register(tool); err != nil {
+			t.Fatalf("Failed to register tool: %v", err)
+		}
+
+		// Explicitly set nil security policy
+		exec := NewExecutor(registry, WithSecurityPolicy(nil))
+
+		input := NewInput().WithParam("command", "rm -rf /")
+		output, err := exec.Execute(context.Background(), "bash", input)
+
+		if err != nil {
+			t.Errorf("Execute() unexpected error: %v", err)
+		}
+
+		if output == nil {
+			t.Error("Execute() returned nil output")
+		}
+
+		// Verify config shows no security policy
+		config := exec.Config()
+		if config.HasSecurityPolicy {
+			t.Error("Config.HasSecurityPolicy should be false")
+		}
+	})
+}
+
+// TestNilConfirmationHandler tests that the executor handles nil confirmation handler gracefully.
+func TestNilConfirmationHandler(t *testing.T) {
+	t.Run("nil confirmation handler skips confirmation", func(t *testing.T) {
+		registry := NewRegistry()
+		tool := NewMockTool("dangerous-tool", "A dangerous tool").
+			WithRequiresConfirmation(true).
+			WithExecuteFunc(func(ctx context.Context, input *Input) (*Output, error) {
+				return NewOutput().WithMessage("executed"), nil
+			})
+		if err := registry.Register(tool); err != nil {
+			t.Fatalf("Failed to register tool: %v", err)
+		}
+
+		// Create executor without confirmation handler (nil by default)
+		exec := NewExecutor(registry)
+
+		output, err := exec.Execute(context.Background(), "dangerous-tool", NewInput())
+
+		// Should succeed because no confirmation handler to block it
+		if err != nil {
+			t.Errorf("Execute() unexpected error: %v", err)
+		}
+
+		if output == nil {
+			t.Error("Execute() returned nil output")
+		}
+	})
+
+	t.Run("explicit nil confirmation handler", func(t *testing.T) {
+		registry := NewRegistry()
+		tool := NewMockTool("dangerous-tool", "A dangerous tool").
+			WithRequiresConfirmation(true).
+			WithExecuteFunc(func(ctx context.Context, input *Input) (*Output, error) {
+				return NewOutput().WithMessage("executed"), nil
+			})
+		if err := registry.Register(tool); err != nil {
+			t.Fatalf("Failed to register tool: %v", err)
+		}
+
+		// Explicitly set nil confirmation handler
+		exec := NewExecutor(registry, WithConfirmationHandler(nil))
+
+		output, err := exec.Execute(context.Background(), "dangerous-tool", NewInput())
+
+		if err != nil {
+			t.Errorf("Execute() unexpected error: %v", err)
+		}
+
+		if output == nil {
+			t.Error("Execute() returned nil output")
+		}
+
+		// Verify config shows no confirmation handler
+		config := exec.Config()
+		if config.HasConfirmationHandler {
+			t.Error("Config.HasConfirmationHandler should be false")
+		}
+	})
+
+	t.Run("confirmation handler called before execution", func(t *testing.T) {
+		registry := NewRegistry()
+		var confirmationCalled bool
+		var executionCalled bool
+
+		tool := NewMockTool("test-tool", "A test tool").
+			WithRequiresConfirmation(true).
+			WithExecuteFunc(func(ctx context.Context, input *Input) (*Output, error) {
+				executionCalled = true
+				return NewOutput(), nil
+			})
+		if err := registry.Register(tool); err != nil {
+			t.Fatalf("Failed to register tool: %v", err)
+		}
+
+		handler := ConfirmationFunc(func(ctx context.Context, tool Tool, args map[string]any) (bool, error) {
+			confirmationCalled = true
+			return true, nil
+		})
+
+		exec := NewExecutor(registry, WithConfirmationHandler(handler))
+
+		_, err := exec.Execute(context.Background(), "test-tool", NewInput())
+
+		if err != nil {
+			t.Errorf("Execute() unexpected error: %v", err)
+		}
+
+		if !confirmationCalled {
+			t.Error("Confirmation handler should have been called")
+		}
+
+		if !executionCalled {
+			t.Error("Tool execution should have been called")
+		}
+	})
+}

@@ -130,6 +130,9 @@ func (i *Input) GetParamBool(key string) bool {
 	return false
 }
 
+// DefaultMaxOutputSize is the default maximum output size before truncation (100KB).
+const DefaultMaxOutputSize = 100 * 1024
+
 // Output represents the result of a tool execution.
 // It provides a flexible structure for returning data and metadata.
 type Output struct {
@@ -147,6 +150,10 @@ type Output struct {
 
 	// Message is an optional human-readable message describing the result.
 	Message string
+
+	// Truncated indicates whether the output data was truncated due to size limits.
+	// When true, the Data field contains partial output up to the configured limit.
+	Truncated bool
 }
 
 // NewOutput creates a new Output with initialized maps and Success set to true.
@@ -215,6 +222,53 @@ func (o *Output) GetResultString(key string) string {
 		return s
 	}
 	return ""
+}
+
+// Truncate truncates the output data to the specified maximum size.
+// If the data is already smaller than maxSize, no truncation occurs.
+// Returns the Output for chaining.
+//
+// Example:
+//
+//	output := NewOutput().WithData(largeData).Truncate(DefaultMaxOutputSize)
+func (o *Output) Truncate(maxSize int) *Output {
+	if maxSize <= 0 || len(o.Data) <= maxSize {
+		return o
+	}
+	o.Data = o.Data[:maxSize]
+	o.Truncated = true
+	return o
+}
+
+// TruncateDefault truncates the output data to the default maximum size (100KB).
+// Returns the Output for chaining.
+func (o *Output) TruncateDefault() *Output {
+	return o.Truncate(DefaultMaxOutputSize)
+}
+
+// WithTruncatedData sets the data and truncates if necessary.
+// This is a convenience method that combines WithData and Truncate.
+//
+// Example:
+//
+//	output := NewOutput().WithTruncatedData(largeData, 10*1024) // 10KB limit
+func (o *Output) WithTruncatedData(data []byte, maxSize int) *Output {
+	o.Data = data
+	return o.Truncate(maxSize)
+}
+
+// TruncateOutput truncates an output's data to the specified maximum size.
+// If output is nil, returns nil.
+// If maxSize is <= 0, uses DefaultMaxOutputSize.
+// Returns the modified output (or a new one if nil).
+func TruncateOutput(output *Output, maxSize int) *Output {
+	if output == nil {
+		return nil
+	}
+	if maxSize <= 0 {
+		maxSize = DefaultMaxOutputSize
+	}
+	return output.Truncate(maxSize)
 }
 
 // ToolInfo provides metadata about a registered tool.
