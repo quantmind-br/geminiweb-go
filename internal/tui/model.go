@@ -478,6 +478,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					case "save", "download":
 						return m.handleSaveCommand(parsed.Args)
 
+					case "persona":
+						m.textarea.Reset()
+						// Run the persona manager TUI
+						store := NewPersonaStore()
+						if err := RunPersonaManagerTUI(store); err != nil {
+							m.err = fmt.Errorf("persona manager error: %w", err)
+						}
+						// Refresh persona from config after manager closes
+						cfg, err := config.LoadPersonas()
+						if err == nil {
+							m.persona, _ = config.GetPersona(cfg.DefaultPersona)
+						}
+						return m, nil
+
 					default:
 						// Unknown command - show error but don't send as message
 						m.err = fmt.Errorf("unknown command: /%s", parsed.Command)

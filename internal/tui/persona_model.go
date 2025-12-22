@@ -2,6 +2,8 @@ package tui
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -24,6 +26,7 @@ const (
 	personaViewCreate
 	personaViewEdit
 	personaViewDelete
+	personaViewHelp
 )
 
 // Form field indices
@@ -71,6 +74,10 @@ type PersonaManagerModel struct {
 	filteredPersonas []config.Persona // Filtered personas based on search
 	selectedPersona  *config.Persona  // Currently selected persona for details view
 	defaultPersona   *config.Persona  // Current default persona
+
+	// Search
+	searchInput textinput.Model
+	searching   bool
 
 	// Form inputs for create/edit
 	formInputs     []textinput.Model
@@ -128,10 +135,17 @@ func NewPersonaManagerModel(store PersonaStore) PersonaManagerModel {
 	ta.SetHeight(6)
 	ta.ShowLineNumbers = false
 
+	// Search input
+	si := textinput.New()
+	si.Placeholder = "Type to filter personas..."
+	si.CharLimit = 100
+	si.Width = 40
+
 	return PersonaManagerModel{
 		store:           store,
 		formInputs:      formInputs,
 		promptTextarea:  ta,
+		searchInput:     si,
 		view:            personaViewList,
 		feedbackTimeout: 2 * time.Second,
 		loading:         true,
@@ -211,6 +225,11 @@ func (m PersonaManagerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.formInputs[i].Width = formWidth
 		}
 		m.promptTextarea.SetWidth(formWidth)
+		// Update search input width
+		m.searchInput.Width = m.width - 10
+		if m.searchInput.Width < 20 {
+			m.searchInput.Width = 20
+		}
 
 	case personaLoadedMsg:
 		m.loading = false
@@ -295,6 +314,12 @@ func (m *PersonaManagerModel) updateFocusedInput(msg tea.Msg) []tea.Cmd {
 			m.formInputs[m.formFocus], cmd = m.formInputs[m.formFocus].Update(msg)
 			cmds = append(cmds, cmd)
 		}
+	default:
+		if m.searching {
+			var cmd tea.Cmd
+			m.searchInput, cmd = m.searchInput.Update(msg)
+			cmds = append(cmds, cmd)
+		}
 	}
 
 	return cmds
@@ -302,6 +327,11 @@ func (m *PersonaManagerModel) updateFocusedInput(msg tea.Msg) []tea.Cmd {
 
 // handleKeyMsg handles key messages when not in form mode
 func (m PersonaManagerModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Handle search mode
+	if m.searching && m.view == personaViewList {
+		return m.handleSearchInput(msg)
+	}
+
 	switch msg.String() {
 	case "ctrl+c", "q":
 		if m.view == personaViewList {
@@ -310,8 +340,27 @@ func (m PersonaManagerModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.view = personaViewList
 		return m, nil
 
+	case "?":
+		m.view = personaViewHelp
+		return m, nil
+
+	case "/":
+		if m.view == personaViewList {
+			m.searching = true
+			m.searchInput.Focus()
+			return m, textinput.Blink
+		}
+
 	case "esc":
-		if m.view == personaViewDetails {
+		if m.searching {
+			m.searching = false
+			m.searchInput.Blur()
+			m.searchInput.SetValue("")
+			m.filteredPersonas = m.allPersonas
+			m.cursor = 0
+			return m, nil
+		}
+		if m.view == personaViewDetails || m.view == personaViewHelp {
 			m.view = personaViewList
 			return m, nil
 		}
@@ -381,6 +430,14 @@ func (m PersonaManagerModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, m.setDefaultPersona(persona.Name)
 		}
 
+	case "x":
+		// Export selected persona to Markdown
+		persona := m.getSelectedPersona()
+		if persona != nil {
+			model, cmd := m.exportPersonaToMarkdown(persona)
+			return model, cmd
+		}
+
 	case "home", "g":
 		if m.view == personaViewList {
 			m.cursor = 0
@@ -393,6 +450,73 @@ func (m PersonaManagerModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
+}
+
+// handleSearchInput handles key messages in search mode
+func (m PersonaManagerModel) handleSearchInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.searching = false
+		m.searchInput.Blur()
+		m.searchInput.SetValue("")
+		m.filteredPersonas = m.allPersonas
+		m.cursor = 0
+		return m, nil
+
+	case "enter":
+		m.searching = false
+		m.searchInput.Blur()
+		return m, nil
+
+	case "up", "k":
+		m.cursor--
+		if m.cursor < 0 {
+			m.cursor = max(0, len(m.filteredPersonas)-1)
+		}
+		return m, nil
+
+	case "down", "j":
+		m.cursor++
+		if m.cursor >= len(m.filteredPersonas) {
+			m.cursor = 0
+		}
+		return m, nil
+
+	default:
+		var cmd tea.Cmd
+		m.searchInput, cmd = m.searchInput.Update(msg)
+		m.filterPersonas()
+		// Reset cursor when filtering
+		if m.cursor >= len(m.filteredPersonas) {
+			m.cursor = max(0, len(m.filteredPersonas)-1)
+		}
+		return m, cmd
+	}
+}
+
+// filterPersonas filters personas based on search input
+func (m *PersonaManagerModel) filterPersonas() {
+	query := strings.ToLower(strings.TrimSpace(m.searchInput.Value()))
+	if query == "" {
+		m.filteredPersonas = m.allPersonas
+		m.cursor = 0
+		return
+	}
+
+	var filtered []config.Persona
+	for _, p := range m.allPersonas {
+		name := strings.ToLower(p.Name)
+		desc := strings.ToLower(p.Description)
+
+		if strings.Contains(name, query) || strings.Contains(desc, query) {
+			filtered = append(filtered, p)
+		}
+	}
+
+	m.filteredPersonas = filtered
+	if m.cursor >= len(m.filteredPersonas) {
+		m.cursor = max(0, len(m.filteredPersonas)-1)
+	}
 }
 
 // handleFormInput handles key messages in create/edit form
@@ -581,6 +705,63 @@ func (m PersonaManagerModel) submitForm() (tea.Model, tea.Cmd) {
 	return m, clearPersonaFeedback(m.feedbackTimeout)
 }
 
+// exportPersonaToMarkdown exports a persona to a Markdown file
+func (m PersonaManagerModel) exportPersonaToMarkdown(persona *config.Persona) (tea.Model, tea.Cmd) {
+	// Get download directory
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		m.feedback = fmt.Sprintf("Error loading config: %v", err)
+		return m, clearPersonaFeedback(m.feedbackTimeout)
+	}
+	downloadDir, err := config.GetDownloadDir(cfg)
+	if err != nil {
+		m.feedback = fmt.Sprintf("Error getting download directory: %v", err)
+		return m, clearPersonaFeedback(m.feedbackTimeout)
+	}
+
+	// Create personas subdirectory
+	personasDir := filepath.Join(downloadDir, "personas")
+	if err := os.MkdirAll(personasDir, 0o755); err != nil {
+		m.feedback = fmt.Sprintf("Error creating personas directory: %v", err)
+		return m, clearPersonaFeedback(m.feedbackTimeout)
+	}
+
+	// Generate Markdown content
+	filename := fmt.Sprintf("%s.md", strings.ToLower(strings.ReplaceAll(persona.Name, " ", "_")))
+	filePath := filepath.Join(personasDir, filename)
+
+	var md strings.Builder
+	md.WriteString("---\n")
+	md.WriteString(fmt.Sprintf("name: %s\n", persona.Name))
+	if persona.Description != "" {
+		md.WriteString(fmt.Sprintf("description: %s\n", persona.Description))
+	}
+	if persona.Model != "" {
+		md.WriteString(fmt.Sprintf("model: %s\n", persona.Model))
+	}
+	if persona.Temperature != 0 {
+		md.WriteString(fmt.Sprintf("temperature: %.1f\n", persona.Temperature))
+	}
+	md.WriteString("---\n\n")
+	md.WriteString(fmt.Sprintf("# %s\n\n", persona.Name))
+	if persona.Description != "" {
+		md.WriteString(fmt.Sprintf("**%s**\n\n", persona.Description))
+	}
+	md.WriteString("## System Prompt\n\n")
+	md.WriteString("```\n")
+	md.WriteString(persona.SystemPrompt)
+	md.WriteString("\n```\n")
+
+	// Write file
+	if err := os.WriteFile(filePath, []byte(md.String()), 0o644); err != nil {
+		m.feedback = fmt.Sprintf("Error exporting persona: %v", err)
+		return m, clearPersonaFeedback(m.feedbackTimeout)
+	}
+
+	m.feedback = fmt.Sprintf("Exported '%s' to %s", persona.Name, filePath)
+	return m, clearPersonaFeedback(m.feedbackTimeout)
+}
+
 // clearPersonaFeedback returns a command that clears the feedback message after a delay
 func clearPersonaFeedback(d time.Duration) tea.Cmd {
 	return tea.Tick(d, func(t time.Time) tea.Msg {
@@ -624,6 +805,8 @@ func (m PersonaManagerModel) View() string {
 		sections = append(sections, m.renderEditView(contentWidth))
 	case personaViewDelete:
 		sections = append(sections, m.renderDeleteView(contentWidth))
+	case personaViewHelp:
+		sections = append(sections, m.renderHelpView(contentWidth))
 	}
 
 	// Feedback
@@ -671,9 +854,18 @@ func (m PersonaManagerModel) renderHeader(width int) string {
 func (m PersonaManagerModel) renderListView(width int) string {
 	title := configSectionTitleStyle.Render("📦 Personas")
 
+	// Add search bar if searching or has search value
+	var contentSections []string
+	if m.searching || m.searchInput.Value() != "" {
+		searchLabel := inputLabelStyle.Render("🔍 ")
+		searchContent := lipgloss.JoinHorizontal(lipgloss.Center, searchLabel, m.searchInput.View())
+		contentSections = append(contentSections, inputPanelStyle.Width(width).Render(searchContent))
+	}
+
 	if len(m.filteredPersonas) == 0 {
 		noPersonas := hintStyle.Render("No personas found. Press 'n' to create one.")
-		content := lipgloss.JoinVertical(lipgloss.Left, title, "", noPersonas)
+		contentSections = append(contentSections, title, "", noPersonas)
+		content := lipgloss.JoinVertical(lipgloss.Left, contentSections...)
 		return configPanelStyle.Width(width).Render(content)
 	}
 
@@ -704,7 +896,10 @@ func (m PersonaManagerModel) renderListView(width int) string {
 		items = append(items, hintStyle.Render("  ↓ more below"))
 	}
 
-	content := lipgloss.JoinVertical(lipgloss.Left, append([]string{title, ""}, items...)...)
+	contentSections = append(contentSections, title)
+	contentSections = append(contentSections, "")
+	contentSections = append(contentSections, items...)
+	content := lipgloss.JoinVertical(lipgloss.Left, contentSections...)
 	return configPanelStyle.Width(width).Render(content)
 }
 
@@ -877,6 +1072,59 @@ func (m PersonaManagerModel) renderDeleteView(width int) string {
 	return configPanelStyle.Width(width).Render(content)
 }
 
+// renderHelpView renders the help overlay
+func (m PersonaManagerModel) renderHelpView(width int) string {
+	title := configSectionTitleStyle.Render("❓ Keyboard Shortcuts")
+
+	var sections []string
+	sections = append(sections, title, "")
+
+	// List View shortcuts
+	sections = append(sections, configMenuSelectedStyle.Render("List View:"))
+	sections = append(sections, "   ↑/↓ or j/k  - Navigate personas")
+	sections = append(sections, "   Enter       - View persona details")
+	sections = append(sections, "   /           - Search/filter personas")
+	sections = append(sections, "   n           - Create new persona")
+	sections = append(sections, "   e           - Edit selected persona")
+	sections = append(sections, "   d           - Delete selected persona")
+	sections = append(sections, "   s           - Set selected as default")
+	sections = append(sections, "   x           - Export to Markdown")
+	sections = append(sections, "   g/G         - Jump to top/bottom")
+	sections = append(sections, "   q           - Quit")
+	sections = append(sections, "")
+
+	// Details View shortcuts
+	sections = append(sections, configMenuSelectedStyle.Render("Details View:"))
+	sections = append(sections, "   e           - Edit persona")
+	sections = append(sections, "   d           - Delete persona")
+	sections = append(sections, "   s           - Set as default")
+	sections = append(sections, "   Esc         - Back to list")
+	sections = append(sections, "")
+
+	// Form View shortcuts
+	sections = append(sections, configMenuSelectedStyle.Render("Form View (Create/Edit):"))
+	sections = append(sections, "   Tab/↑/↓    - Navigate fields")
+	sections = append(sections, "   Shift+Tab  - Previous field")
+	sections = append(sections, "   Ctrl+T      - Toggle multi-line for prompt")
+	sections = append(sections, "   Ctrl+S      - Save persona")
+	sections = append(sections, "   Esc         - Cancel")
+	sections = append(sections, "")
+
+	// Delete View shortcuts
+	sections = append(sections, configMenuSelectedStyle.Render("Delete Confirmation:"))
+	sections = append(sections, "   y           - Confirm deletion")
+	sections = append(sections, "   n/Esc       - Cancel")
+	sections = append(sections, "")
+
+	// Global shortcuts
+	sections = append(sections, configMenuSelectedStyle.Render("Global:"))
+	sections = append(sections, "   ?           - Show this help")
+	sections = append(sections, "   Ctrl+C      - Quit")
+
+	content := lipgloss.JoinVertical(lipgloss.Left, sections...)
+	return configPanelStyle.Width(width).Render(content)
+}
+
 // renderStatusBar renders the bottom status bar
 func (m PersonaManagerModel) renderStatusBar(width int) string {
 	var shortcuts []struct {
@@ -912,6 +1160,7 @@ func (m PersonaManagerModel) renderStatusBar(width int) string {
 			{"e", "Edit"},
 			{"d", "Delete"},
 			{"s", "Set Default"},
+			{"x", "Export"},
 			{"Esc", "Back"},
 		}
 	case personaViewList:
@@ -920,12 +1169,22 @@ func (m PersonaManagerModel) renderStatusBar(width int) string {
 			desc string
 		}{
 			{"↑↓", "Navigate"},
+			{"/", "Search"},
 			{"Enter", "Details"},
 			{"n", "New"},
 			{"e", "Edit"},
 			{"d", "Delete"},
 			{"s", "Set Default"},
+			{"x", "Export"},
+			{"?", "Help"},
 			{"q", "Quit"},
+		}
+	case personaViewHelp:
+		shortcuts = []struct {
+			key  string
+			desc string
+		}{
+			{"Esc", "Close"},
 		}
 	}
 
