@@ -6,7 +6,7 @@
 
 ## Phase 2: Harden `pkg/toolexec`
 - [x] Task: Implement unit tests for `pkg/toolexec/security.go` (PathValidator, BlacklistValidator). f3f9076
-- [ ] Task: Implement unit tests for `pkg/toolexec/registry.go` (Edge cases in Register/Unregister).
+- [x] Task: Implement unit tests for `pkg/toolexec/registry.go` (Edge cases in Register/Unregister). 36ad02b
 - [ ] Task: Implement unit tests for `pkg/toolexec/result.go` (Error wrapping and unwrapping).
 - [ ] Task: Verify and fix any race conditions in `pkg/toolexec/executor.go` concurrency tests.
 
