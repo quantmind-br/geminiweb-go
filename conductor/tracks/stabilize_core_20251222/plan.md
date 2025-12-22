@@ -1,7 +1,7 @@
 # Plan: Stabilize Core Components
 
 ## Phase 1: Setup and Audit
-- [ ] Task: Audit current test coverage and identify specific functions with 0% coverage in `internal/commands` and `pkg/toolexec`.
+- [x] Task: Audit current test coverage and identify specific functions with 0% coverage in `internal/commands` and `pkg/toolexec`. 094f90d
 - [ ] Task: Create a reusable mock for `GeminiClient` and `TUI` interfaces to be used in command tests.
 
 ## Phase 2: Harden `pkg/toolexec`
