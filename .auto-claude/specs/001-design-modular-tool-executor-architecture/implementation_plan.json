@@ -567,10 +567,16 @@
       ]
     }
   },
-  "qa_signoff": {"status": "approved", "timestamp": "2025-12-22T10:15:00Z", "qa_session": 1, "report_file": "qa_report.md", "verified_by": "qa_agent"},
+  "qa_signoff": {
+    "status": "approved",
+    "timestamp": "2025-12-22T10:15:00Z",
+    "qa_session": 1,
+    "report_file": "qa_report.md",
+    "verified_by": "qa_agent"
+  },
   "last_updated": "2025-12-22T08:36:23.284803+00:00",
-  "status": "completed",
+  "status": "done",
   "planStatus": "completed",
-  "updated_at": "2025-12-22T09:28:26.568Z",
+  "updated_at": "2025-12-22T09:37:01.255Z",
   "recoveryNote": "Task recovered from stuck state at 2025-12-22T09:28:26.568Z"
 }

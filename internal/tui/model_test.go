@@ -677,6 +677,50 @@ func TestRunChatWithSession(t *testing.T) {
 	_ = RunChatWithSession
 }
 
+func TestRunChatWithConversation(t *testing.T) {
+	// Just test that the function exists
+	defer func() {
+		if r := recover(); r != nil {
+			t.Errorf("RunChatWithConversation panicked: %v", r)
+		}
+	}()
+
+	_ = RunChatWithConversation
+}
+
+func TestRunChatWithConversationAndGem(t *testing.T) {
+	// Just test that the function exists
+	defer func() {
+		if r := recover(); r != nil {
+			t.Errorf("RunChatWithConversationAndGem panicked: %v", r)
+		}
+	}()
+
+	_ = RunChatWithConversationAndGem
+}
+
+func TestRunChatWithPersona(t *testing.T) {
+	// Just test that the function exists
+	defer func() {
+		if r := recover(); r != nil {
+			t.Errorf("RunChatWithPersona panicked: %v", r)
+		}
+	}()
+
+	_ = RunChatWithPersona
+}
+
+func TestRunChatWithInitialPrompt(t *testing.T) {
+	// Just test that the function exists
+	defer func() {
+		if r := recover(); r != nil {
+			t.Errorf("RunChatWithInitialPrompt panicked: %v", r)
+		}
+	}()
+
+	_ = RunChatWithInitialPrompt
+}
+
 func TestNewChatModelWithSession(t *testing.T) {
 	// Test that NewChatModelWithSession creates a model with the provided session
 	mockSession := &mockChatSession{
