@@ -8,7 +8,7 @@ import (
 
 // ChatSession maintains conversation context across messages
 type ChatSession struct {
-	client     *GeminiClient
+	client     GeminiClientInterface
 	mu         sync.RWMutex // Protects metadata, lastOutput, gemID, model
 	model      models.Model
 	metadata   []string // [cid, rid, rcid]
