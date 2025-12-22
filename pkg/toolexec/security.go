@@ -203,6 +203,21 @@ func (v *PathValidator) Validate(ctx context.Context, toolName string, args map[
 				)
 			}
 		}
+
+		// Handle "*/dirname/*" patterns (block directory anywhere in path)
+		if strings.HasPrefix(pattern, "*/") && strings.HasSuffix(pattern, "/*") {
+			dirName := pattern[2 : len(pattern)-2]
+			parts := strings.Split(cleanPath, string(filepath.Separator))
+			for _, part := range parts {
+				if matched, _ := filepath.Match(dirName, part); matched {
+					return NewSecurityViolationErrorWithPath(
+						toolName,
+						"access denied to sensitive directory component",
+						path,
+					)
+				}
+			}
+		}
 	}
 
 	return nil
