@@ -18,5 +18,5 @@
 ## Phase 4: Error Handling Standardization
 
 - [x] Task: Create a centralized error printing helper in `internal/tui/styles` using `lipgloss`. f0b9d7a
-- [ ] Task: Refactor `cmd/geminiweb/main.go` to use the new error helper for top-level command errors.
+- [x] Task: Refactor `cmd/geminiweb/main.go` to use the new error helper for top-level command errors. f4a97ec
 - [ ] Task: Conductor - User Manual Verification 'Error Handling Standardization' (Protocol in workflow.md)
