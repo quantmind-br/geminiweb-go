@@ -13,7 +13,7 @@
 
 - [x] Task: Refactor `internal/commands/root.go` to support dependency injection for client creation. 696bbd3
 - [x] Task: Implement table-driven tests for `internal/commands/gems.go` (List, Create, Delete). 1592a7c
-- [ ] Task: Implement tests for `internal/commands/chat.go` (Session initialization flags).
+- [x] Task: Implement tests for `internal/commands/chat.go` (Session initialization flags). 2afd5c1
 - [ ] Task: Implement tests for `internal/commands/autologin.go` (Browser detection logic).
 
 ## Phase 4: Error Handling Standardization
