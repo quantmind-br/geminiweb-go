@@ -8,9 +8,9 @@
 - [x] Task: Implement unit tests for `pkg/toolexec/security.go` (PathValidator, BlacklistValidator). f3f9076
 - [x] Task: Implement unit tests for `pkg/toolexec/registry.go` (Edge cases in Register/Unregister). 36ad02b
 - [x] Task: Implement unit tests for `pkg/toolexec/result.go` (Error wrapping and unwrapping). a5bbdc1
-- [ ] Task: Verify and fix any race conditions in `pkg/toolexec/executor.go` concurrency tests.
-
+- [x] Task: Verify and fix any race conditions in `pkg/toolexec/executor.go` concurrency tests. b595abb
 ## Phase 3: Refactor and Test `internal/commands`
+
 - [ ] Task: Refactor `internal/commands/root.go` to support dependency injection for client creation.
 - [ ] Task: Implement table-driven tests for `internal/commands/gems.go` (List, Create, Delete).
 - [ ] Task: Implement tests for `internal/commands/chat.go` (Session initialization flags).
