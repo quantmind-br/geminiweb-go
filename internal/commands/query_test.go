@@ -375,7 +375,7 @@ func TestRunQuery_EmptyPrompt(t *testing.T) {
 	defer func() { _ = os.Setenv("HOME", oldHome) }()
 
 	// Test with empty prompt (trimmed) - test both raw and decorated modes
-	err := runQuery("   ", false)
+	err := runQuery(nil, "   ", false)
 	if err == nil {
 		t.Error("Expected error for empty prompt")
 	}
@@ -385,7 +385,7 @@ func TestRunQuery_EmptyPrompt(t *testing.T) {
 	}
 
 	// Test with completely empty string
-	err = runQuery("", true)
+	err = runQuery(nil, "", true)
 	if err == nil {
 		t.Error("Expected error for empty prompt")
 	}
@@ -687,7 +687,7 @@ func TestRunQuery_EmptyPromptReal(t *testing.T) {
 	outputFlag = ""
 
 	// Test with empty prompt (raw mode)
-	err := runQuery("", true)
+	err := runQuery(nil, "", true)
 	if err == nil {
 		t.Error("Expected error for empty prompt, got nil")
 	}
@@ -697,7 +697,7 @@ func TestRunQuery_EmptyPromptReal(t *testing.T) {
 	}
 
 	// Test with whitespace-only prompt (decorated mode)
-	err = runQuery("   \n\t  ", false)
+	err = runQuery(nil, "   \n\t  ", false)
 	if err == nil {
 		t.Error("Expected error for whitespace-only prompt, got nil")
 	}
@@ -727,7 +727,7 @@ func TestRunQuery_AuthErrorReal(t *testing.T) {
 
 	// Test should fail due to missing cookies and browser extraction failure
 	// With the new silent auth, the error will mention "authentication failed"
-	err := runQuery("Test prompt", false)
+	err := runQuery(nil, "Test prompt", false)
 	if err == nil {
 		// If no error, browser cookies were found and used - skip the rest of the test
 		t.Skip("No error occurred - valid browser cookies were used")
@@ -769,13 +769,13 @@ func TestRunQuery_ClientCreationError(t *testing.T) {
 	outputFlag = ""
 
 	// Test should fail due to invalid cookies (test both modes)
-	err := runQuery("Test prompt", false)
+	err := runQuery(nil, "Test prompt", false)
 	if err == nil {
 		// If no error, browser cookies were found and used - skip the rest of the test
 		t.Skip("No error occurred - valid browser cookies were used")
 	}
 
-	err = runQuery("Test prompt", true)
+	err = runQuery(nil, "Test prompt", true)
 	if err == nil {
 		// If no error, browser cookies were found and used - skip the rest of the test
 		t.Skip("No error occurred in raw mode - valid browser cookies were used")
@@ -827,7 +827,7 @@ func TestRunQuery_WithImageUpload(t *testing.T) {
 	outputFlag = ""
 
 	// Test with image (will fail due to client mocking limitations)
-	err := runQuery("Describe this image", false)
+	err := runQuery(nil, "Describe this image", false)
 	if err != nil && !strings.Contains(err.Error(), "failed to upload image") {
 		t.Logf("Expected image upload error, got: %v", err)
 	}
@@ -865,7 +865,7 @@ func TestRunQuery_OutputToFileReal(t *testing.T) {
 	outputFlag = outputFile
 
 	// Test with output file (raw mode since outputFlag is set)
-	err := runQuery("Test prompt", true)
+	err := runQuery(nil, "Test prompt", true)
 	if err != nil && !strings.Contains(err.Error(), "failed to initialize") {
 		t.Logf("Expected initialization error, got: %v", err)
 	}
@@ -915,7 +915,7 @@ func TestRunQuery_CopyToClipboard(t *testing.T) {
 	outputFlag = ""
 
 	// Test with clipboard enabled (decorated mode, will fail due to client mocking limitations)
-	err := runQuery("Test prompt", false)
+	err := runQuery(nil, "Test prompt", false)
 	if err != nil && !strings.Contains(err.Error(), "failed to initialize") {
 		t.Logf("Expected initialization error, got: %v", err)
 	}
@@ -951,7 +951,7 @@ func TestRunQuery_NonExistentImageFile(t *testing.T) {
 
 	// Test should fail - either due to non-existent image file or initialization
 	// (the test cookies are not valid for real token extraction)
-	err := runQuery("Describe this image", false)
+	err := runQuery(nil, "Describe this image", false)
 	if err == nil {
 		t.Error("Expected error for non-existent image, got nil")
 	}
@@ -993,7 +993,7 @@ func TestRunQuery_InvalidOutputFile(t *testing.T) {
 	outputFlag = "/invalid/path/output.txt"
 
 	// Test should fail due to invalid output path (raw mode since outputFlag is set)
-	err := runQuery("Test prompt", true)
+	err := runQuery(nil, "Test prompt", true)
 	if err == nil {
 		t.Error("Expected error for invalid output path, got nil")
 	}
@@ -1031,7 +1031,7 @@ func TestRunQuery_WithModelFlag(t *testing.T) {
 	modelFlag = "gemini-2.5-pro"
 
 	// Test with custom model (will fail due to client mocking limitations)
-	err := runQuery("Test prompt", false)
+	err := runQuery(nil, "Test prompt", false)
 	if err != nil && !strings.Contains(err.Error(), "failed to initialize") {
 		t.Logf("Expected initialization error, got: %v", err)
 	}
@@ -1069,7 +1069,7 @@ func TestRunQuery_WithBrowserRefreshFlag(t *testing.T) {
 	browserRefreshFlag = "chrome"
 
 	// Test with browser refresh (will fail due to client mocking limitations)
-	err := runQuery("Test prompt", false)
+	err := runQuery(nil, "Test prompt", false)
 	if err != nil && !strings.Contains(err.Error(), "failed to initialize") {
 		t.Logf("Expected initialization error, got: %v", err)
 	}
@@ -1107,7 +1107,7 @@ func TestRunQuery_RawOutputMode(t *testing.T) {
 	outputFlag = ""
 
 	t.Run("empty_prompt_raw_mode", func(t *testing.T) {
-		err := runQuery("", true)
+		err := runQuery(nil, "", true)
 		if err == nil {
 			t.Error("Expected error for empty prompt in raw mode")
 		}
@@ -1117,7 +1117,7 @@ func TestRunQuery_RawOutputMode(t *testing.T) {
 	})
 
 	t.Run("whitespace_prompt_raw_mode", func(t *testing.T) {
-		err := runQuery("   \t\n", true)
+		err := runQuery(nil, "   \t\n", true)
 		if err == nil {
 			t.Error("Expected error for whitespace-only prompt in raw mode")
 		}
@@ -1147,8 +1147,8 @@ func TestRunQuery_DecoratedVsRawMode(t *testing.T) {
 	outputFlag = ""
 
 	t.Run("both_modes_reject_empty_prompt", func(t *testing.T) {
-		errRaw := runQuery("", true)
-		errDecorated := runQuery("", false)
+		errRaw := runQuery(nil, "", true)
+		errDecorated := runQuery(nil, "", false)
 
 		if errRaw == nil || errDecorated == nil {
 			t.Error("Both modes should reject empty prompts")
@@ -1193,7 +1193,7 @@ func TestRunQuery_ClientCreation(t *testing.T) {
 	outputFlag = ""
 
 	// Test client creation (will fail due to client mocking limitations)
-	err := runQuery("Test prompt", false)
+	err := runQuery(nil, "Test prompt", false)
 	if err != nil && !strings.Contains(err.Error(), "failed to initialize") {
 		t.Logf("Expected initialization error, got: %v", err)
 	}
@@ -1231,7 +1231,7 @@ func TestRunQuery_GemResolution(t *testing.T) {
 	gemFlag = "Code Helper"
 
 	// Test gem resolution (will fail due to client mocking limitations)
-	err := runQuery("Test prompt", false)
+	err := runQuery(nil, "Test prompt", false)
 	if err != nil && !strings.Contains(err.Error(), "failed to initialize") {
 		t.Logf("Expected initialization error, got: %v", err)
 	}
@@ -1282,7 +1282,7 @@ func TestRunQuery_ImageUpload(t *testing.T) {
 	outputFlag = ""
 
 	// Test image upload (will fail due to client mocking limitations)
-	err := runQuery("Describe this image", false)
+	err := runQuery(nil, "Describe this image", false)
 	if err != nil && !strings.Contains(err.Error(), "failed to upload image") &&
 		!strings.Contains(err.Error(), "failed to initialize") {
 		t.Logf("Expected image upload or initialization error, got: %v", err)
@@ -1321,7 +1321,7 @@ func TestRunQuery_LargePrompt(t *testing.T) {
 	largePrompt := strings.Repeat("This is a large prompt. ", 1000)
 
 	// Test large prompt handling (will fail due to client mocking limitations)
-	err := runQuery(largePrompt, false)
+	err := runQuery(nil, largePrompt, false)
 	if err != nil && !strings.Contains(err.Error(), "failed to upload prompt") &&
 		!strings.Contains(err.Error(), "failed to initialize") {
 		t.Logf("Expected prompt upload or initialization error, got: %v", err)
@@ -1357,7 +1357,7 @@ func TestRunQuery_ContentGeneration(t *testing.T) {
 	outputFlag = ""
 
 	// Test content generation (will fail due to client mocking limitations)
-	err := runQuery("Test prompt", false)
+	err := runQuery(nil, "Test prompt", false)
 	if err != nil && !strings.Contains(err.Error(), "generation failed") &&
 		!strings.Contains(err.Error(), "failed to initialize") {
 		t.Logf("Expected generation or initialization error, got: %v", err)
