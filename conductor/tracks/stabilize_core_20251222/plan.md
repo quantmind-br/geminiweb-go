@@ -5,7 +5,7 @@
 - [x] Task: Create a reusable mock for `GeminiClient` and `TUI` interfaces to be used in command tests. 3a011df
 
 ## Phase 2: Harden `pkg/toolexec`
-- [ ] Task: Implement unit tests for `pkg/toolexec/security.go` (PathValidator, BlacklistValidator).
+- [x] Task: Implement unit tests for `pkg/toolexec/security.go` (PathValidator, BlacklistValidator). f3f9076
 - [ ] Task: Implement unit tests for `pkg/toolexec/registry.go` (Edge cases in Register/Unregister).
 - [ ] Task: Implement unit tests for `pkg/toolexec/result.go` (Error wrapping and unwrapping).
 - [ ] Task: Verify and fix any race conditions in `pkg/toolexec/executor.go` concurrency tests.
