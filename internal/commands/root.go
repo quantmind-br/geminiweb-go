@@ -10,6 +10,7 @@ import (
 
 	"github.com/diogo/geminiweb/internal/browser"
 	"github.com/diogo/geminiweb/internal/config"
+	"github.com/diogo/geminiweb/internal/tui"
 )
 
 var (
@@ -121,12 +122,17 @@ Examples:
 	cmd.AddCommand(NewPersonaCmd(deps))
 	cmd.AddCommand(NewGemsCmd(deps))
 
+	// Silence Cobra's default error printing so we can use our own
+	cmd.SilenceErrors = true
+	cmd.SilenceUsage = true
+
 	return cmd
 }
 
 // Execute runs the root command
 func Execute() {
 	if err := NewRootCmd(nil).Execute(); err != nil {
+		tui.PrintError(err)
 		os.Exit(1)
 	}
 }
