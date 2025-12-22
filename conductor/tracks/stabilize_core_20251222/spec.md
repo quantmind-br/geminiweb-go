@@ -34,6 +34,14 @@ The primary goal of this track is to improve the stability and maintainability o
 *   Create a shared `styles` helper for error messages.
 *   Ensure all `cobra` command `RunE` returns are intercepted and formatted before exit.
 
+### 3.4 Audit Findings (Added 2025-12-22)
+*   **Critical Zero Coverage**:
+    *   `internal/commands/chat.go`: `runChat`
+    *   `internal/commands/gems.go`: `runGemsInteractive`, `runGemsList`
+    *   `pkg/toolexec/registry.go`: Default registry wrappers (`Register`, `Get`, etc.)
+*   **Configuration Zero Coverage**:
+    *   `pkg/toolexec` tool configuration options (`With...`) are largely untested.
+
 ## 4. Success Criteria
 *   `go test -cover ./...` shows >80% coverage for target packages.
 *   All existing tests pass.
