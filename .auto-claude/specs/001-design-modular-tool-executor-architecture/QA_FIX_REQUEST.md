@@ -1,75 +1,97 @@
 # QA Fix Request
 
 **Status**: REJECTED
-**Date**: 2025-12-22
-**QA Session**: 1
+**Date**: 2025-12-22T08:55:00Z
+**QA Session**: 2
 
 ## Critical Issues to Fix
 
-### 1. Create security.go file
-**Problem**: File does not exist
-**Location**: pkg/toolexec/security.go
-**Required Fix**: Create file with SecurityPolicy interface, BlacklistValidator, PathValidator, CompositeSecurityPolicy
-**Verification**: File exists and implements spec patterns section 6
+### 1. Create security.go
 
-### 2. Create confirmation.go file
-**Problem**: File does not exist
-**Location**: pkg/toolexec/confirmation.go
-**Required Fix**: Create file with ConfirmationHandler interface
-**Verification**: File exists and implements spec patterns section 1
+**Problem**: The spec requires `pkg/toolexec/security.go` with SecurityPolicy interface and validators.
 
-### 3. Create protocol.go file
-**Problem**: File does not exist
-**Location**: pkg/toolexec/protocol.go
-**Required Fix**: Create file with ToolCall struct and ParseToolCalls() function
-**Verification**: File exists and implements spec patterns section 7
+**Location**: `pkg/toolexec/security.go` (new file)
 
-### 4. Create example_tool.go file
-**Problem**: File does not exist
-**Location**: pkg/toolexec/example_tool.go
-**Required Fix**: Create example tool demonstrating RequiresConfirmation pattern
-**Verification**: File exists with working example
+**Required Fix**: Create the file implementing:
+- SecurityPolicy interface with Validate(ctx, toolName, args) error
+- BlacklistValidator - blocks rm -rf /, dd, mkfs commands
+- PathValidator - blocks .env, .ssh/, *.pem files
+- CompositeSecurityPolicy - chains multiple validators
 
-### 5. Add RequiresConfirmation to Tool interface
-**Problem**: Method missing from Tool interface
-**Location**: pkg/toolexec/tool.go
-**Required Fix**: Add RequiresConfirmation(input *Input) bool method
-**Verification**: Method exists in interface
+**Verification**: go build succeeds, tests in security_test.go pass
 
-### 6. Add missing error types
-**Problem**: ErrUserDenied and ErrSecurityViolation not defined
-**Location**: pkg/toolexec/result.go
-**Required Fix**: Add sentinel error variables
-**Verification**: errors.Is() works with these errors
+---
 
-### 7. Add output truncation feature
-**Problem**: No Truncated field or truncation logic
-**Location**: pkg/toolexec/result.go
-**Required Fix**: Add Truncated field to Result, implement 100KB default limit
-**Verification**: Large output gets truncated with flag set
+### 2. Create confirmation.go
 
-### 8. Add security/confirmation executor options
-**Problem**: WithSecurityPolicy and WithConfirmationHandler options missing
-**Location**: pkg/toolexec/options.go
-**Required Fix**: Add both functional options
-**Verification**: Options can be passed to NewExecutor
+**Problem**: The spec requires `pkg/toolexec/confirmation.go` with ConfirmationHandler interface.
 
-### 9. Implement security -> confirmation -> execution flow
-**Problem**: Executor does not check security or request confirmation
-**Location**: pkg/toolexec/executor.go
-**Required Fix**: Add security validation and confirmation request steps
-**Verification**: Flow works as described in spec patterns section 3
+**Location**: `pkg/toolexec/confirmation.go` (new file)
 
-### 10. Create missing test files
-**Problem**: Required test files missing
-**Location**: pkg/toolexec/
-**Required Fix**: Create result_test.go, security_test.go, confirmation_test.go, protocol_test.go, options_test.go
-**Verification**: All tests in QA Acceptance Criteria table exist and pass
+**Required Fix**: Create ConfirmationHandler interface with RequestConfirmation(ctx, tool, args) (bool, error)
+
+**Verification**: go build succeeds, tests in confirmation_test.go pass
+
+---
+
+### 3. Create protocol.go
+
+**Problem**: The spec requires `pkg/toolexec/protocol.go` with tool call parsing.
+
+**Location**: `pkg/toolexec/protocol.go` (new file)
+
+**Required Fix**:
+- ToolCall struct with Name, Args, Reason fields
+- ParseToolCalls(text) function using regex to extract JSON from ```tool blocks
+
+**Verification**: go build succeeds, tests in protocol_test.go pass
+
+---
+
+### 4. Add RequiresConfirmation() to Tool interface
+
+**Problem**: Tool interface is missing RequiresConfirmation method.
+
+**Location**: `pkg/toolexec/tool.go`
+
+**Required Fix**: Add `RequiresConfirmation(args map[string]any) bool` to Tool interface
+
+**Verification**: go build succeeds, update all test mock tools to implement method
+
+---
+
+### 5. Add missing error types
+
+**Problem**: Missing ErrUserDenied and ErrSecurityViolation sentinel errors.
+
+**Location**: `pkg/toolexec/result.go`
+
+**Required Fix**: Add sentinel errors and corresponding typed error structs with Is(), Unwrap(), Error() methods
+
+**Verification**: errors.Is() works with new error types
+
+---
+
+### 6. Integrate security and confirmation into Executor
+
+**Problem**: Executor missing security → confirmation → execution flow.
+
+**Location**: `pkg/toolexec/executor.go`, `pkg/toolexec/options.go`
+
+**Required Fix**:
+1. Add securityPolicy and confirmHandler to executorConfig
+2. Add WithSecurityPolicy() and WithConfirmationHandler() options
+3. Update Execute() to check security policy, then request confirmation before execution
+
+**Verification**: Tests verify the full security flow
+
+---
 
 ## After Fixes
 
-Once fixes are complete:
-1. Commit with message: "fix: add missing security, confirmation, protocol components (qa-requested)"
-2. QA will automatically re-run
-3. Loop continues until approved
-
+1. Run: go build ./pkg/toolexec/...
+2. Run: go test ./pkg/toolexec/... -v
+3. Run: go test ./pkg/toolexec/... -cover (verify >80%)
+4. Run: go test ./pkg/toolexec/... -race
+5. Commit: "fix: add security, confirmation, and protocol components (qa-requested)"
+6. QA will re-run and validate

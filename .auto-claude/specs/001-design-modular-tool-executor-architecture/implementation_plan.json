@@ -567,10 +567,74 @@
       ]
     }
   },
-  "qa_signoff": null,
+  "qa_signoff": {
+    "status": "rejected",
+    "timestamp": "2025-12-22T08:55:00Z",
+    "qa_session": 2,
+    "issues_found": [
+      {
+        "type": "critical",
+        "title": "Missing security.go",
+        "location": "pkg/toolexec/security.go",
+        "fix_required": "Create SecurityPolicy interface, BlacklistValidator, PathValidator, CompositeSecurityPolicy"
+      },
+      {
+        "type": "critical",
+        "title": "Missing confirmation.go",
+        "location": "pkg/toolexec/confirmation.go",
+        "fix_required": "Create ConfirmationHandler interface"
+      },
+      {
+        "type": "critical",
+        "title": "Missing protocol.go",
+        "location": "pkg/toolexec/protocol.go",
+        "fix_required": "Create ToolCall struct and ParseToolCalls() function"
+      },
+      {
+        "type": "critical",
+        "title": "Missing RequiresConfirmation in Tool interface",
+        "location": "pkg/toolexec/tool.go",
+        "fix_required": "Add RequiresConfirmation(args map[string]any) bool to Tool interface"
+      },
+      {
+        "type": "critical",
+        "title": "Missing error types",
+        "location": "pkg/toolexec/result.go",
+        "fix_required": "Add ErrUserDenied and ErrSecurityViolation sentinel errors"
+      },
+      {
+        "type": "critical",
+        "title": "Missing executor security integration",
+        "location": "pkg/toolexec/executor.go",
+        "fix_required": "Add WithSecurityPolicy/WithConfirmationHandler options and implement security flow"
+      }
+    ],
+    "fix_request_file": "QA_FIX_REQUEST.md"
+  },
   "last_updated": "2025-12-22T08:36:23.284803+00:00",
   "status": "in_progress",
   "planStatus": "in_progress",
   "updated_at": "2025-12-22T08:31:38.307Z",
-  "recoveryNote": "Task recovered from stuck state at 2025-12-22T08:31:38.307Z"
+  "recoveryNote": "Task recovered from stuck state at 2025-12-22T08:31:38.307Z",
+  "qa_iteration_history": [
+    {
+      "iteration": 1,
+      "status": "error",
+      "timestamp": "2025-12-22T08:43:20.817500+00:00",
+      "issues": [
+        {
+          "title": "QA error",
+          "description": "QA agent did not update implementation_plan.json"
+        }
+      ]
+    }
+  ],
+  "qa_stats": {
+    "total_iterations": 1,
+    "last_iteration": 1,
+    "last_status": "error",
+    "issues_by_type": {
+      "unknown": 1
+    }
+  }
 }
