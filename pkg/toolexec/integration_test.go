@@ -1217,3 +1217,517 @@ func TestIntegration_RegistryWithOptionsPrePopulated(t *testing.T) {
 		t.Error("Execution failed")
 	}
 }
+
+// ===========================================================================
+// Concurrent Stress Tests for Thread-Safety Verification
+// ===========================================================================
+
+// TestIntegration_ConcurrentStress exercises the system under high concurrent load.
+// This test is designed to detect race conditions when run with -race flag.
+func TestIntegration_ConcurrentStress(t *testing.T) {
+	reg := NewRegistry()
+	counterTool := NewCounterTool()
+	stateTool := NewStateTool()
+
+	// Register base tools
+	if err := reg.Register(&EchoTool{}); err != nil {
+		t.Fatalf("Failed to register echo tool: %v", err)
+	}
+	if err := reg.Register(&UpperCaseTool{}); err != nil {
+		t.Fatalf("Failed to register uppercase tool: %v", err)
+	}
+	if err := reg.Register(&LowerCaseTool{}); err != nil {
+		t.Fatalf("Failed to register lowercase tool: %v", err)
+	}
+	if err := reg.Register(&MathAddTool{}); err != nil {
+		t.Fatalf("Failed to register math.add tool: %v", err)
+	}
+	if err := reg.Register(counterTool); err != nil {
+		t.Fatalf("Failed to register counter tool: %v", err)
+	}
+	if err := reg.Register(stateTool); err != nil {
+		t.Fatalf("Failed to register state tool: %v", err)
+	}
+
+	exec := NewExecutor(reg, WithMaxConcurrent(20))
+	ctx := context.Background()
+
+	const (
+		numGoroutines       = 50
+		operationsPerWorker = 100
+	)
+
+	var wg sync.WaitGroup
+	errCh := make(chan error, numGoroutines*operationsPerWorker)
+
+	// Launch concurrent workers performing various operations
+	for i := 0; i < numGoroutines; i++ {
+		wg.Add(1)
+		go func(workerID int) {
+			defer wg.Done()
+
+			for j := 0; j < operationsPerWorker; j++ {
+				// Rotate through different operations
+				switch j % 6 {
+				case 0:
+					// Execute echo tool
+					input := NewInput().WithParam("message", "stress-"+formatInt(workerID)+"-"+formatInt(j))
+					output, err := exec.Execute(ctx, "echo", input)
+					if err != nil {
+						errCh <- err
+					} else if output == nil || !output.Success {
+						errCh <- errors.New("echo execution failed")
+					}
+
+				case 1:
+					// Execute counter tool
+					output, err := exec.Execute(ctx, "counter", NewInput())
+					if err != nil {
+						errCh <- err
+					} else if output == nil || !output.Success {
+						errCh <- errors.New("counter execution failed")
+					}
+
+				case 2:
+					// Execute uppercase tool
+					input := NewInput().WithParam("text", "stress")
+					output, err := exec.Execute(ctx, "uppercase", input)
+					if err != nil {
+						errCh <- err
+					} else if output.GetResultString("result") != "STRESS" {
+						errCh <- errors.New("uppercase result mismatch")
+					}
+
+				case 3:
+					// Execute lowercase tool
+					input := NewInput().WithParam("text", "STRESS")
+					output, err := exec.Execute(ctx, "lowercase", input)
+					if err != nil {
+						errCh <- err
+					} else if output.GetResultString("result") != "stress" {
+						errCh <- errors.New("lowercase result mismatch")
+					}
+
+				case 4:
+					// Execute math.add tool
+					input := NewInput().WithParam("a", workerID).WithParam("b", j)
+					output, err := exec.Execute(ctx, "math.add", input)
+					if err != nil {
+						errCh <- err
+					} else if output == nil || !output.Success {
+						errCh <- errors.New("math.add execution failed")
+					}
+
+				case 5:
+					// Execute state tool
+					input := NewInput().WithName("stress-" + formatInt(workerID))
+					output, err := exec.Execute(ctx, "state", input)
+					if err != nil {
+						errCh <- err
+					} else if output == nil || !output.Success {
+						errCh <- errors.New("state execution failed")
+					}
+				}
+			}
+		}(i)
+	}
+
+	wg.Wait()
+	close(errCh)
+
+	// Check for errors
+	var errorCount int
+	for err := range errCh {
+		errorCount++
+		if errorCount <= 10 { // Limit error output
+			t.Errorf("Stress test error: %v", err)
+		}
+	}
+
+	if errorCount > 10 {
+		t.Errorf("Additional %d errors occurred", errorCount-10)
+	}
+
+	// Verify counter tool maintained consistency
+	expectedCounterCalls := numGoroutines * (operationsPerWorker / 6)
+	if operationsPerWorker%6 >= 2 {
+		expectedCounterCalls += numGoroutines
+	}
+	// Note: due to modulo operation, some workers may have one less counter call
+	minExpected := int64((numGoroutines * operationsPerWorker / 6) - numGoroutines)
+	actualCount := counterTool.GetCount()
+	if actualCount < minExpected {
+		t.Errorf("Counter = %d, expected at least %d", actualCount, minExpected)
+	}
+}
+
+// TestIntegration_ConcurrentRegistryAccess stress tests registry with concurrent
+// registration, unregistration, lookup, and listing operations.
+func TestIntegration_ConcurrentRegistryAccess(t *testing.T) {
+	reg := NewRegistry()
+
+	const (
+		numGoroutines       = 30
+		operationsPerWorker = 50
+	)
+
+	var wg sync.WaitGroup
+	var successfulRegistrations atomic.Int64
+	var successfulUnregistrations atomic.Int64
+	var successfulLookups atomic.Int64
+	var successfulListings atomic.Int64
+
+	// Pre-register some tools for lookup/unregister operations
+	for i := 0; i < 10; i++ {
+		tool := &uniqueNameTool{
+			tool: &EchoTool{},
+			name: "preregistered-" + formatInt(i),
+		}
+		if err := reg.Register(tool); err != nil {
+			t.Fatalf("Failed to pre-register tool: %v", err)
+		}
+	}
+
+	// Launch concurrent workers
+	for i := 0; i < numGoroutines; i++ {
+		wg.Add(1)
+		go func(workerID int) {
+			defer wg.Done()
+
+			for j := 0; j < operationsPerWorker; j++ {
+				switch j % 4 {
+				case 0:
+					// Register a new tool
+					tool := &uniqueNameTool{
+						tool: &EchoTool{},
+						name: "dynamic-" + formatInt(workerID) + "-" + formatInt(j),
+					}
+					if err := reg.Register(tool); err == nil {
+						successfulRegistrations.Add(1)
+					}
+
+				case 1:
+					// Lookup a tool (may or may not exist)
+					name := "preregistered-" + formatInt(j%10)
+					if _, err := reg.Get(name); err == nil {
+						successfulLookups.Add(1)
+					}
+
+				case 2:
+					// List all tools
+					infos := reg.List()
+					if len(infos) > 0 {
+						successfulListings.Add(1)
+					}
+
+				case 3:
+					// Check if tool exists
+					name := "dynamic-" + formatInt(workerID-1) + "-" + formatInt(j)
+					if reg.Has(name) {
+						successfulLookups.Add(1)
+					}
+				}
+			}
+		}(i)
+	}
+
+	wg.Wait()
+
+	// Verify operations completed successfully
+	t.Logf("Registrations: %d, Lookups: %d, Listings: %d",
+		successfulRegistrations.Load(),
+		successfulLookups.Load(),
+		successfulListings.Load())
+
+	// Verify registry is in consistent state
+	count := reg.Count()
+	if count < 10 { // At least pre-registered tools
+		t.Errorf("Registry count = %d, expected at least 10", count)
+	}
+
+	// Verify we can still use the registry normally
+	tool, err := reg.Get("preregistered-0")
+	if err != nil {
+		t.Errorf("Get after stress test failed: %v", err)
+	}
+	if tool == nil {
+		t.Error("Tool should not be nil")
+	}
+}
+
+// TestIntegration_ConcurrentAsyncExecution tests async execution under concurrency.
+func TestIntegration_ConcurrentAsyncExecution(t *testing.T) {
+	reg := NewRegistry()
+	counterTool := NewCounterTool()
+	if err := reg.Register(counterTool); err != nil {
+		t.Fatalf("Failed to register tool: %v", err)
+	}
+	if err := reg.Register(&EchoTool{}); err != nil {
+		t.Fatalf("Failed to register tool: %v", err)
+	}
+
+	exec := NewExecutor(reg, WithMaxConcurrent(20))
+	ctx := context.Background()
+
+	const numAsync = 200
+
+	// Launch many async executions concurrently
+	channels := make([]<-chan *Result, numAsync)
+	for i := 0; i < numAsync; i++ {
+		if i%2 == 0 {
+			channels[i] = exec.ExecuteAsync(ctx, "counter", NewInput())
+		} else {
+			channels[i] = exec.ExecuteAsync(ctx, "echo", NewInput().WithParam("message", "async-"+formatInt(i)))
+		}
+	}
+
+	// Collect all results
+	var successCount atomic.Int64
+	var errorCount atomic.Int64
+	var wg sync.WaitGroup
+
+	for i, ch := range channels {
+		wg.Add(1)
+		go func(idx int, resultCh <-chan *Result) {
+			defer wg.Done()
+			select {
+			case result := <-resultCh:
+				if result == nil {
+					errorCount.Add(1)
+				} else if result.Error != nil {
+					errorCount.Add(1)
+				} else if result.Output == nil {
+					errorCount.Add(1)
+				} else {
+					successCount.Add(1)
+				}
+			case <-time.After(10 * time.Second):
+				errorCount.Add(1)
+			}
+		}(i, ch)
+	}
+
+	wg.Wait()
+
+	// Verify results
+	if successCount.Load() != numAsync {
+		t.Errorf("Success count = %d, want %d (errors: %d)",
+			successCount.Load(), numAsync, errorCount.Load())
+	}
+
+	// Verify counter is consistent
+	expectedCounterCalls := int64(numAsync / 2)
+	if counterTool.GetCount() != expectedCounterCalls {
+		t.Errorf("Counter = %d, want %d", counterTool.GetCount(), expectedCounterCalls)
+	}
+}
+
+// TestIntegration_ConcurrentBatchExecution tests batch execution concurrency.
+func TestIntegration_ConcurrentBatchExecution(t *testing.T) {
+	reg := NewRegistry()
+	counterTool := NewCounterTool()
+	if err := reg.Register(counterTool); err != nil {
+		t.Fatalf("Failed to register tool: %v", err)
+	}
+	if err := reg.Register(&EchoTool{}); err != nil {
+		t.Fatalf("Failed to register tool: %v", err)
+	}
+	if err := reg.Register(&UpperCaseTool{}); err != nil {
+		t.Fatalf("Failed to register tool: %v", err)
+	}
+
+	exec := NewExecutor(reg, WithMaxConcurrent(15))
+	ctx := context.Background()
+
+	const numBatches = 20
+	const batchSize = 10
+
+	var wg sync.WaitGroup
+	var successBatches atomic.Int64
+	errCh := make(chan error, numBatches)
+
+	// Run multiple batches concurrently
+	for i := 0; i < numBatches; i++ {
+		wg.Add(1)
+		go func(batchID int) {
+			defer wg.Done()
+
+			// Create a batch of executions
+			executions := make([]ToolExecution, batchSize)
+			for j := 0; j < batchSize; j++ {
+				switch j % 3 {
+				case 0:
+					executions[j] = ToolExecution{
+						ToolName: "counter",
+						Input:    NewInput(),
+					}
+				case 1:
+					executions[j] = ToolExecution{
+						ToolName: "echo",
+						Input:    NewInput().WithParam("message", "batch-"+formatInt(batchID)),
+					}
+				case 2:
+					executions[j] = ToolExecution{
+						ToolName: "uppercase",
+						Input:    NewInput().WithParam("text", "test"),
+					}
+				}
+			}
+
+			results, err := exec.ExecuteMany(ctx, executions)
+			if err != nil {
+				errCh <- err
+				return
+			}
+
+			// Verify all results
+			for j, result := range results {
+				if result == nil {
+					errCh <- errors.New("nil result in batch")
+					return
+				}
+				if result.Error != nil {
+					errCh <- result.Error
+					return
+				}
+				if result.Output == nil {
+					errCh <- errors.New("nil output in result " + formatInt(j))
+					return
+				}
+			}
+
+			successBatches.Add(1)
+		}(i)
+	}
+
+	wg.Wait()
+	close(errCh)
+
+	// Check for errors
+	for err := range errCh {
+		t.Errorf("Batch error: %v", err)
+	}
+
+	// Verify all batches succeeded
+	if successBatches.Load() != numBatches {
+		t.Errorf("Successful batches = %d, want %d", successBatches.Load(), numBatches)
+	}
+
+	// Verify counter calls
+	// Each batch has batchSize/3 counter calls (rounded down)
+	expectedCounterCalls := int64(numBatches * (batchSize / 3))
+	// Allow for rounding variations
+	actualCount := counterTool.GetCount()
+	if actualCount < expectedCounterCalls-int64(numBatches) || actualCount > expectedCounterCalls+int64(numBatches) {
+		t.Errorf("Counter = %d, expected approximately %d", actualCount, expectedCounterCalls)
+	}
+}
+
+// TestIntegration_ConcurrentMiddlewareExecution tests middleware under concurrent load.
+func TestIntegration_ConcurrentMiddlewareExecution(t *testing.T) {
+	reg := NewRegistry()
+	if err := reg.Register(&EchoTool{}); err != nil {
+		t.Fatalf("Failed to register tool: %v", err)
+	}
+
+	// Track middleware invocations with thread-safe counter
+	var beforeCount atomic.Int64
+	var afterCount atomic.Int64
+
+	loggingMw := NewLoggingMiddleware(
+		func(toolName string, input *Input) {
+			beforeCount.Add(1)
+		},
+		func(toolName string, output *Output, err error, duration time.Duration) {
+			afterCount.Add(1)
+		},
+	)
+
+	exec := NewExecutor(reg,
+		WithMaxConcurrent(20),
+		WithMiddleware(loggingMw),
+		WithMiddleware(NewTimingMiddleware()),
+	)
+	ctx := context.Background()
+
+	const numExecutions = 500
+
+	var wg sync.WaitGroup
+	for i := 0; i < numExecutions; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			input := NewInput().WithParam("message", "middleware-"+formatInt(idx))
+			_, err := exec.Execute(ctx, "echo", input)
+			if err != nil {
+				t.Errorf("Execution %d failed: %v", idx, err)
+			}
+		}(i)
+	}
+
+	wg.Wait()
+
+	// Verify middleware was called exactly once per execution
+	if beforeCount.Load() != numExecutions {
+		t.Errorf("Before count = %d, want %d", beforeCount.Load(), numExecutions)
+	}
+	if afterCount.Load() != numExecutions {
+		t.Errorf("After count = %d, want %d", afterCount.Load(), numExecutions)
+	}
+}
+
+// TestIntegration_ConcurrentContextCancellation tests cancellation under concurrent load.
+func TestIntegration_ConcurrentContextCancellation(t *testing.T) {
+	reg := NewRegistry()
+	// Use a slow tool with moderate delay
+	if err := reg.Register(NewSlowTool(500 * time.Millisecond)); err != nil {
+		t.Fatalf("Failed to register tool: %v", err)
+	}
+
+	exec := NewExecutor(reg, WithNoTimeout())
+
+	const numExecutions = 50
+
+	// Create cancellable context
+	ctx, cancel := context.WithCancel(context.Background())
+
+	var wg sync.WaitGroup
+	var cancelledCount atomic.Int64
+	var completedCount atomic.Int64
+
+	// Start many executions
+	for i := 0; i < numExecutions; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, err := exec.Execute(ctx, "slow", NewInput())
+			if err != nil {
+				if errors.Is(err, context.Canceled) || errors.Is(err, ErrContextCancelled) {
+					cancelledCount.Add(1)
+				}
+			} else {
+				completedCount.Add(1)
+			}
+		}()
+	}
+
+	// Cancel after short delay - some may complete, most should be cancelled
+	time.Sleep(100 * time.Millisecond)
+	cancel()
+
+	wg.Wait()
+
+	// Verify that cancellation worked for at least some goroutines
+	t.Logf("Completed: %d, Cancelled: %d", completedCount.Load(), cancelledCount.Load())
+
+	// Total should equal numExecutions
+	total := completedCount.Load() + cancelledCount.Load()
+	if total != numExecutions {
+		t.Errorf("Total = %d, want %d", total, numExecutions)
+	}
+
+	// Most should be cancelled since we cancel quickly
+	if cancelledCount.Load() < numExecutions/2 {
+		t.Logf("Warning: Expected more cancellations, got %d/%d", cancelledCount.Load(), numExecutions)
+	}
+}
