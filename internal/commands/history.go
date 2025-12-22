@@ -13,10 +13,10 @@ import (
 )
 
 var (
-	historyForceFlag   bool
-	historyContentFlag bool
-	historyOutputFlag  string
-	historyFormatFlag  string
+	historyForceFlag     bool
+	historyContentFlag   bool
+	historyOutputFlag    string
+	historyFormatFlag    string
 	historyFavoritesFlag bool
 )
 
@@ -252,8 +252,11 @@ func runHistoryShow(cmd *cobra.Command, args []string) error {
 
 	for i, msg := range conv.Messages {
 		role := "You"
-		if msg.Role == "assistant" {
+		switch msg.Role {
+		case "assistant":
 			role = "Gemini"
+		case "tool":
+			role = "Tool"
 		}
 		fmt.Printf("[%d] %s (%s):\n", i+1, role, msg.Timestamp.Format("15:04"))
 

@@ -1,60 +1,73 @@
 # Code Structure Analysis
 
 ## Architectural Overview
-`geminiweb-go` is designed as a modular CLI application that interacts with the Google Gemini web API by emulating browser behavior. The architecture follows a **Clean/Hexagonal** approach, prioritizing separation of concerns and testability through interfaces.
+The `geminiweb-go` project is a CLI/TUI application designed to interface with the Google Gemini Web API. It follows a layered architectural pattern, primarily organized as a **modular monolith** with a clear separation between user interfaces, service logic, and domain models.
 
-*   **Entry Points**: `cmd/` contains the binary main functions, delegating logic to the `internal/` packages.
-*   **Domain Logic**: The core logic resides in `internal/api` (communication) and `internal/models` (data structures).
-*   **Infrastructure**: `internal/browser` and `internal/config` handle external dependencies like cookie extraction and local file persistence.
-*   **UI Layer**: A rich terminal user interface (TUI) implemented in `internal/tui` using the Bubble Tea (The Elm Architecture) pattern.
-*   **Command Layer**: Cobra-based CLI commands in `internal/commands` that orchestrate services to fulfill user requests.
+The system is structured into four main layers:
+1.  **Presentation Layer (`internal/tui`, `internal/commands`)**: Uses Cobra for command-line argument parsing and Bubble Tea (Model-View-Update pattern) for an interactive terminal interface.
+2.  **Service Layer (`internal/api`, `internal/history`, `pkg/toolexec`)**: Orchestrates business logic, including API communication, conversation persistence, and extensible tool execution.
+3.  **Domain/Infrastructure Layer (`internal/models`, `internal/browser`, `internal/render`)**: Defines core data structures and provides utility services like browser cookie extraction and terminal rendering.
+4.  **Application Entry (`cmd/geminiweb`, `cmd/debug`)**: Bootstraps the application, wires dependencies, and executes the selected interface.
 
 ## Core Components
-*   **GeminiClient (`internal/api`)**: The central engine that manages authentication, TLS fingerprinting (Chrome emulation), and API requests.
-*   **ChatSession (`internal/api`)**: A stateful wrapper around the client that tracks conversation IDs (`cid`, `rid`, `rcid`) to maintain multi-turn context.
-*   **History Store (`internal/history`)**: Manages the persistence of conversations to local JSON files, including metadata for ordering and favorites.
-*   **TUI Model (`internal/tui`)**: A complex state machine managing viewport rendering, user input, and asynchronous API communication within the terminal.
-*   **Cookie Rotator (`internal/api`)**: A background service that ensures session tokens (1PSIDTS) are refreshed to prevent session expiry.
+
+| Component | Responsibility | Location |
+| :--- | :--- | :--- |
+| **Gemini Client** | Manages HTTP/RPC communication with Gemini Web, handles auth tokens, and facilitates content generation and file uploads. | `internal/api/` |
+| **TUI Model** | Manages the interactive state, keyboard input, and UI rendering lifecycle for chat sessions. | `internal/tui/` |
+| **Tool Execution** | A modular framework for executing external tools with security, middleware, and confirmation support. | `pkg/toolexec/` |
+| **History Store** | Persists chat messages and conversation metadata locally using JSON files. | `internal/history/` |
+| **Browser Bridge** | Extracts and decrypts session cookies from desktop browsers (Chrome, Firefox, etc.) to maintain authentication. | `internal/browser/` |
+| **Render Engine** | Formats AI responses for terminal display using Markdown support and configurable themes. | `internal/render/` |
 
 ## Service Definitions
-*   **API Service**: Encapsulated by `GeminiClient`, responsible for `GenerateContent`, `UploadFile`, and `FetchGems`. It abstracts the complexity of the Gemini internal RPC protocol.
-*   **Browser Integration Service**: Handles the extraction and decryption of cookies from local browser profiles (Chrome, Firefox, etc.) to automate login.
-*   **Persistence Service**: Managed by `internal/config` and `internal/history`, handling user settings, personas, and chat logs.
-*   **Rendering Service**: `internal/render` uses Glamour and custom themes to convert Gemini's Markdown responses into terminal-optimized visual output.
+
+-   **`GeminiClient`**: The primary service for interacting with the Gemini Web API. It handles cookie rotation, "Gems" management (server-side personas), and content generation.
+-   **`ChatSession`**: A stateful service that manages the context of an ongoing conversation, including conversation IDs (`CID`) and response IDs (`RID`).
+-   **`History Store`**: Provides a high-level API for listing, retrieving, and searching saved conversations.
+-   **`Tool Executor`**: A service in the `toolexec` package that looks up registered tools and executes them synchronously or asynchronously, applying security policies and middleware.
 
 ## Interface Contracts
-The codebase makes extensive use of interfaces to decouple the TUI and Commands from the concrete API implementation:
 
-*   **`GeminiClientInterface` (`internal/api/client.go`)**: Defines the capabilities of the Gemini client, allowing for easy mocking during UI testing.
-*   **`ChatSessionInterface` (`internal/tui/model.go`)**: Defines how the UI interacts with a specific conversation thread.
-*   **`BrowserCookieExtractor` (`internal/api/client.go`)**: Abstracts the browser-specific logic for cookie retrieval.
-*   **`FullHistoryStore` (`internal/tui/model.go`)**: An interface used by the TUI to manage list, search, and export operations on chat history.
+The codebase utilizes interfaces to maintain loose coupling and facilitate testing:
+
+-   **`GeminiClientInterface` (`internal/api/client.go`)**: Defines the full set of operations available via the Gemini Web API (GenerateContent, UploadImage, FetchGems, etc.).
+-   **`Executor` (`pkg/toolexec/executor.go`)**: Defines the contract for tool execution (`Execute`, `ExecuteAsync`, `ExecuteMany`).
+-   **`Tool` (`pkg/toolexec/tool.go`)**: The contract for any external function or capability that can be registered with the tool framework.
+-   **`FullHistoryStore` (`internal/tui/model.go`)**: An extensive interface for managing the conversation lifecycle (List, Create, Delete, Favorite).
+-   **`BrowserCookieExtractor` (`internal/api/client.go`)**: Abstracts the logic for stealing cookies from local browser profiles.
 
 ## Design Patterns Identified
-*   **Functional Options**: Used in `internal/api` (`NewClient`, `WithModel`, `WithAutoRefresh`) for clean and extensible component configuration.
-*   **The Elm Architecture (MVU)**: The `internal/tui` package follows the Model-View-Update pattern via the `charmbracelet/bubbletea` framework.
-*   **Repository Pattern**: `internal/history` acts as a repository for `Conversation` models, hiding the filesystem complexity.
-*   **Dependency Injection**: Interfaces are passed into constructors (e.g., `NewChatModel(client GeminiClientInterface, ...)`), facilitating unit testing.
-*   **Strategy Pattern**: The browser extraction logic uses different strategies based on the selected browser type.
-*   **Proxy/Wrapper**: `ChatSession` wraps the `GeminiClient` to append context metadata automatically to requests.
+
+-   **Model-View-Update (MVU)**: The core pattern for the TUI (via `charmbracelet/bubbletea`), ensuring predictable state transitions.
+-   **Command Pattern**: Implemented via `spf13/cobra` for the CLI entry point and subcommands.
+-   **Middleware Pattern**: Used in `pkg/toolexec` to wrap tool execution with logging, security validation, and panic recovery.
+-   **Functional Options**: Used in `api.NewClient` and `toolexec.NewExecutor` to provide flexible, type-safe configuration.
+-   **Registry Pattern**: Employed by the `toolexec` package to allow dynamic tool registration and discovery.
+-   **Strategy Pattern**: Used for browser-specific cookie extraction logic.
 
 ## Component Relationships
-1.  **CLI Command** → **GeminiClient**: Commands initialize the client with user-provided or auto-detected credentials.
-2.  **TUI Model** → **ChatSession**: The interactive chat UI uses a session to track the specific thread.
-3.  **GeminiClient** → **Browser**: The client calls the browser package when authentication tokens are missing or expired.
-4.  **TUI Model** → **History Store**: Every assistant response is automatically persisted to the local history store via the TUI's update loop.
-5.  **Render Service** ← **TUI Model**: The TUI passes raw API responses to the render service before displaying them in the viewport.
+
+-   **Application Flow**: `cmd/geminiweb` initializes the `GeminiClient`, which may use the `browser` package to refresh credentials. It then initializes the `tui.Model` or a CLI command.
+-   **TUI & Services**: The `tui.Model` holds references to a `ChatSessionInterface` (for API calls) and a `FullHistoryStore` (for persistence).
+-   **Tool Integration**: The `toolexec` package acts as a standalone engine that the `api` or `tui` layers can invoke to process LLM-driven actions (extensions).
+-   **Model Dependency**: Almost all packages depend on `internal/models` for shared data structures like `ModelOutput`, `Message`, and `Gem`.
 
 ## Key Methods & Functions
-*   **`api.NewClient`**: Initializes the core client with TLS fingerprinting.
-*   **`api.GenerateContent`**: The primary method for sending prompts and receiving (and parsing) stream-like responses.
-*   **`api.RefreshFromBrowser`**: Automates the "login" process by pulling cookies from the user's browser.
-*   **`history.Store.ListConversations`**: Efficiently retrieves chat history using a `meta.json` index.
-*   **`tui.Model.Update`**: The main event loop for the terminal interface, handling keyboard input and async messages.
+
+-   **`api.NewClient(cookies, ...options)`**: Factory function for the main API client.
+-   **`api.GeminiClient.GenerateContent(prompt, opts)`**: Core method for sending prompts and receiving AI responses.
+-   **`toolexec.Executor.Execute(ctx, toolName, input)`**: Runs a tool through the middleware and security pipeline.
+-   **`tui.Model.Update(msg)`**: Handles all events (key presses, API responses) in the TUI state machine.
+-   **`history.Store.CreateConversation(model)`**: Generates a new conversation entry and metadata record.
+-   **`browser.ExtractGeminiCookies(ctx, browserType)`**: Primary entry point for local authentication extraction.
 
 ## Available Documentation
-*   **`/.ai/docs/structure_analysis.md`**: Provides a high-level overview of the package layout and architecture (Quality: High, recently updated).
-*   **`/.ai/docs/api_analysis.md`**: Deep dive into the Gemini RPC protocol and payload structures (Quality: Technical/Deep).
-*   **`/.cursor/rules/project-overview.mdc`**: Contains core architectural rules and naming conventions for the project (Quality: Essential for contributors).
-*   **`/README.md`**: User-facing documentation for installation and basic usage.
-*   **`/.serena/memories/`**: Contains various markdown files tracking project history and specific system designs like the history system and client lifecycle.
+
+| Document | Path | Quality Evaluation |
+| :--- | :--- | :--- |
+| **Structure Analysis** | `/.ai/docs/structure_analysis.md` | **High**: Excellent summary of package responsibilities and patterns. |
+| **API Analysis** | `/.ai/docs/api_analysis.md` | **Excellent**: Technical deep dive into the internal Gemini Web RPC protocol. |
+| **Tool Execution Doc** | `/pkg/toolexec/doc.go` | **Excellent**: Comprehensive package-level documentation for the tool framework. |
+| **Project README** | `/README.md` | **Good**: Clear user-facing instructions and feature highlights. |
+| **CLAUDE.md** | `/CLAUDE.md` | **Very Good**: Operational guide for developers (build/test/style). |

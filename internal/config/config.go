@@ -32,11 +32,14 @@ type Config struct {
 	AutoReInit bool `json:"auto_reinit"`
 	// Verbose enables detailed logging output during operations.
 	// When enabled, shows model info, request timing, and response metadata.
-	Verbose         bool           `json:"verbose"`
-	CopyToClipboard bool           `json:"copy_to_clipboard"`
-	TUITheme        string         `json:"tui_theme,omitempty"`    // TUI color theme
-	DownloadDir     string         `json:"download_dir,omitempty"` // Directory for saving images
-	Markdown        MarkdownConfig `json:"markdown,omitempty"`
+	Verbose bool `json:"verbose"`
+	// CopyToClipboard enables automatic copying of assistant replies.
+	CopyToClipboard bool `json:"copy_to_clipboard"`
+	// AutoApproveTools skips confirmation prompts for tool execution.
+	AutoApproveTools bool           `json:"auto_approve_tools"`
+	TUITheme         string         `json:"tui_theme,omitempty"`    // TUI color theme
+	DownloadDir      string         `json:"download_dir,omitempty"` // Directory for saving images
+	Markdown         MarkdownConfig `json:"markdown,omitempty"`
 }
 
 // DefaultMarkdownConfig returns the default markdown configuration
@@ -54,15 +57,16 @@ func DefaultMarkdownConfig() MarkdownConfig {
 func DefaultConfig() Config {
 	homeDir, _ := os.UserHomeDir()
 	return Config{
-		DefaultModel:    "fast",
-		AutoClose:       true,
-		CloseDelay:      300, // 5 minutes
-		AutoReInit:      true,
-		Verbose:         false,
-		CopyToClipboard: false,
-		TUITheme:        "tokyonight",
-		DownloadDir:     filepath.Join(homeDir, ".geminiweb", "images"),
-		Markdown:        DefaultMarkdownConfig(),
+		DefaultModel:     "fast",
+		AutoClose:        true,
+		CloseDelay:       300, // 5 minutes
+		AutoReInit:       true,
+		Verbose:          false,
+		CopyToClipboard:  false,
+		AutoApproveTools: false,
+		TUITheme:         "tokyonight",
+		DownloadDir:      filepath.Join(homeDir, ".geminiweb", "images"),
+		Markdown:         DefaultMarkdownConfig(),
 	}
 }
 

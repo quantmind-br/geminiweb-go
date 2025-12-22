@@ -8,7 +8,7 @@ import (
 )
 
 // createChatSession creates a configured chat session with optional gem
-func createChatSession(client *api.GeminiClient, gemID string, model models.Model) *api.ChatSession {
+func createChatSession(client api.GeminiClientInterface, gemID string, model models.Model) *api.ChatSession {
 	opts := []api.ChatOption{
 		api.WithChatModel(model),
 	}

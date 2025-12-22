@@ -212,10 +212,9 @@ func (t *CounterTool) Reset() {
 
 // StateTool tracks execution state for testing.
 type StateTool struct {
-	mu           sync.Mutex
-	executions   int
-	lastInput    *Input
-	lastToolName string
+	mu         sync.Mutex
+	executions int
+	lastInput  *Input
 }
 
 func NewStateTool() *StateTool {
@@ -1361,7 +1360,7 @@ func TestIntegration_ConcurrentStress(t *testing.T) {
 	// Verify counter tool maintained consistency
 	expectedCounterCalls := numGoroutines * (operationsPerWorker / 6)
 	if operationsPerWorker%6 >= 2 {
-		expectedCounterCalls += numGoroutines
+		expectedCounterCalls += numGoroutines // nolint:ineffassign // kept for documentation
 	}
 	// Note: due to modulo operation, some workers may have one less counter call
 	minExpected := int64((numGoroutines * operationsPerWorker / 6) - numGoroutines)

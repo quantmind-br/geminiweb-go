@@ -2,94 +2,84 @@
 
 ## Internal Dependencies Map
 
-The `geminiweb-go` project follows a modular structure where most core logic is encapsulated within the `internal/` directory. The dependency flow generally moves from the entry points (`cmd/`) through command handlers (`internal/commands`) and UI logic (`internal/tui`) down to core service clients (`internal/api`) and utility packages.
+The `geminiweb-go` project is structured with a clear separation between command-line orchestration, user interface, and the core service client. The dependency flow generally moves from high-level entry points down to specialized service packages.
 
-*   **`cmd/geminiweb`**: The main entry point. It has a single dependency on `internal/commands`.
-*   **`internal/commands`**: Orchestrates the CLI. It depends on almost all other internal packages: `api`, `config`, `errors`, `models`, `render`, `tui`, `browser`, and `history`.
-*   **`internal/tui`**: Handles the interactive chat interface. It depends on `api`, `config`, `errors`, `history`, `models`, and `render`. It uses interfaces to decouple from specific implementations.
-*   **`internal/api`**: The core client for the Gemini Web API. It depends on `browser` (for cookie extraction), `config` (for cookie storage/loading), `models` (for constants and API structures), and `errors`.
-*   **`internal/browser`**: Provides browser cookie extraction logic. It depends on `config`.
-*   **`internal/render`**: Handles terminal markdown rendering. It depends on `config`.
-*   **`internal/history`**: Manages local conversation storage. It is largely self-contained but shares structural similarities with `models`.
-*   **`internal/config`**: Base package for configuration and cookie management. It has no internal dependencies.
-*   **`internal/models`**: Base package for shared data structures, constants, and API endpoints. It has no internal dependencies.
-*   **`internal/errors`**: Centralized error types for the project. It has no internal dependencies.
+*   **`cmd/geminiweb`**: The main entry point. It depends exclusively on `internal/commands` to boot the application.
+*   **`internal/commands`**: Acts as the primary orchestrator for the CLI. It imports and coordinates almost all other internal packages, including `internal/api`, `internal/tui`, `internal/config`, `internal/render`, and `internal/history`.
+*   **`internal/tui`**: Implements the interactive Bubble Tea interface. It depends on `internal/api` for communication, `internal/history` for message persistence, and `internal/render` for terminal styling. It uses interfaces to remain testable.
+*   **`internal/api`**: The core service layer for the Gemini Web API. It depends on `internal/browser` for cookie extraction, `internal/config` for session management, and `internal/models` for data structures.
+*   **`pkg/toolexec`**: A recently added, highly modular package for tool (function) execution. It is designed as a standalone utility with its own registry, middleware, and security policies, intended to be integrated into the chat flow for tool-calling capabilities.
+*   **Leaf Packages**: `internal/config`, `internal/models`, and `internal/errors` are foundational packages with no internal dependencies, serving as the common language for the rest of the codebase.
 
 ## External Libraries Analysis
 
-The project leverages several high-quality external libraries to handle complex tasks like bot-detection evasion and TUI rendering:
+The project relies on a specific set of libraries to handle complex terminal UI tasks and the delicate requirements of reverse-engineering a web-based API.
 
-*   **`github.com/bogdanfinn/tls-client` & `fhttp`**: Critical for bypassing Google's bot detection by providing TLS fingerprinting and HTTP/2 support that mimics real web browsers.
-*   **`github.com/browserutils/kooky`**: Used in `internal/browser` to extract session cookies from various local browsers (Chrome, Firefox, Edge, etc.).
-*   **`github.com/charmbracelet/bubbletea`**: The foundation for the TUI, implementing the Elm architecture for terminal applications.
-*   **`github.com/charmbracelet/lipgloss` & `bubbles`**: Used for styling the TUI and providing common UI components like text areas and viewports.
-*   **`github.com/charmbracelet/glamour`**: Used in `internal/render` for high-quality markdown rendering in the terminal.
-*   **`github.com/spf13/cobra`**: The CLI framework used to define commands and flags.
-*   **`github.com/tidwall/gjson`**: Used in `internal/api` for fast and efficient extraction of values from the complex JSON structures returned by Gemini.
-*   **`github.com/atotto/clipboard`**: Used for copying Gemini's responses to the system clipboard.
+*   **`github.com/bogdanfinn/tls-client` & `fhttp`**: These are critical dependencies. They allow the application to mimic a real browser's TLS fingerprint and HTTP/2 behavior, which is essential to avoid being blocked by Google's bot detection.
+*   **`github.com/browserutils/kooky`**: Used in the `internal/browser` package to programmatically extract session cookies from local browser installations (Chrome, Firefox, etc.).
+*   **`github.com/charmbracelet/bubbletea`, `bubbles`, `lipgloss`**: The "Charm" stack provides the framework for the TUI, handling the Elm-architecture state updates, UI components (like textareas), and terminal styling.
+*   **`github.com/charmbracelet/glamour`**: Provides high-quality Markdown rendering in the terminal, used by `internal/render` to display Gemini's responses.
+*   **`github.com/spf13/cobra`**: The CLI framework used to manage commands, subcommands, and flags.
+*   **`github.com/tidwall/gjson`**: Used for fast, non-allocating extraction of data from the complex, deeply nested JSON structures returned by the Gemini Web API.
 
 ## Service Integrations
 
-*   **Google Gemini Web API**: The primary external integration. The codebase communicates with Gemini via its internal web endpoints (e.g., `chat.google.com/u/0/_/BardChatUi/data/assistant.lamda.BardFrontendService/GetAnswer`). This is a reverse-engineered integration using cookie-based authentication.
-*   **Local Web Browsers**: The application integrates with local browser installations (Chrome, Firefox, Edge, Chromium, Opera) to "steal" session cookies (`__Secure-1PSID` and `__Secure-1PSIDTS`), allowing the user to authenticate without manual token entry.
+*   **Google Gemini Web API**: The core integration. The project interacts with the internal "BardChatUi" endpoints. This is a stateful integration using cookie-based authentication (`__Secure-1PSID` and `__Secure-1PSIDTS`) and an "at" (access token) parameter.
+*   **Local Browser Environment**: The application integrates with the user's local file system to read browser databases (e.g., SQLite files for Chrome cookies) to facilitate "Auto-Login" or "Browser Refresh" functionality.
 
 ## Dependency Injection Patterns
 
-The project makes significant use of Dependency Injection (DI) to facilitate testing and modularity:
+The codebase makes extensive use of DI to maintain modularity and facilitate testing:
 
-*   **Functional Options Pattern**: The `GeminiClient` in `internal/api` uses functional options (`WithModel`, `WithBrowserRefresh`, `WithHTTPClient`, etc.) for configuration and injecting dependencies like the HTTP client or the browser extractor.
-*   **Interface-based DI**: 
-    *   `internal/tui` uses interfaces like `GeminiClientInterface`, `ChatSessionInterface`, and `HistoryStoreInterface`. This allows the UI to be tested with mocks and decouples it from the concrete implementations in `internal/api` and `internal/history`.
-    *   `internal/api` uses the `BrowserCookieExtractor` interface to decouple the client from the browser-specific logic.
-*   **Constructor Injection**: Most components (e.g., `NewChatModel`, `NewClient`) accept their dependencies through constructors or factories.
+*   **Functional Options**: The `api.GeminiClient` and `toolexec.Executor` both use the functional options pattern (e.g., `WithModel`, `WithBrowserRefresh`). This allows for flexible configuration and the injection of mock HTTP clients or refresh functions.
+*   **Interface-based Decoupling**: 
+    *   `internal/api` defines `GeminiClientInterface` and `BrowserCookieExtractor` interfaces.
+    *   `internal/tui` consumes these interfaces rather than concrete types, allowing the UI to be tested in isolation with mocks.
+*   **Registry Pattern**: `pkg/toolexec` uses a `Registry` to decouple the tool executor from the specific tools it might run. Tools are registered by name and retrieved at runtime.
 
 ## Module Coupling Assessment
 
-*   **Tightly Coupled CLI/TUI**: `internal/commands` and `internal/tui` act as "fat" modules that tie together many different parts of the system. This is expected for application-level packages but limits their reuse.
-*   **Loosely Coupled Core**: Packages like `internal/config`, `internal/models`, and `internal/errors` are highly decoupled and act as the "leaf" nodes of the dependency graph.
-*   **Cohesion**: The system shows high cohesion within packages. However, there is some structural duplication between `internal/history` and `internal/models` regarding `Message` and `Conversation` types, which suggests a potential area for consolidation.
-*   **API Decoupling**: The use of `internal/api` as a standalone client allows it to be used independently of the TUI or CLI, provided the necessary cookies are supplied.
+*   **Configuration Coupling**: There is a high level of coupling to `internal/config`. Many packages call `config.LoadConfig()` directly, which makes them harder to use in library mode or test without a valid config file on disk.
+*   **Model Duplication**: There is some overlap between `internal/models` and `internal/history` regarding how messages and conversations are represented. This suggests that while packages are logically separated, their data shapes are slightly coupled.
+*   **High Cohesion**: Individual packages like `internal/render` and `pkg/toolexec` show very high cohesion, focusing on a single responsibility with minimal leakage of concerns.
 
 ## Dependency Graph
 
 ```mermaid
 graph TD
-    cmd/geminiweb --> internal/commands
+    %% Entry Points
+    CMD[cmd/geminiweb] --> CMDS[internal/commands]
     
-    internal/commands --> internal/api
-    internal/commands --> internal/tui
-    internal/commands --> internal/config
-    internal/commands --> internal/models
-    internal/commands --> internal/render
-    internal/commands --> internal/browser
-    internal/commands --> internal/history
-    internal/commands --> internal/errors
+    %% Orchestration
+    CMDS --> TUI[internal/tui]
+    CMDS --> API[internal/api]
+    CMDS --> HIST[internal/history]
     
-    internal/tui --> internal/api
-    internal/tui --> internal/config
-    internal/tui --> internal/models
-    internal/tui --> internal/render
-    internal/tui --> internal/history
-    internal/tui --> internal/errors
+    %% UI Layer
+    TUI --> API
+    TUI --> HIST
+    TUI --> REND[internal/render]
     
-    internal/api --> internal/browser
-    internal/api --> internal/config
-    internal/api --> internal/models
-    internal/api --> internal/errors
+    %% Service Layer
+    API --> BROW[internal/browser]
+    API --> MODS[internal/models]
     
-    internal/browser --> internal/config
-    internal/render --> internal/config
+    %% Utility/Base
+    TUI --> CFG[internal/config]
+    API --> CFG
+    BROW --> CFG
+    REND --> CFG
     
-    %% Base Packages
-    internal/config
-    internal/models
-    internal/errors
-    internal/history
+    %% New Subsystem
+    API -.-> TOOL[pkg/toolexec]
+    
+    %% Leaf Nodes
+    MODS
+    ERR[internal/errors]
 ```
 
 ## Potential Dependency Issues
 
-1.  **Direct Configuration Dependency**: Almost every package depends on `internal/config`. While convenient, it makes the core logic (like `internal/api`) dependent on the application's specific configuration file format and location. Injecting raw configuration values or smaller interfaces would improve testability.
-2.  **Model Duplication**: `internal/history` defines its own `Message` and `Conversation` structs instead of reusing or extending those in `internal/models`. This can lead to inconsistencies when passing data between the history store and the TUI.
-3.  **Cyclic Dependency Risks**: The heavy interaction between `internal/commands`, `internal/tui`, and `internal/api` creates a complex web where circular dependencies could easily be introduced if new features are added without careful interface planning.
-4.  **External Dependency on `tls-client`**: The project is heavily dependent on the specific behavior of `bogdanfinn/tls-client`. Any breaking changes or lack of updates to that library could break the ability to connect to Gemini if Google updates its bot-detection mechanisms.
+1.  **Upstream Brittle Dependency**: The reliance on `bogdanfinn/tls-client` is a single point of failure. If Google changes its TLS fingerprinting requirements and this library is not updated, the core functionality of the project will break.
+2.  **Implicit Context Dependencies**: Some internal packages rely on global state or file-system-based configuration via `internal/config`, which can lead to "hidden" dependencies that only manifest at runtime.
+3.  **Tool Execution Integration**: `pkg/toolexec` is currently a highly capable but loosely integrated "island". Ensuring it doesn't create circular dependencies once fully wired into the `internal/api` or `internal/tui` flow will be a future architectural challenge.

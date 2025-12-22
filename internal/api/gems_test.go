@@ -277,13 +277,13 @@ func TestChatOptionsWithGem(t *testing.T) {
 	t.Run("Multiple options", func(t *testing.T) {
 		session := client.StartChatWithOptions(
 			WithGemID("combined-gem"),
-			WithChatModel(models.Model30Pro),
+			WithChatModel(models.ModelPro),
 		)
 		if session.gemID != "combined-gem" {
 			t.Errorf("Expected gemID 'combined-gem', got %s", session.gemID)
 		}
-		if session.model.Name != models.Model30Pro.Name {
-			t.Errorf("Expected model %s, got %s", models.Model30Pro.Name, session.model.Name)
+		if session.model.Name != models.ModelPro.Name {
+			t.Errorf("Expected model %s, got %s", models.ModelPro.Name, session.model.Name)
 		}
 	})
 }

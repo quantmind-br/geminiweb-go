@@ -1191,7 +1191,7 @@ func TestHandleErrorCode_PromptTooLong(t *testing.T) {
 
 func TestGetBody(t *testing.T) {
 	err := NewGeminiError("op", "msg")
-	err.WithBody("response body content")
+	_ = err.WithBody("response body content")
 
 	body := err.GetBody()
 	if body != "response body content" {
@@ -1208,13 +1208,13 @@ func TestGetResponseBody(t *testing.T) {
 		{"nil", nil, ""},
 		{"GeminiError with body", func() error {
 			e := NewGeminiError("op", "msg")
-			e.WithBody("gemini body")
+			_ = e.WithBody("gemini body")
 			return e
 		}(), "gemini body"},
 		{"APIError with body", NewAPIErrorWithBody(500, "ep", "msg", "api body"), "api body"},
 		{"wrapped GeminiError", func() error {
 			e := NewGeminiError("op", "msg")
-			e.WithBody("wrapped body")
+			_ = e.WithBody("wrapped body")
 			return fmt.Errorf("wrapped: %w", e)
 		}(), "wrapped body"},
 		{"other error", errors.New("other"), ""},

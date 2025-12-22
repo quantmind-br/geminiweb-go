@@ -1,0 +1,41 @@
+---
+description: Patterns and best practices for the Bubble Tea TUI and Lipgloss styling.
+globs:
+  - "internal/tui/**/*.go"
+  - "internal/render/**/*.go"
+alwaysApply: false
+---
+
+# TUI Development (Bubble Tea)
+
+Rules for working with the terminal user interface built with the Charm ecosystem.
+
+## MVU Pattern (Model-View-Update)
+The TUI follows the Elm architecture provided by `charmbracelet/bubbletea`.
+
+- **Model**: Keep the state in `internal/tui/model.go`. Avoid global state.
+- **Update**: Handle all I/O (API calls, file reading) via `tea.Cmd`. Never perform blocking I/O inside the `Update` function.
+- **View**: Use `internal/render` and `lipgloss` for all styling. Keep the `View` function pure.
+
+## Component Guidelines
+- **Viewport**: Use the `bubbles/viewport` for scrollable content (chat history).
+- **Textarea**: Use `bubbles/textarea` for user input, respecting the `CharLimit`.
+- **Async Operations**: When calling Gemini, use a command that returns a `msg` containing the `models.ModelOutput` or an `error`.
+
+## Styling with Lipgloss
+- Define reusable styles as constants or variables at the top of the file or in a dedicated style package.
+- Use `lipgloss.Place` and `lipgloss.JoinVertical/Horizontal` for layout.
+- Use the project's existing color themes to maintain consistency.
+
+## Example: TUI Command
+```go
+func (m *Model) sendQuery(prompt string) tea.Cmd {
+    return func() tea.Msg {
+        resp, err := m.client.GenerateContent(prompt, m.opts)
+        if err != nil {
+            return errMsg{err}
+        }
+        return responseMsg{resp}
+    }
+}
+```

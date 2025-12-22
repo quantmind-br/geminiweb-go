@@ -19,6 +19,16 @@ type mockGeminiClient struct {
 	closed              bool
 	generateContentFunc func(prompt string, opts *api.GenerateOptions) (*models.ModelOutput, error)
 	initFunc            func() error
+
+	// Gems-related mock functions
+	fetchGemsFunc   func(includeHidden bool) (*models.GemJar, error)
+	createGemFunc   func(name, prompt, description string) (*models.Gem, error)
+	updateGemFunc   func(id, name, prompt, description string) (*models.Gem, error)
+	deleteGemFunc   func(id string) error
+	getGemFunc      func(id string) (*models.Gem, error)
+
+	// BatchExecute mock
+	batchExecuteFunc func(requests []api.RPCData) ([]api.BatchResponse, error)
 }
 
 func (m *mockGeminiClient) GenerateContent(prompt string, opts *api.GenerateOptions) (*models.ModelOutput, error) {
@@ -35,9 +45,7 @@ func (m *mockGeminiClient) Init() error {
 	return nil
 }
 
-func (m *mockGeminiClient) Close() error {
-	return nil
-}
+func (m *mockGeminiClient) Close() {}
 
 func (m *mockGeminiClient) IsClosed() bool {
 	return m.closed
@@ -60,7 +68,100 @@ func (m *mockGeminiClient) GetCookies() *config.Cookies {
 	}
 }
 
-func (m *mockGeminiClient) StartChat() *api.ChatSession {
+func (m *mockGeminiClient) StartChat(model ...models.Model) *api.ChatSession {
+	return &api.ChatSession{}
+}
+
+// Gems-related mock methods
+func (m *mockGeminiClient) FetchGems(includeHidden bool) (*models.GemJar, error) {
+	if m.fetchGemsFunc != nil {
+		return m.fetchGemsFunc(includeHidden)
+	}
+	return nil, nil
+}
+
+func (m *mockGeminiClient) CreateGem(name, prompt, description string) (*models.Gem, error) {
+	if m.createGemFunc != nil {
+		return m.createGemFunc(name, prompt, description)
+	}
+	return nil, nil
+}
+
+func (m *mockGeminiClient) UpdateGem(id, name, prompt, description string) (*models.Gem, error) {
+	if m.updateGemFunc != nil {
+		return m.updateGemFunc(id, name, prompt, description)
+	}
+	return nil, nil
+}
+
+func (m *mockGeminiClient) DeleteGem(id string) error {
+	if m.deleteGemFunc != nil {
+		return m.deleteGemFunc(id)
+	}
+	return nil
+}
+
+func (m *mockGeminiClient) GetGem(id, name string) *models.Gem {
+	if m.getGemFunc != nil {
+		result, _ := m.getGemFunc(id) // Ignoring error for interface compatibility
+		return result
+	}
+	return nil
+}
+
+func (m *mockGeminiClient) BatchExecute(requests []api.RPCData) ([]api.BatchResponse, error) {
+	if m.batchExecuteFunc != nil {
+		return m.batchExecuteFunc(requests)
+	}
+	return nil, nil
+}
+
+// Implement other interface methods needed by GeminiClientInterface
+func (m *mockGeminiClient) StartChatWithOptions(opts ...api.ChatOption) *api.ChatSession {
+	return &api.ChatSession{}
+}
+
+func (m *mockGeminiClient) UploadImage(filePath string) (*api.UploadedImage, error) {
+	return nil, nil
+}
+
+func (m *mockGeminiClient) UploadFile(filePath string) (*api.UploadedFile, error) {
+	return nil, nil
+}
+
+func (m *mockGeminiClient) UploadText(content string, fileName string) (*api.UploadedFile, error) {
+	return nil, nil
+}
+
+func (m *mockGeminiClient) DownloadImage(img models.WebImage, opts api.ImageDownloadOptions) (string, error) {
+	return "", nil
+}
+
+func (m *mockGeminiClient) DownloadGeneratedImage(img models.GeneratedImage, opts api.ImageDownloadOptions) (string, error) {
+	return "", nil
+}
+
+func (m *mockGeminiClient) DownloadAllImages(output *models.ModelOutput, opts api.ImageDownloadOptions) ([]string, error) {
+	return nil, nil
+}
+
+func (m *mockGeminiClient) DownloadSelectedImages(output *models.ModelOutput, indices []int, opts api.ImageDownloadOptions) ([]string, error) {
+	return nil, nil
+}
+
+func (m *mockGeminiClient) RefreshFromBrowser() (bool, error) {
+	return false, nil
+}
+
+func (m *mockGeminiClient) IsBrowserRefreshEnabled() bool {
+	return false
+}
+
+func (m *mockGeminiClient) IsAutoCloseEnabled() bool {
+	return false
+}
+
+func (m *mockGeminiClient) Gems() *models.GemJar {
 	return nil
 }
 

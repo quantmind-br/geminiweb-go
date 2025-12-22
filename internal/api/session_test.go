@@ -90,7 +90,7 @@ func TestChatSession_Getters(t *testing.T) {
 
 	session := &ChatSession{
 		client: geminiClient,
-		model:  models.Model30Pro,
+		model:  models.ModelPro,
 	}
 
 	t.Run("GetMetadata returns empty initially", func(t *testing.T) {
@@ -102,8 +102,8 @@ func TestChatSession_Getters(t *testing.T) {
 
 	t.Run("GetModel returns correct model", func(t *testing.T) {
 		model := session.GetModel()
-		if model.Name != models.Model30Pro.Name {
-			t.Errorf("GetModel().Name = %v, want %v", model.Name, models.Model30Pro.Name)
+		if model.Name != models.ModelPro.Name {
+			t.Errorf("GetModel().Name = %v, want %v", model.Name, models.ModelPro.Name)
 		}
 	})
 
@@ -185,7 +185,7 @@ func TestChatSession_SetModel(t *testing.T) {
 		model:  models.Model25Flash,
 	}
 
-	newModel := models.Model30Pro
+	newModel := models.ModelPro
 	session.SetModel(newModel)
 
 	if session.GetModel().Name != newModel.Name {

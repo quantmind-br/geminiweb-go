@@ -1,0 +1,41 @@
+---
+description: Standards for the Bubble Tea TUI, Lipgloss styling, and terminal markdown rendering via Glamour.
+globs:
+  - "internal/tui/**/*.go"
+  - "internal/render/**/*.go"
+alwaysApply: false
+---
+
+# TUI & Terminal Rendering Conventions
+
+Rules for development with Bubble Tea (MVU) and Lipgloss styling.
+
+## Bubble Tea (Model-View-Update)
+- **State Management**: Keep all UI state in the `Model` struct. Avoid global variables.
+- **Update Cycle**: 
+  - The `Update` function must be pure and return `(tea.Model, tea.Cmd)`.
+  - Perform ALL API calls and file I/O within a `tea.Cmd`.
+- **Messages**: Use specific message types (e.g., `statusMsg`, `errorMsg`, `apiResponseMsg`) to trigger state transitions.
+
+## Terminal Rendering
+- **Styling**: Use `lipgloss` for all UI components. Define shared styles in `internal/render`.
+- **Markdown**: Use `internal/render` (which wraps `glamour`) to render AI responses. Do not print raw markdown to the terminal.
+- **Responsiveness**: Handle `tea.WindowSizeMsg` to update component widths and heights dynamically (especially for the `viewport` and `textarea`).
+
+## UI Components
+- **Viewport**: Use for the chat history to allow scrolling.
+- **Textarea**: Set appropriate `CharLimit` and handle focus/blur states.
+- **Spinners**: Use `bubbles/spinner` during active API requests to provide feedback.
+
+## Code Example: Async API Call
+```go
+func (m *Model) handleSendMessage() tea.Cmd {
+    return func() tea.Msg {
+        resp, err := m.client.GenerateContent(m.input, m.opts)
+        if err != nil {
+            return errorMsg(err)
+        }
+        return apiResponseMsg(resp)
+    }
+}
+```

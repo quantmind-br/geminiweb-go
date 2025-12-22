@@ -33,24 +33,6 @@ func TestResolveGemFlag_GemNotFound(t *testing.T) {
 	t.Log("Integration test for gem resolution should be done via chat command")
 }
 
-func TestCreateChatSession_WithGemID(t *testing.T) {
-	// This test verifies the function signature and basic behavior
-	// Actual testing requires a real client which is not feasible in unit tests
-	t.Log("createChatSession accepts gemID parameter")
-
-	// Test that function exists and doesn't panic with nil client
-	defer func() {
-		if r := recover(); r != nil {
-			t.Log("Expected panic with nil client")
-		}
-	}()
-}
-
-func TestCreateChatSession_WithoutGemID(t *testing.T) {
-	// This test verifies the function signature and basic behavior
-	t.Log("createChatSession works without gemID")
-}
-
 // TestResolveGemFlag_Integration tests the full flow of gem resolution
 // This is more of an integration test and requires mocking the full client
 func TestResolveGemFlag_Integration(t *testing.T) {
@@ -83,7 +65,7 @@ func TestResolveGemFlag_Integration(t *testing.T) {
 }
 
 // TestResolveGem tests the resolveGem function from gems.go
-func TestResolveGem_NotFound(t *testing.T) {
+func TestResolveGem_SessionNotFound(t *testing.T) {
 	// This test verifies error handling when gem is not found
 	// It requires a real client, so we just test the function signature
 	t.Log("resolveGem returns error when gem is not found")
@@ -162,4 +144,84 @@ func TestResolveGemFlag_Example(t *testing.T) {
 		t.Errorf("Expected empty gemID, got: %s", resolved.ID)
 	}
 	t.Log("No gem specified - returns empty ResolvedGem")
+}
+
+// TestCreateChatSession_WithGemID tests createChatSession with a gem ID
+func TestCreateChatSession_WithGemID(t *testing.T) {
+	// Create mock client
+	mockClient := &mockGeminiClient{
+		closed: false,
+	}
+
+	// Call createChatSession with gem ID
+	session := createChatSession(mockClient, "test-gem-id", models.Model25Flash)
+
+	// The session should not be nil (it's created by StartChatWithOptions)
+	if session == nil {
+		t.Error("Expected non-nil session")
+	}
+}
+
+// TestCreateChatSession_WithoutGemID tests createChatSession without a gem ID
+func TestCreateChatSession_WithoutGemID(t *testing.T) {
+	// Create mock client
+	mockClient := &mockGeminiClient{
+		closed: false,
+	}
+
+	// Call createChatSession without gem ID
+	session := createChatSession(mockClient, "", models.Model25Flash)
+
+	// The session should not be nil
+	if session == nil {
+		t.Error("Expected non-nil session")
+	}
+}
+
+// TestCreateChatSession_DifferentModels tests createChatSession with different models
+func TestCreateChatSession_DifferentModels(t *testing.T) {
+	mockClient := &mockGeminiClient{
+		closed: false,
+	}
+
+	models := []models.Model{
+		models.ModelFast,
+		models.ModelPro,
+		models.ModelThinking,
+	}
+
+	for _, model := range models {
+		t.Run(model.Name, func(t *testing.T) {
+			session := createChatSession(mockClient, "", model)
+			if session == nil {
+				t.Error("Expected non-nil session")
+			}
+		})
+	}
+}
+
+// TestCreateChatSession_WithEmptyGemID tests createChatSession with empty gem ID string
+func TestCreateChatSession_WithEmptyGemID(t *testing.T) {
+	mockClient := &mockGeminiClient{
+		closed: false,
+	}
+
+	// Empty string should be treated as no gem
+	session := createChatSession(mockClient, "", models.Model25Flash)
+	if session == nil {
+		t.Error("Expected non-nil session with empty gem ID")
+	}
+}
+
+// TestCreateChatSession_WithClosedClient tests createChatSession with a closed client
+func TestCreateChatSession_WithClosedClient(t *testing.T) {
+	mockClient := &mockGeminiClient{
+		closed: true,
+	}
+
+	// Should still create session even with closed client (caller's responsibility to check)
+	session := createChatSession(mockClient, "test-gem", models.Model25Flash)
+	if session == nil {
+		t.Error("Expected non-nil session even with closed client")
+	}
 }

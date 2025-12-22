@@ -39,6 +39,7 @@ type GeminiClientInterface interface {
 	GenerateContent(prompt string, opts *GenerateOptions) (*models.ModelOutput, error)
 	UploadImage(filePath string) (*UploadedImage, error)
 	UploadFile(filePath string) (*UploadedFile, error)
+	UploadText(content string, fileName string) (*UploadedFile, error)
 
 	// Image download
 	DownloadImage(img models.WebImage, opts ImageDownloadOptions) (string, error)

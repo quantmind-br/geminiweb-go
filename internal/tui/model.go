@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -21,6 +22,7 @@ import (
 	"github.com/diogo/geminiweb/internal/history"
 	"github.com/diogo/geminiweb/internal/models"
 	"github.com/diogo/geminiweb/internal/render"
+	"github.com/diogo/geminiweb/pkg/toolexec"
 )
 
 // Animation tick message
@@ -33,6 +35,10 @@ type (
 	}
 	errMsg struct {
 		err error
+	}
+	toolExecutionMsg struct {
+		call   toolexec.ToolCall
+		result *toolexec.Result
 	}
 	// gemsLoadedForChatMsg is sent when gems are loaded for the chat selector
 	gemsLoadedForChatMsg struct {
@@ -120,6 +126,15 @@ type Model struct {
 	err            error
 	animationFrame int // Frame counter for loading animation
 
+	// Tool execution state
+	toolRegistry     toolexec.Registry
+	toolExecutor     toolexec.Executor
+	pendingToolCalls []toolexec.ToolCall
+	toolResultBlocks []string
+	confirmingTool   bool
+	toolConfirmCall  *toolexec.ToolCall
+	autoApproveTools bool
+
 	// Gem selection state
 	selectingGem  bool
 	gemsList      []*models.Gem
@@ -165,7 +180,7 @@ type Model struct {
 
 // chatMessage represents a message in the chat
 type chatMessage struct {
-	role     string // "user" or "assistant"
+	role     string // "user", "assistant", or "tool"
 	content  string
 	thoughts string
 	images   []models.WebImage // Images from ModelOutput (for assistant messages)
@@ -204,13 +219,51 @@ func NewChatModel(client api.GeminiClientInterface, modelName string) Model {
 	s.Spinner = spinner.Points
 	s.Style = loadingStyle
 
+	toolRegistry := defaultToolRegistry()
+	toolExecutor := defaultToolExecutor(toolRegistry)
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		cfg = config.DefaultConfig()
+	}
+
 	return Model{
-		client:    client,
-		session:   client.StartChat(),
-		modelName: modelName,
-		textarea:  ta,
-		spinner:   s,
-		messages:  []chatMessage{},
+		client:           client,
+		session:          client.StartChat(),
+		modelName:        modelName,
+		textarea:         ta,
+		spinner:          s,
+		messages:         []chatMessage{},
+		toolRegistry:     toolRegistry,
+		toolExecutor:     toolExecutor,
+		autoApproveTools: cfg.AutoApproveTools,
+	}
+}
+
+func defaultToolRegistry() toolexec.Registry {
+	return toolexec.NewRegistryWithOptions(
+		toolexec.WithTools(
+			toolexec.NewBashTool(),
+			toolexec.NewFileReadTool(),
+			toolexec.NewFileWriteTool(),
+			toolexec.NewSearchTool(),
+		),
+	)
+}
+
+func defaultToolExecutor(registry toolexec.Registry) toolexec.Executor {
+	return toolexec.NewExecutor(
+		registry,
+		toolexec.WithDefaultSecurityPolicy(),
+		toolexec.WithDefaultMiddleware(),
+	)
+}
+
+func (m *Model) ensureTooling() {
+	if m.toolRegistry == nil {
+		m.toolRegistry = defaultToolRegistry()
+	}
+	if m.toolExecutor == nil {
+		m.toolExecutor = defaultToolExecutor(m.toolRegistry)
 	}
 }
 
@@ -240,6 +293,11 @@ func animationTick() tea.Cmd {
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 	var cmd tea.Cmd
+
+	// Handle tool confirmation mode
+	if m.confirmingTool {
+		return m.updateToolConfirmation(msg)
+	}
 
 	// Handle gem selection mode
 	if m.selectingGem {
@@ -520,26 +578,56 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.err = fmt.Errorf("no images were downloaded")
 		}
 
+	case toolExecutionMsg:
+		cmd = m.handleToolResult(msg.call, msg.result)
+		if cmd != nil {
+			cmds = append(cmds, cmd)
+			if m.loading {
+				cmds = append(cmds, animationTick())
+			}
+		}
+
 	case responseMsg:
 		m.loading = false
 		m.lastOutput = msg.output // Store for /save command
 		responseText := msg.output.Text()
 		thoughts := msg.output.Thoughts()
 		images := msg.output.Images()
-		m.messages = append(m.messages, chatMessage{
-			role:     "assistant",
-			content:  responseText,
-			thoughts: thoughts,
-			images:   images,
-		})
-		m.updateViewport()
-		m.viewport.GotoBottom()
+		toolCalls, cleanText := toolexec.ExtractToolCallsLenient(responseText)
+		displayText := responseText
+		if len(toolCalls) > 0 {
+			displayText = cleanText
+		}
 
-		// Auto-save assistant message to history
-		m.saveMessageToHistory("assistant", responseText, thoughts)
+		if strings.TrimSpace(displayText) != "" || thoughts != "" || len(images) > 0 {
+			m.messages = append(m.messages, chatMessage{
+				role:     "assistant",
+				content:  displayText,
+				thoughts: thoughts,
+				images:   images,
+			})
+			m.updateViewport()
+			m.viewport.GotoBottom()
+
+			// Auto-save assistant message to history
+			m.saveMessageToHistory("assistant", displayText, thoughts)
+		}
 
 		// Update conversation metadata for session resumption
 		m.saveMetadataToHistory()
+
+		if len(toolCalls) > 0 {
+			m.ensureTooling()
+			m.pendingToolCalls = toolCalls
+			m.toolResultBlocks = nil
+			cmd = m.startNextToolCall()
+			if cmd != nil {
+				cmds = append(cmds, cmd)
+				if m.loading {
+					cmds = append(cmds, animationTick())
+				}
+			}
+		}
 
 	case errMsg:
 		m.loading = false
@@ -605,6 +693,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) View() string {
 	if !m.ready {
 		return loadingStyle.Render("  Initializing...")
+	}
+
+	if m.confirmingTool {
+		return m.renderToolConfirmation()
 	}
 
 	// If selecting gem, show the gem selector overlay
@@ -704,6 +796,44 @@ func (m Model) View() string {
 	}
 
 	return lipgloss.JoinVertical(lipgloss.Left, sections...)
+}
+
+func (m Model) renderToolConfirmation() string {
+	width := m.width - 8
+	if width < 40 {
+		width = 40
+	}
+
+	var content strings.Builder
+	content.WriteString("Tool execution requested\n\n")
+
+	if m.toolConfirmCall == nil {
+		content.WriteString("No tool call pending.")
+	} else {
+		call := m.toolConfirmCall
+		content.WriteString("Tool: ")
+		content.WriteString(call.Name)
+
+		if call.Reason != "" {
+			content.WriteString("\nReason: ")
+			content.WriteString(call.Reason)
+		}
+
+		if len(call.Args) > 0 {
+			if data, err := json.MarshalIndent(call.Args, "", "  "); err == nil {
+				content.WriteString("\nArgs:\n")
+				content.Write(data)
+			}
+		}
+	}
+
+	content.WriteString("\n\nConfirm execution? (y/n)")
+
+	panel := messagesAreaStyle.Width(width).Render(content.String())
+	if m.width > 0 && m.height > 0 {
+		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, panel)
+	}
+	return panel
 }
 
 // renderWelcome renders the welcome screen when no messages exist
@@ -846,6 +976,140 @@ func (m Model) sendMessageWithAttachments(prompt string) tea.Cmd {
 		}
 		return responseMsg{output: output}
 	}
+}
+
+func (m *Model) startNextToolCall() tea.Cmd {
+	if len(m.pendingToolCalls) == 0 {
+		return nil
+	}
+
+	m.ensureTooling()
+
+	call := m.pendingToolCalls[0]
+	m.pendingToolCalls = m.pendingToolCalls[1:]
+
+	tool, err := m.toolRegistry.Get(call.Name)
+	if err != nil {
+		result := toolexec.NewErrorResult(call.Name, err).WithTiming(time.Now(), time.Now())
+		return func() tea.Msg {
+			return toolExecutionMsg{call: call, result: result}
+		}
+	}
+
+	if tool.RequiresConfirmation(call.Args) && !m.autoApproveTools {
+		m.confirmingTool = true
+		m.toolConfirmCall = &call
+		m.loading = false
+		return nil
+	}
+
+	m.loading = true
+	m.animationFrame = 0
+	return m.executeToolCall(call)
+}
+
+func (m Model) executeToolCall(call toolexec.ToolCall) tea.Cmd {
+	registry := m.toolRegistry
+	executor := m.toolExecutor
+
+	return func() tea.Msg {
+		if registry == nil || executor == nil {
+			err := toolexec.NewExecutionError(call.Name, "tool executor not configured")
+			result := toolexec.NewErrorResult(call.Name, err).WithTiming(time.Now(), time.Now())
+			return toolExecutionMsg{call: call, result: result}
+		}
+
+		input := call.ToInput()
+		start := time.Now()
+		output, err := executor.Execute(context.Background(), call.Name, input)
+		end := time.Now()
+
+		result := toolexec.NewResult(call.Name, output, err).WithTiming(start, end)
+		return toolExecutionMsg{call: call, result: result}
+	}
+}
+
+func (m *Model) handleToolResult(call toolexec.ToolCall, result *toolexec.Result) tea.Cmd {
+	if result == nil {
+		result = toolexec.NewErrorResult(call.Name, toolexec.NewExecutionError(call.Name, "missing tool result"))
+	}
+	if result.ToolName == "" {
+		result.ToolName = call.Name
+	}
+
+	toolMessage := formatToolMessage(call, result)
+	if strings.TrimSpace(toolMessage) != "" {
+		m.messages = append(m.messages, chatMessage{
+			role:    "tool",
+			content: toolMessage,
+		})
+		m.updateViewport()
+		m.viewport.GotoBottom()
+		m.saveMessageToHistory("tool", toolMessage, "")
+	}
+
+	resultBlock := toolexec.NewToolCallResult(result).FormatAsBlock()
+	m.toolResultBlocks = append(m.toolResultBlocks, resultBlock)
+
+	if len(m.pendingToolCalls) > 0 {
+		return m.startNextToolCall()
+	}
+
+	if len(m.toolResultBlocks) == 0 {
+		return nil
+	}
+
+	payload := strings.Join(m.toolResultBlocks, "\n")
+	m.toolResultBlocks = nil
+	m.loading = true
+	m.animationFrame = 0
+
+	return m.sendMessage(payload)
+}
+
+func formatToolMessage(call toolexec.ToolCall, result *toolexec.Result) string {
+	var sb strings.Builder
+
+	sb.WriteString("Tool: ")
+	sb.WriteString(call.Name)
+
+	if call.Reason != "" {
+		sb.WriteString("\nReason: ")
+		sb.WriteString(call.Reason)
+	}
+
+	if len(call.Args) > 0 {
+		if data, err := json.Marshal(call.Args); err == nil {
+			sb.WriteString("\nArgs: ")
+			sb.Write(data)
+		}
+	}
+
+	var outputText string
+	if result != nil && result.Output != nil {
+		if len(result.Output.Data) > 0 {
+			outputText = string(result.Output.Data)
+		} else if result.Output.Message != "" {
+			outputText = result.Output.Message
+		}
+		if result.Output.Truncated {
+			outputText = strings.TrimRight(outputText, "\n") + "\n[output truncated]"
+		}
+	}
+
+	if result != nil && result.Error != nil {
+		if outputText != "" {
+			outputText += "\n"
+		}
+		outputText += "Error: " + result.Error.Error()
+	}
+
+	if strings.TrimSpace(outputText) != "" {
+		sb.WriteString("\nOutput:\n")
+		sb.WriteString(strings.TrimRight(outputText, "\n"))
+	}
+
+	return strings.TrimSpace(sb.String())
 }
 
 // sendInitialPrompt creates a command to send the initial prompt from file
@@ -1229,9 +1493,12 @@ func exportFromMemory(messages []chatMessage, title, format, path string) tea.Cm
 				if i > 0 {
 					md.WriteString("\n---\n\n")
 				}
-				if msg.role == "user" {
+				switch msg.role {
+				case "user":
 					md.WriteString("**User:**\n\n")
-				} else {
+				case "tool":
+					md.WriteString("**Tool:**\n\n")
+				default:
 					md.WriteString("**Gemini:**\n\n")
 				}
 				md.WriteString(msg.content)
@@ -1293,12 +1560,20 @@ func (m *Model) updateViewport() {
 			content.WriteString("\n")
 		}
 
-		if msg.role == "user" {
+		switch msg.role {
+		case "user":
 			// User message
 			label := userLabelStyle.Render("⬤ You")
 			bubble := userBubbleStyle.Width(bubbleWidth).Render(msg.content)
 			content.WriteString(label + "\n" + bubble)
-		} else {
+
+		case "tool":
+			// Tool message
+			label := toolLabelStyle.Render("Tool")
+			bubble := toolBubbleStyle.Width(bubbleWidth).Render(msg.content)
+			content.WriteString(label + "\n" + bubble)
+
+		default:
 			// Assistant message
 			label := assistantLabelStyle.Render("✦ Gemini")
 
@@ -1454,13 +1729,23 @@ func NewChatModelWithSession(client api.GeminiClientInterface, session ChatSessi
 	s.Spinner = spinner.Points
 	s.Style = loadingStyle
 
+	toolRegistry := defaultToolRegistry()
+	toolExecutor := defaultToolExecutor(toolRegistry)
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		cfg = config.DefaultConfig()
+	}
+
 	return Model{
-		client:    client,
-		session:   session,
-		modelName: modelName,
-		textarea:  ta,
-		spinner:   s,
-		messages:  []chatMessage{},
+		client:           client,
+		session:          session,
+		modelName:        modelName,
+		textarea:         ta,
+		spinner:          s,
+		messages:         []chatMessage{},
+		toolRegistry:     toolRegistry,
+		toolExecutor:     toolExecutor,
+		autoApproveTools: cfg.AutoApproveTools,
 	}
 }
 
@@ -1514,6 +1799,13 @@ func NewChatModelWithConversation(client api.GeminiClientInterface, session Chat
 	s.Spinner = spinner.Points
 	s.Style = loadingStyle
 
+	toolRegistry := defaultToolRegistry()
+	toolExecutor := defaultToolExecutor(toolRegistry)
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		cfg = config.DefaultConfig()
+	}
+
 	// Load existing messages from conversation
 	var messages []chatMessage
 	if conv != nil {
@@ -1527,14 +1819,17 @@ func NewChatModelWithConversation(client api.GeminiClientInterface, session Chat
 	}
 
 	m := Model{
-		client:       client,
-		session:      session,
-		modelName:    modelName,
-		textarea:     ta,
-		spinner:      s,
-		messages:     messages,
-		conversation: conv,
-		historyStore: store,
+		client:           client,
+		session:          session,
+		modelName:        modelName,
+		textarea:         ta,
+		spinner:          s,
+		messages:         messages,
+		conversation:     conv,
+		historyStore:     store,
+		toolRegistry:     toolRegistry,
+		toolExecutor:     toolExecutor,
+		autoApproveTools: cfg.AutoApproveTools,
 	}
 
 	// Check if store implements FullHistoryStore for /history command
@@ -1579,6 +1874,52 @@ func (m Model) loadGemsForChat() tea.Cmd {
 
 		return gemsLoadedForChatMsg{gems: sortedGems}
 	}
+}
+
+// updateToolConfirmation handles input when confirming tool execution
+func (m Model) updateToolConfirmation(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "ctrl+c":
+			return m, tea.Quit
+
+		case "y", "Y":
+			if m.toolConfirmCall == nil {
+				m.confirmingTool = false
+				return m, nil
+			}
+			call := *m.toolConfirmCall
+			m.toolConfirmCall = nil
+			m.confirmingTool = false
+			m.loading = true
+			m.animationFrame = 0
+			return m, tea.Batch(
+				m.executeToolCall(call),
+				animationTick(),
+			)
+
+		case "n", "N", "esc":
+			if m.toolConfirmCall == nil {
+				m.confirmingTool = false
+				return m, nil
+			}
+			call := *m.toolConfirmCall
+			m.toolConfirmCall = nil
+			m.confirmingTool = false
+			result := toolexec.NewErrorResult(call.Name, toolexec.NewUserDeniedError(call.Name)).
+				WithTiming(time.Now(), time.Now())
+			return m, func() tea.Msg {
+				return toolExecutionMsg{call: call, result: result}
+			}
+		}
+	}
+
+	return m, nil
 }
 
 // updateGemSelection handles updates when in gem selection mode

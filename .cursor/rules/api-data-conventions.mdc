@@ -1,0 +1,36 @@
+---
+description: Conventions for API interaction, GJSON parsing, and data persistence.
+globs:
+  - "internal/api/**/*.go"
+  - "internal/history/**/*.go"
+  - "internal/models/**/*.go"
+alwaysApply: false
+---
+
+# API and Data Conventions
+
+Rules for handling the undocumented Gemini Web API and internal data transformations.
+
+## Gemini Web API Interaction
+The Gemini Web API uses complex, deeply nested JSON arrays (via the `f.req` parameter).
+
+- **Parsing**: Do NOT attempt to map the entire Google API response to a Go struct. Use `github.com/tidwall/gjson` for path-based extraction.
+- **Paths**: Centralize all GJSON path strings in `internal/api/paths.go`.
+- **Authentication**: Authentication relies on `__Secure-1PSID` and `__Secure-1PSIDTS` cookies and the `SNlM0e` token.
+- **Session State**: Use `internal/api/session.go` (`ChatSession`) to track conversation IDs (`cid`, `rid`, `rcid`).
+
+## Data Handling Patterns
+- **History Persistence**: Conversations are stored as JSON in `~/.config/geminiweb/history/`. 
+- **Metadata**: Always update `meta.json` in the history directory when creating or deleting conversations.
+- **File Uploads**: Use `internal/api/upload.go` for multimodal support. It uses the `content-push.googleapis.com` service.
+
+## Example: GJSON Extraction
+```go
+// Good: Extracting specific fields using paths
+res := gjson.Get(rawBody, "0.1.2.0")
+text := res.Get(api.PathResponseText).String()
+```
+
+## Error Handling
+- Use `errors.IsAuth(err)` or `errors.IsRateLimit(err)` to check for specific Gemini failure modes.
+- Capture the raw response body in the error context when parsing fails to aid debugging.

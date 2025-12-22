@@ -21,6 +21,10 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.Verbose != false {
 		t.Errorf("Expected Verbose to be false, got %v", cfg.Verbose)
 	}
+
+	if cfg.AutoApproveTools != false {
+		t.Errorf("Expected AutoApproveTools to be false, got %v", cfg.AutoApproveTools)
+	}
 }
 
 func TestGetConfigDir(t *testing.T) {
@@ -65,9 +69,10 @@ func TestLoadConfig_FileNotExists(t *testing.T) {
 
 func TestConfig_Fields(t *testing.T) {
 	cfg := Config{
-		DefaultModel: "test-model",
-		AutoClose:    true,
-		Verbose:      true,
+		DefaultModel:     "test-model",
+		AutoClose:        true,
+		Verbose:          true,
+		AutoApproveTools: true,
 	}
 
 	if cfg.DefaultModel != "test-model" {
@@ -78,6 +83,9 @@ func TestConfig_Fields(t *testing.T) {
 	}
 	if !cfg.Verbose {
 		t.Error("Verbose mismatch")
+	}
+	if !cfg.AutoApproveTools {
+		t.Error("AutoApproveTools mismatch")
 	}
 }
 
@@ -147,9 +155,10 @@ func TestSaveConfig(t *testing.T) {
 	defer func() { _ = os.Setenv("HOME", oldHome) }()
 
 	cfg := Config{
-		DefaultModel: "gemini-3.0-pro",
-		AutoClose:    false,
-		Verbose:      true,
+		DefaultModel:     "gemini-3.0-pro",
+		AutoClose:        false,
+		Verbose:          true,
+		AutoApproveTools: true,
 	}
 
 	err := SaveConfig(cfg)
@@ -179,6 +188,9 @@ func TestSaveConfig(t *testing.T) {
 	if saved.Verbose != cfg.Verbose {
 		t.Errorf("Verbose = %v, want %v", saved.Verbose, cfg.Verbose)
 	}
+	if saved.AutoApproveTools != cfg.AutoApproveTools {
+		t.Errorf("AutoApproveTools = %v, want %v", saved.AutoApproveTools, cfg.AutoApproveTools)
+	}
 
 	// Check file permissions (should be 600 for privacy)
 	info, err := os.Stat(configPath)
@@ -203,9 +215,10 @@ func TestLoadConfig_WithExistingFile(t *testing.T) {
 
 	configPath := filepath.Join(configDir, "config.json")
 	originalCfg := Config{
-		DefaultModel: "gemini-2.5-pro",
-		AutoClose:    false,
-		Verbose:      true,
+		DefaultModel:     "gemini-2.5-pro",
+		AutoClose:        false,
+		Verbose:          true,
+		AutoApproveTools: true,
 	}
 
 	data, _ := json.MarshalIndent(originalCfg, "", "  ")
@@ -226,6 +239,9 @@ func TestLoadConfig_WithExistingFile(t *testing.T) {
 	}
 	if cfg.Verbose != originalCfg.Verbose {
 		t.Errorf("Verbose = %v, want %v", cfg.Verbose, originalCfg.Verbose)
+	}
+	if cfg.AutoApproveTools != originalCfg.AutoApproveTools {
+		t.Errorf("AutoApproveTools = %v, want %v", cfg.AutoApproveTools, originalCfg.AutoApproveTools)
 	}
 }
 
@@ -377,6 +393,9 @@ func TestDefaultConfig_AllFields(t *testing.T) {
 	}
 	if cfg.CopyToClipboard {
 		t.Error("CopyToClipboard should be false")
+	}
+	if cfg.AutoApproveTools {
+		t.Error("AutoApproveTools should be false")
 	}
 	if cfg.TUITheme != "tokyonight" {
 		t.Errorf("TUITheme = %q, want 'tokyonight'", cfg.TUITheme)

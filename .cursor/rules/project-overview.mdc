@@ -1,0 +1,32 @@
+---
+description: General project overview, architectural patterns, and global constraints.
+globs:
+  - "**/*"
+alwaysApply: true
+---
+
+# Project Overview & Architecture
+
+General project context and architectural standards for the `geminiweb-go` project.
+
+## Core Architecture
+This project is a modular monolith CLI application built in Go. It interfaces with the internal Google Gemini Web API by emulating browser behavior.
+
+### Key Packages
+- `cmd/geminiweb`: CLI entry point using Cobra.
+- `internal/api`: Core logic for communicating with Gemini (auth, streaming, parsing).
+- `internal/tui`: Terminal User Interface using the Bubble Tea (MVU) pattern.
+- `internal/history`: JSON-based persistence for chat sessions.
+- `pkg/toolexec`: A standalone, extensible framework for executing external tools/functions.
+- `internal/render`: Markdown and terminal styling using Glamour and Lipgloss.
+
+## Fundamental Principles
+- **Browser Emulation**: We use `github.com/bogdanfinn/tls-client` to mimic Chrome TLS fingerprints. Never use the standard `net/http` for Gemini API calls.
+- **Interface Decoupling**: High-level components (TUI) must depend on interfaces (e.g., `GeminiClientInterface`) rather than concrete implementations to facilitate testing.
+- **Functional Options**: Use the functional options pattern for configuring complex objects (e.g., `api.NewClient`, `toolexec.NewExecutor`).
+
+## Coding Standards
+- Follow the style guide in `CLAUDE.md`.
+- Use `internal/errors` for structured error handling.
+- Keep `pkg/toolexec` independent; it should not depend on `internal/` packages.
+- When adding features, check if they belong in the `api` (logic) or `tui` (presentation) layer.

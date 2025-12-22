@@ -14,6 +14,12 @@ import (
 	"github.com/diogo/geminiweb/internal/tui"
 )
 
+// createGemsClientFunc is a variable that can be overridden for testing
+var createGemsClientFunc = func() (api.GeminiClientInterface, error) {
+	return createGemsClient()
+}
+
+
 // GemReaderInterface defines the interface for reading gem input
 type GemReaderInterface interface {
 	ReadString(delim byte) (string, error)
@@ -140,7 +146,7 @@ func init() {
 
 // runGemsInteractive runs the interactive gems menu (default when no subcommand)
 func runGemsInteractive(cmd *cobra.Command, args []string) error {
-	client, err := createGemsClient()
+	client, err := createGemsClientFunc()
 	if err != nil {
 		return err
 	}
@@ -166,7 +172,7 @@ func runGemsInteractive(cmd *cobra.Command, args []string) error {
 }
 
 func runGemsList(cmd *cobra.Command, args []string) error {
-	client, err := createGemsClient()
+	client, err := createGemsClientFunc()
 	if err != nil {
 		return err
 	}
@@ -210,7 +216,7 @@ func runGemsCreate(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("prompt is required (use -p or -f)")
 	}
 
-	client, err := createGemsClient()
+	client, err := createGemsClientFunc()
 	if err != nil {
 		return err
 	}
@@ -228,7 +234,7 @@ func runGemsCreate(cmd *cobra.Command, args []string) error {
 func runGemsUpdate(cmd *cobra.Command, args []string) error {
 	idOrName := args[0]
 
-	client, err := createGemsClient()
+	client, err := createGemsClientFunc()
 	if err != nil {
 		return err
 	}
@@ -283,7 +289,7 @@ func runGemsUpdate(cmd *cobra.Command, args []string) error {
 func runGemsDelete(cmd *cobra.Command, args []string) error {
 	idOrName := args[0]
 
-	client, err := createGemsClient()
+	client, err := createGemsClientFunc()
 	if err != nil {
 		return err
 	}
@@ -314,7 +320,7 @@ func runGemsDelete(cmd *cobra.Command, args []string) error {
 func runGemsShow(cmd *cobra.Command, args []string) error {
 	idOrName := args[0]
 
-	client, err := createGemsClient()
+	client, err := createGemsClientFunc()
 	if err != nil {
 		return err
 	}
@@ -372,7 +378,7 @@ func createGemsClient() (*api.GeminiClient, error) {
 
 // resolveGem resolves a gem by ID or name using the provided client
 // Returns the gem ID if found, empty string otherwise
-func resolveGem(client *api.GeminiClient, idOrName string) (*models.Gem, error) {
+func resolveGem(client api.GeminiClientInterface, idOrName string) (*models.Gem, error) {
 	gems, err := client.FetchGems(false)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch gems: %w", err)

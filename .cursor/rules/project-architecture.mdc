@@ -1,0 +1,27 @@
+---
+description: General project architecture, architectural layers, and critical constraints like browser emulation and package boundaries.
+globs:
+  - "**/*"
+alwaysApply: true
+---
+
+# Project Architecture & Global Constraints
+
+This project is a CLI/TUI application for interacting with the Google Gemini Web API. It uses browser emulation to access internal endpoints not available in official SDKs.
+
+## Architectural Layers
+- **Presentation**: `internal/tui` (Bubble Tea), `internal/commands` (Cobra).
+- **Service**: `internal/api` (Gemini Client), `pkg/toolexec` (Tool Execution Engine).
+- **Domain/Infrastructure**: `internal/models`, `internal/browser` (Cookie extraction), `internal/history` (JSON persistence).
+
+## Critical Constraints
+- **Browser Emulation**: NEVER use the standard `net/http` library for Gemini API calls. Use `github.com/bogdanfinn/tls-client` with a Chrome 133+ fingerprint to avoid bot detection.
+- **Internal vs Pkg**: Code in `pkg/toolexec` must remain independent and NOT import anything from `internal/`.
+- **Dependency Injection**: Use the **Functional Options** pattern for configuring services (e.g., `api.NewClient(opts...)`, `toolexec.NewExecutor(opts...)`).
+- **Error Handling**: Use `internal/errors` for structured errors. Check for Gemini-specific errors using predicates like `errors.IsAuth(err)` or `errors.IsRateLimit(err)`.
+
+## Code Style
+- Follow the guidelines in `CLAUDE.md`.
+- Use interfaces to decouple the TUI from the API client (e.g., `GeminiClientInterface`).
+- Prefer composition over inheritance.
+- Ensure all TUI operations are non-blocking; use `tea.Cmd` for I/O.

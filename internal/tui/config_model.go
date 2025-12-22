@@ -31,6 +31,7 @@ const (
 	menuCloseDelay
 	menuAutoReInit
 	menuCopyToClipboard
+	menuAutoApproveTools
 	menuTheme    // Markdown theme
 	menuTUITheme // TUI color theme
 	menuExit
@@ -308,6 +309,19 @@ func (m ConfigModel) handleSelect() (tea.Model, tea.Cmd) {
 			}
 			return m, clearFeedback(m.feedbackTimeout)
 
+		case menuAutoApproveTools:
+			m.config.AutoApproveTools = !m.config.AutoApproveTools
+			if err := config.SaveConfig(m.config); err != nil {
+				m.feedback = fmt.Sprintf("Error: %v", err)
+			} else {
+				state := "disabled"
+				if m.config.AutoApproveTools {
+					state = "enabled"
+				}
+				m.feedback = fmt.Sprintf("Auto-approve tools %s", state)
+			}
+			return m, clearFeedback(m.feedbackTimeout)
+
 		case menuTheme:
 			m.view = viewThemeSelect
 			return m, nil
@@ -543,6 +557,21 @@ func (m ConfigModel) renderMainMenu(width int) string {
 		clipboardValue,
 	))
 
+	// Auto Approve Tools
+	cursor = "  "
+	style = configMenuItemStyle
+	if m.cursor == menuAutoApproveTools {
+		cursor = configCursorStyle.Render("▸ ")
+		style = configMenuSelectedStyle
+	}
+	autoApproveValue := m.renderBoolValue(m.config.AutoApproveTools)
+	items = append(items, fmt.Sprintf("%s%s%s%s",
+		cursor,
+		style.Render("Auto Approve Tools"),
+		strings.Repeat(" ", 2),
+		autoApproveValue,
+	))
+
 	// Markdown Theme
 	cursor = "  "
 	style = configMenuItemStyle
@@ -625,7 +654,6 @@ func (m ConfigModel) renderModelSelect(width int) string {
 		append([]string{title, ""}, items...)...,
 	)
 }
-
 
 // renderThemeSelect renders the markdown theme selection sub-menu
 func (m ConfigModel) renderThemeSelect(width int) string {

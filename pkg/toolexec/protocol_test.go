@@ -143,6 +143,24 @@ func TestParseToolCalls(t *testing.T) {
 			expectErr: false,
 		},
 		{
+			name:      "json tool call",
+			input:     "```json\n" + `{"name": "bash", "args": {"command": "ls"}}` + "\n```",
+			wantCount: 1,
+			expectErr: false,
+		},
+		{
+			name:      "uppercase tool call",
+			input:     "```Tool\n" + `{"name": "bash", "args": {"command": "ls"}}` + "\n```",
+			wantCount: 1,
+			expectErr: false,
+		},
+		{
+			name:      "unlabeled tool call",
+			input:     "```\n" + `{"name": "bash", "args": {"command": "ls"}}` + "\n```",
+			wantCount: 1,
+			expectErr: false,
+		},
+		{
 			name: "multiple tool calls",
 			input: `First:
 ` + "```tool\n" + `{"name": "bash", "args": {"command": "ls"}}
@@ -253,6 +271,34 @@ func TestParseToolCallsLenient(t *testing.T) {
 		calls := ParseToolCallsLenient(input)
 		if len(calls) != 0 {
 			t.Errorf("expected 0 calls, got %d", len(calls))
+		}
+	})
+}
+
+// TestExtractToolCallsLenient tests extraction with cleaned text.
+func TestExtractToolCallsLenient(t *testing.T) {
+	t.Run("removes valid tool blocks", func(t *testing.T) {
+		input := "Hello\n" + "```tool\n" + `{"name": "bash", "args": {"command": "ls"}}` + "\n```" + "\nWorld"
+		calls, clean := ExtractToolCallsLenient(input)
+		if len(calls) != 1 {
+			t.Fatalf("expected 1 call, got %d", len(calls))
+		}
+		if strings.Contains(clean, "```tool") {
+			t.Fatalf("expected tool block removed, got: %q", clean)
+		}
+		if !strings.Contains(clean, "Hello") || !strings.Contains(clean, "World") {
+			t.Fatalf("unexpected cleaned text: %q", clean)
+		}
+	})
+
+	t.Run("keeps invalid blocks", func(t *testing.T) {
+		input := "Start\n" + "```tool\n" + `{invalid}` + "\n```" + "\nEnd"
+		calls, clean := ExtractToolCallsLenient(input)
+		if len(calls) != 0 {
+			t.Fatalf("expected 0 calls, got %d", len(calls))
+		}
+		if !strings.Contains(clean, "{invalid}") {
+			t.Fatalf("expected invalid block preserved, got: %q", clean)
 		}
 	})
 }

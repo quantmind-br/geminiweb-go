@@ -1,43 +1,45 @@
 # AGENTS.md
 
 ## Project Overview
-`geminiweb-go` is a modular CLI/TUI application for interacting with Google Gemini's web API. It uses cookie-based authentication and browser TLS fingerprinting (Chrome 133) to emulate real browser behavior, enabling features like Gems management and file uploads.
+`geminiweb-go` is a high-performance CLI/TUI client for the Google Gemini Web API. It emulates browser behavior via Chrome 133 TLS fingerprinting and cookie-based auth to enable unofficial features like Gems, thinking models, and tool execution.
 
 ## Build & Test Commands
 ```bash
-make build          # Production build (requires CGO_ENABLED=1)
-make build-dev      # Fast development build
-make test           # Run all tests: go test -v ./...
-make lint           # golangci-lint run ./...
-make fmt            # go fmt + gofumpt
-make check          # Verify build compiles
+make build          # Production build (CGO_ENABLED=1 for kooky/sqlite)
+make build-dev      # Development build
+make test           # Full test suite (requires SECURE_1PSID env for integration)
+make lint           # Run golangci-lint
+make fmt            # Run gofumpt (strict formatting)
+make check          # Verify compilation across all packages
 ```
 
-## Architecture & Key Components
-- **`internal/api`**: `GeminiClient` (auth, TLS fingerprinting, token management) and `ChatSession` (stateful context).
-- **`internal/browser`**: Extracts session cookies from local browsers (Chrome, Firefox, etc.).
-- **`internal/tui`**: Terminal UI using Bubble Tea (The Elm Architecture).
-- **`internal/history`**: Persistence for conversations in `~/.config/geminiweb/history/`.
-- **`internal/models`**: Shared data structures and Gemini RPC endpoint constants.
+## Architecture Overview
+- **Presentation Layer**: CLI via `spf13/cobra` and TUI via `charmbracelet/bubbletea` (MVU pattern).
+- **Service Layer**: `internal/api` (GeminiClient/ChatSession) and `pkg/toolexec` (modular tool execution).
+- **Persistence**: Local JSON-based history in `~/.geminiweb/history/`.
+- **Infrastructure**: `internal/browser` for cookie extraction (kooky) and `internal/render` for Glamour-based markdown.
 
-## Code Style & Conventions
-- **Go 1.23+**: Use functional options pattern for component configuration.
-- **JSON Parsing**: Use `tidwall/gjson` for API responses; `encoding/json` for local persistence.
-- **HTTP**: Use `bogdanfinn/tls-client` and `fhttp` to maintain browser fingerprints.
-- **Errors**: Wrap with context: `fmt.Errorf("context: %w", err)`. Use `internal/errors` types.
-- **DI**: Depend on interfaces (`GeminiClientInterface`, etc.) for testability.
+## Code Style & Tech Stack
+- **Language**: Go 1.23+ with Functional Options pattern for constructors.
+- **Networking**: STRICT: Use `bogdanfinn/tls-client` + `fhttp` for API calls to avoid 403s.
+- **JSON**: Use `tidwall/gjson` for parsing nested Gemini RPC arrays; `encoding/json` for local files.
+- **Concurrency**: Always pass `context.Context` through service and API layers.
+- **Errors**: Use structured types in `internal/errors`. Handle code 1037 (Rate Limit).
 
-## Issue Tracking: bd (beads)
-**STRICT RULE**: Use `bd` for all task tracking. No markdown TODOs.
-- `bd ready --json`: Check for unblocked work.
-- `bd create "Title" -t bug|feature|task -p 1`: Create new issue.
+## Key Conventions
+- **Interfaces**: Define interfaces (e.g., `GeminiClientInterface`) to facilitate UI mocking.
+- **UI Styling**: Use `lipgloss` for components; `internal/render` for markdown.
+- **Tool Execution**: `pkg/toolexec` uses a Registry and Middleware for security policies.
+- **RPC Mapping**: See `internal/api/paths.go` for positional index mappings.
+
+## Issue Tracking (BEADS)
+**STRICT RULE**: Use [bd (beads)](https://github.com/steveyegge/beads) for all tasks. No markdown TODOs.
+- `bd ready`: View next unblocked tasks.
+- `bd create "Title" -t bug|feature|task`: Create a new issue.
 - `bd update <id> --status in_progress`: Claim a task.
-- `bd close <id> --reason "Done"`: Complete work.
-- Always commit `.beads/issues.jsonl` with your code changes.
+- `bd close <id>`: Mark task as complete.
 
-## AI Planning & History
-Store all AI-generated planning docs (PLAN.md, DESIGN.md, etc.) in the `history/` directory to keep the root clean.
-
-## Git Workflow
-- Commits: Use conventional commits (feat:, fix:, chore:).
-- Sync: Always `git pull` before running `bd` commands to ensure issue state is current.
+## Git & Workflow
+- **Commits**: Conventional Commits format (`feat:`, `fix:`, `chore:`).
+- **Planning**: Store AI design/analysis docs in `.ai/docs/`.
+- **Tests**: Integration tests require `SECURE_1PSID` and `SECURE_1PSIDTS` env vars.

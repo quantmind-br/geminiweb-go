@@ -342,7 +342,7 @@ func TestGeminiClient_GetSetMethods(t *testing.T) {
 	}
 
 	// Test SetModel
-	newModel := models.Model30Pro
+	newModel := models.ModelPro
 	client.SetModel(newModel)
 	actualModel := client.GetModel()
 	if actualModel.Name != newModel.Name {
@@ -387,12 +387,12 @@ func TestGeminiClient_StartChat(t *testing.T) {
 	}{
 		{
 			name:          "default model",
-			opts:          []ClientOption{WithModel(models.Model30Pro)},
-			expectedModel: models.Model30Pro,
+			opts:          []ClientOption{WithModel(models.ModelPro)},
+			expectedModel: models.ModelPro,
 		},
 		{
 			name:          "custom model via argument",
-			opts:          []ClientOption{WithModel(models.Model30Pro)},
+			opts:          []ClientOption{WithModel(models.ModelPro)},
 			customModel:   &[]models.Model{models.Model25Flash}[0],
 			expectedModel: models.Model25Flash,
 		},
@@ -440,7 +440,7 @@ func TestGeminiClient_ConcurrentAccess(t *testing.T) {
 	}
 
 	// Set a custom model
-	newModel := models.Model30Pro
+	newModel := models.ModelPro
 	client.SetModel(newModel)
 
 	// Run concurrent reads
@@ -484,7 +484,7 @@ func TestGeminiClient_ConcurrentAccess(t *testing.T) {
 		go func(index int) {
 			defer wg.Done()
 			if index%2 == 0 {
-				client.SetModel(models.Model30Pro)
+				client.SetModel(models.ModelPro)
 			} else {
 				_ = client.GetModel()
 			}
@@ -494,8 +494,8 @@ func TestGeminiClient_ConcurrentAccess(t *testing.T) {
 	wg.Wait()
 
 	// Verify the model is still set correctly
-	if client.GetModel().Name != models.Model30Pro.Name {
-		t.Errorf("Model after concurrent access = %v, want %v", client.GetModel().Name, models.Model30Pro.Name)
+	if client.GetModel().Name != models.ModelPro.Name {
+		t.Errorf("Model after concurrent access = %v, want %v", client.GetModel().Name, models.ModelPro.Name)
 	}
 }
 
@@ -575,7 +575,7 @@ func TestGeminiClient_WithModel(t *testing.T) {
 		wantModel models.Model
 	}{
 		{"G_2_5_FLASH", models.Model25Flash, models.Model25Flash},
-		{"G_3_0_PRO", models.Model30Pro, models.Model30Pro},
+		{"G_PRO", models.ModelPro, models.ModelPro},
 	}
 
 	for _, tt := range tests {
@@ -768,15 +768,15 @@ func TestGeminiClient_StartChatWithMultipleModels(t *testing.T) {
 		Secure1PSID: "test_psid",
 	}
 
-	client, err := NewClient(cookies, WithModel(models.Model30Pro))
+	client, err := NewClient(cookies, WithModel(models.ModelPro))
 	if err != nil {
 		t.Fatalf("NewClient() failed: %v", err)
 	}
 
 	// Start chat with default model
 	session1 := client.StartChat()
-	if session1.GetModel().Name != models.Model30Pro.Name {
-		t.Errorf("Session model = %v, want %v", session1.GetModel().Name, models.Model30Pro.Name)
+	if session1.GetModel().Name != models.ModelPro.Name {
+		t.Errorf("Session model = %v, want %v", session1.GetModel().Name, models.ModelPro.Name)
 	}
 
 	// Start chat with custom model
@@ -787,7 +787,7 @@ func TestGeminiClient_StartChatWithMultipleModels(t *testing.T) {
 	}
 
 	// Original session should remain unchanged
-	if session1.GetModel().Name != models.Model30Pro.Name {
+	if session1.GetModel().Name != models.ModelPro.Name {
 		t.Error("Original session model should not change")
 	}
 }

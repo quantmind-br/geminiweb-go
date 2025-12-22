@@ -28,11 +28,17 @@ var (
 	BuildTime = "unknown"
 )
 
-// rootCmd represents the base command
-var rootCmd = &cobra.Command{
-	Use:   "geminiweb [prompt]",
-	Short: "CLI for Google Gemini Web API",
-	Long: `geminiweb is a command-line interface for interacting with Google Gemini
+// rootCmd represents the base command.
+// It is exposed for backward compatibility with existing tests, but should
+// be considered an implementation detail. Use NewRootCmd() instead.
+var rootCmd = NewRootCmd(nil)
+
+// NewRootCmd creates a new root command with the given dependencies.
+func NewRootCmd(deps *Dependencies) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "geminiweb [prompt]",
+		Short: "CLI for Google Gemini Web API",
+		Long: `geminiweb is a command-line interface for interacting with Google Gemini
 via the web API. It uses cookie-based authentication and communicates
 directly with Gemini's web interface.
 
@@ -46,109 +52,151 @@ Examples:
   geminiweb "Hello" -o response.md      Save response to file
   geminiweb --gem "Code Helper" "prompt" Use a gem (server-side persona)
   geminiweb --persona coder "prompt"    Use a local persona (system prompt)`,
-	Args: cobra.MaximumNArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		// Check for version flag
-		if v, _ := cmd.Flags().GetBool("version"); v {
-			fmt.Printf("geminiweb %s (built %s)\n", Version, BuildTime)
-			return nil
-		}
-
-		// Check for stdin input
-		stat, _ := os.Stdin.Stat()
-		hasStdin := (stat.Mode() & os.ModeCharDevice) == 0
-
-		// Determine raw output mode:
-		// - If outputFlag is set (writing to file), use raw mode
-		// - If stdout is not a TTY (piped to another command), use raw mode
-		isTTY := isStdoutTTY()
-		isFileOutput := outputFlag != ""
-		isPipeOutput := !isTTY // Pipe output regardless of stdin
-		rawOutput := isFileOutput || isPipeOutput
-
-		// Check for file input
-		if fileFlag != "" {
-			data, err := os.ReadFile(fileFlag)
-			if err != nil {
-				return fmt.Errorf("failed to read file: %w", err)
+		Args: cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			// Check for version flag
+			if v, _ := cmd.Flags().GetBool("version"); v {
+				fmt.Printf("geminiweb %s (built %s)\n", Version, BuildTime)
+				return nil
 			}
-			return runQuery(string(data), rawOutput)
-		}
 
-		// Check for stdin
-		if hasStdin {
-			data, err := io.ReadAll(os.Stdin)
-			if err != nil {
-				return fmt.Errorf("failed to read stdin: %w", err)
+			// Check for stdin input
+			stat, _ := os.Stdin.Stat()
+			hasStdin := (stat.Mode() & os.ModeCharDevice) == 0
+
+			// Determine raw output mode:
+			// - If outputFlag is set (writing to file), use raw mode
+			// - If stdout is not a TTY (piped to another command), use raw mode
+			isTTY := isStdoutTTY()
+			isFileOutput := outputFlag != ""
+			isPipeOutput := !isTTY // Pipe output regardless of stdin
+			rawOutput := isFileOutput || isPipeOutput
+
+			// Check for file input
+			if fileFlag != "" {
+				data, err := os.ReadFile(fileFlag)
+				if err != nil {
+					return fmt.Errorf("failed to read file: %w", err)
+				}
+				return runQuery(deps, string(data), rawOutput)
 			}
-			return runQuery(string(data), rawOutput)
-		}
 
-		// Check for positional argument
-		if len(args) > 0 {
-			return runQuery(args[0], rawOutput)
-		}
+			// Check for stdin
+			if hasStdin {
+				data, err := io.ReadAll(os.Stdin)
+				if err != nil {
+					return fmt.Errorf("failed to read stdin: %w", err)
+				}
+				return runQuery(deps, string(data), rawOutput)
+			}
 
-		// No input - show help
-		return cmd.Help()
-	},
-}
+			// Check for positional argument
+			if len(args) > 0 {
+				return runQuery(deps, args[0], rawOutput)
+			}
 
-// Execute runs the root command
-func Execute() {
-	if err := rootCmd.Execute(); err != nil {
-		os.Exit(1)
+			// No input - show help
+			return cmd.Help()
+		},
 	}
-}
 
-func init() {
 	// Global flags
-	rootCmd.PersistentFlags().StringVarP(&modelFlag, "model", "m", "", "Model to use (e.g., gemini-2.5-flash)")
-	rootCmd.PersistentFlags().StringVar(&browserRefreshFlag, "browser-refresh", "",
+	cmd.PersistentFlags().StringVarP(&modelFlag, "model", "m", "", "Model to use (e.g., gemini-2.5-flash)")
+	cmd.PersistentFlags().StringVar(&browserRefreshFlag, "browser-refresh", "",
 		"Auto-refresh cookies from browser on auth failure (auto, chrome, firefox, edge, chromium, opera)")
-	rootCmd.Flags().StringVarP(&outputFlag, "output", "o", "", "Save response to file")
-	rootCmd.Flags().StringVarP(&fileFlag, "file", "f", "", "Read prompt from file")
-	rootCmd.Flags().StringVarP(&imageFlag, "image", "i", "", "Path to image file to include")
-	rootCmd.Flags().StringVar(&gemFlag, "gem", "", "Use a gem (by ID or name) - server-side persona")
-	rootCmd.Flags().StringVarP(&personaFlag, "persona", "p", "", "Use a local persona (system prompt)")
-	rootCmd.Flags().StringVar(&saveImagesFlag, "save-images", "", "Save response images to specified directory")
-	rootCmd.Flags().BoolP("version", "v", false, "Show version and exit")
+	cmd.Flags().StringVarP(&outputFlag, "output", "o", "", "Save response to file")
+	cmd.Flags().StringVarP(&fileFlag, "file", "f", "", "Read prompt from file")
+	cmd.Flags().StringVarP(&imageFlag, "image", "i", "", "Path to image file to include")
+	cmd.Flags().StringVar(&gemFlag, "gem", "", "Use a gem (by ID or name) - server-side persona")
+	cmd.Flags().StringVarP(&personaFlag, "persona", "p", "", "Use a local persona (system prompt)")
+	cmd.Flags().StringVar(&saveImagesFlag, "save-images", "", "Save response images to specified directory")
+	cmd.Flags().BoolP("version", "v", false, "Show version and exit")
 
 	// Add subcommands
-	rootCmd.AddCommand(chatCmd)
-	rootCmd.AddCommand(configCmd)
-	rootCmd.AddCommand(importCookiesCmd)
-	rootCmd.AddCommand(autoLoginCmd)
-	rootCmd.AddCommand(historyCmd)
-	rootCmd.AddCommand(personaCmd)
-	rootCmd.AddCommand(gemsCmd)
-}
+	// Note: We are using the global variables here because they are defined in other files
+	// and added via init(). To fully refactor, we would need factory functions for them too.
+	cmd.AddCommand(chatCmd)
+	cmd.AddCommand(configCmd)
+	cmd.AddCommand(importCookiesCmd)
+	cmd.AddCommand(autoLoginCmd)
+	cmd.AddCommand(historyCmd)
+	cmd.AddCommand(personaCmd)
+	cmd.AddCommand(gemsCmd)
 
-// getModel returns the model to use (from flag or config)
-func getModel() string {
-	if modelFlag != "" {
-		return modelFlag
+		return cmd
+
 	}
 
-	cfg, err := config.LoadConfig()
-	if err != nil {
-		return "gemini-2.5-flash"
+	
+
+	// Execute runs the root command
+
+	func Execute() {
+
+		if err := NewRootCmd(nil).Execute(); err != nil {
+
+			os.Exit(1)
+
+		}
+
 	}
 
-	return cfg.DefaultModel
-}
+	
 
-// getBrowserRefresh returns the browser type for auto-refresh, or empty if disabled
-func getBrowserRefresh() (browser.SupportedBrowser, bool) {
-	if browserRefreshFlag == "" {
-		return "", false
+	// getModel returns the model to use (from flag or config)
+
+	func getModel() string {
+
+		if modelFlag != "" {
+
+			return modelFlag
+
+		}
+
+	
+
+		cfg, err := config.LoadConfig()
+
+		if err != nil {
+
+			return "gemini-2.5-flash"
+
+		}
+
+	
+
+		return cfg.DefaultModel
+
 	}
 
-	browserType, err := browser.ParseBrowser(browserRefreshFlag)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: invalid browser-refresh value '%s', disabling browser refresh\n", browserRefreshFlag)
-		return "", false
+	
+
+	// getBrowserRefresh returns the browser type for auto-refresh, or empty if disabled
+
+	func getBrowserRefresh() (browser.SupportedBrowser, bool) {
+
+		if browserRefreshFlag == "" {
+
+			return "", false
+
+		}
+
+	
+
+		browserType, err := browser.ParseBrowser(browserRefreshFlag)
+
+		if err != nil {
+
+			fmt.Fprintf(os.Stderr, "Warning: invalid browser-refresh value '%s', disabling browser refresh\n", browserRefreshFlag)
+
+			return "", false
+
+		}
+
+	
+
+		return browserType, true
+
 	}
 
-	return browserType, true
-}
+	

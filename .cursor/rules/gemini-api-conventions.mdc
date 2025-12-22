@@ -1,0 +1,37 @@
+---
+description: Conventions for the Gemini Web API (GJSON, authentication, session tokens) and the Tool Execution framework.
+globs:
+  - "internal/api/**/*.go"
+  - "pkg/toolexec/**/*.go"
+  - "internal/models/**/*.go"
+alwaysApply: false
+---
+
+# Gemini API & Tool Execution Conventions
+
+Rules for interacting with the undocumented Gemini Web RPC protocol and the extensible tool framework.
+
+## API Interaction Patterns
+- **RPC Protocol**: Gemini Web uses deeply nested JSON arrays. 
+- **Data Extraction**: Do NOT create massive Go structs for the response. Use `github.com/tidwall/gjson` with paths defined in `internal/api/paths.go`.
+- **Authentication**:
+  - Requires `__Secure-1PSID` and `__Secure-1PSIDTS` cookies.
+  - Requires the `SNlM0e` session token (extracted from the `/app` endpoint via regex) passed as the `at` parameter in POST requests.
+- **Session State**: Use `api.ChatSession` to manage conversation IDs (`cid`), message IDs (`rid`), and candidate IDs (`rcid`).
+
+## Tool Execution (`pkg/toolexec`)
+- **Registration**: Tools must be registered with the `Registry` before being executed by the `Executor`.
+- **Middleware**: Use the middleware pattern in `pkg/toolexec` for logging, security validation, and panic recovery.
+- **Security**: Always implement the `SecurityPolicy` interface when executing tools that perform file or network I/O.
+- **Tool Calls**: AI-generated tool calls appear in markdown blocks (````tool { "tool": "..." } ````). Use `toolexec.ParseToolCalls` to extract them.
+
+## Code Example: GJSON Extraction
+```go
+// Correct: Use centralized paths
+res := gjson.Get(rawBody, "0.1.2.0")
+text := res.Get(api.PathResponseText).String()
+```
+
+## Response Parsing
+- Always check the "end of stream" marker `[["e",...]` when processing the chunked response.
+- Handle "Thinking" or "Reasoning" candidates specifically via the `Candidate` model in `internal/models`.

@@ -69,8 +69,11 @@ func (s *Store) ExportToMarkdownWithOptions(id string, opts ExportOptions) (stri
 	for i, msg := range conv.Messages {
 		// Role header
 		role := "User"
-		if msg.Role == "assistant" {
+		switch msg.Role {
+		case "assistant":
 			role = "Assistant"
+		case "tool":
+			role = "Tool"
 		}
 
 		sb.WriteString("## ")

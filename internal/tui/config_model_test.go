@@ -304,6 +304,30 @@ func TestConfigModel_Update_Enter(t *testing.T) {
 		}
 	})
 
+	t.Run("on auto approve tools", func(t *testing.T) {
+		m := NewConfigModel()
+		m.cursor = menuAutoApproveTools
+		originalAutoApprove := m.config.AutoApproveTools
+
+		// Simulate Enter
+		msg := tea.KeyMsg{Type: tea.KeyEnter}
+		updatedModel, cmd := m.Update(msg)
+
+		if typedModel, ok := updatedModel.(ConfigModel); ok {
+			if typedModel.config.AutoApproveTools == originalAutoApprove {
+				t.Error("AutoApproveTools should be toggled")
+			}
+			if typedModel.feedback == "" {
+				t.Error("Should set feedback message")
+			}
+		}
+
+		// Should return clear feedback command
+		if cmd == nil {
+			t.Error("Should return clear feedback command")
+		}
+	})
+
 	t.Run("on exit", func(t *testing.T) {
 		m := NewConfigModel()
 		m.cursor = menuExit
@@ -405,6 +429,9 @@ func TestConfigModel_renderMainMenu(t *testing.T) {
 	if !contains(menu, "Auto Close") {
 		t.Error("Menu should contain Auto Close item")
 	}
+	if !contains(menu, "Auto Approve Tools") {
+		t.Error("Menu should contain Auto Approve Tools item")
+	}
 	if !contains(menu, "Exit") {
 		t.Error("Menu should contain Exit item")
 	}
@@ -497,7 +524,6 @@ func TestConfigModel_renderStatusBar(t *testing.T) {
 		}
 	})
 }
-
 
 func TestConfigModel_ThemeSelection(t *testing.T) {
 	t.Run("escape from theme select view", func(t *testing.T) {
@@ -681,17 +707,20 @@ func TestConfigModel_MenuConstants(t *testing.T) {
 	if menuCopyToClipboard != 5 {
 		t.Errorf("Expected menuCopyToClipboard to be 5, got %d", menuCopyToClipboard)
 	}
-	if menuTheme != 6 {
-		t.Errorf("Expected menuTheme to be 6, got %d", menuTheme)
+	if menuAutoApproveTools != 6 {
+		t.Errorf("Expected menuAutoApproveTools to be 6, got %d", menuAutoApproveTools)
 	}
-	if menuTUITheme != 7 {
-		t.Errorf("Expected menuTUITheme to be 7, got %d", menuTUITheme)
+	if menuTheme != 7 {
+		t.Errorf("Expected menuTheme to be 7, got %d", menuTheme)
 	}
-	if menuExit != 8 {
-		t.Errorf("Expected menuExit to be 8, got %d", menuExit)
+	if menuTUITheme != 8 {
+		t.Errorf("Expected menuTUITheme to be 8, got %d", menuTUITheme)
 	}
-	if menuItemCount != 9 {
-		t.Errorf("Expected menuItemCount to be 9, got %d", menuItemCount)
+	if menuExit != 9 {
+		t.Errorf("Expected menuExit to be 9, got %d", menuExit)
+	}
+	if menuItemCount != 10 {
+		t.Errorf("Expected menuItemCount to be 10, got %d", menuItemCount)
 	}
 }
 

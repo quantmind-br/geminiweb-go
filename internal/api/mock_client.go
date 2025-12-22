@@ -106,10 +106,24 @@ func (m *MockGeminiClient) UploadImage(filePath string) (*UploadedImage, error) 
 }
 
 func (m *MockGeminiClient) UploadFile(filePath string) (*UploadedFile, error) {
-	return m.UploadFileVal, m.UploadFileErr
+
+        return m.UploadFileVal, m.UploadFileErr
+
 }
 
+
+
+func (m *MockGeminiClient) UploadText(content string, fileName string) (*UploadedFile, error) {
+
+        return m.UploadFileVal, m.UploadFileErr
+
+}
+
+
+
 func (m *MockGeminiClient) DownloadImage(img models.WebImage, opts ImageDownloadOptions) (string, error) {
+
+
 	return m.DownloadImageVal, m.DownloadImageErr
 }
 

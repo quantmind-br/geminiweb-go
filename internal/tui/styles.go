@@ -55,6 +55,12 @@ var (
 	// Assistant label style
 	assistantLabelStyle lipgloss.Style
 
+	// Tool message bubble
+	toolBubbleStyle lipgloss.Style
+
+	// Tool label style
+	toolLabelStyle lipgloss.Style
+
 	// Thoughts panel style
 	thoughtsStyle lipgloss.Style
 
@@ -197,6 +203,20 @@ func rebuildStyles() {
 	// Assistant label style
 	assistantLabelStyle = lipgloss.NewStyle().
 		Foreground(colorPrimary).
+		Bold(true).
+		MarginBottom(0)
+
+	// Tool bubble style
+	toolBubbleStyle = lipgloss.NewStyle().
+		BorderStyle(lipgloss.RoundedBorder()).
+		BorderForeground(colorSecondary).
+		Padding(1, 2).
+		MarginTop(1).
+		MarginBottom(1)
+
+	// Tool label style
+	toolLabelStyle = lipgloss.NewStyle().
+		Foreground(colorSecondary).
 		Bold(true).
 		MarginBottom(0)
 

@@ -5,6 +5,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/diogo/geminiweb/internal/history"
+	"github.com/diogo/geminiweb/internal/models"
 )
 
 func TestChatCommand(t *testing.T) {
@@ -78,7 +81,7 @@ func TestChatCommand_FileFlag(t *testing.T) {
 	// Verify file flag is registered
 	flag := chatCmd.Flags().Lookup("file")
 	if flag == nil {
-		t.Error("file flag not found")
+		t.Fatal("file flag not found")
 	}
 	if flag.Shorthand != "f" {
 		t.Errorf("Expected shorthand 'f', got '%s'", flag.Shorthand)
@@ -132,5 +135,131 @@ func TestChatCommand_FileFlag_MaxFileSize(t *testing.T) {
 	// Verify the constant is set correctly
 	if maxFileSize != 1*1024*1024 {
 		t.Errorf("Expected maxFileSize to be 1MB (1048576), got %d", maxFileSize)
+	}
+}
+
+// TestCreateChatSessionWithConversation_WithGem tests createChatSessionWithConversation with a gem
+func TestCreateChatSessionWithConversation_WithGem(t *testing.T) {
+	// Create mock client that implements GeminiClientInterface
+	mockClient := &mockGeminiClient{
+		closed: false,
+	}
+
+	// Create a test conversation
+	conv := &history.Conversation{
+		CID:  "test-cid",
+		RID:  "test-rid",
+		RCID: "test-rcid",
+	}
+
+	// Call createChatSessionWithConversation with gem
+	session := createChatSessionWithConversation(mockClient, "test-gem-id", models.Model25Flash, conv)
+
+	// The session should not be nil
+	if session == nil {
+		t.Error("Expected non-nil session with gem")
+	}
+}
+
+// TestCreateChatSessionWithConversation_WithoutGem tests createChatSessionWithConversation without a gem
+func TestCreateChatSessionWithConversation_WithoutGem(t *testing.T) {
+	mockClient := &mockGeminiClient{
+		closed: false,
+	}
+
+	// Create a test conversation
+	conv := &history.Conversation{
+		CID:  "test-cid",
+		RID:  "test-rid",
+		RCID: "test-rcid",
+	}
+
+	// Call createChatSessionWithConversation without gem
+	session := createChatSessionWithConversation(mockClient, "", models.Model25Flash, conv)
+
+	if session == nil {
+		t.Error("Expected non-nil session without gem")
+	}
+}
+
+// TestCreateChatSessionWithConversation_WithoutConversation tests createChatSessionWithConversation with nil conversation
+func TestCreateChatSessionWithConversation_WithoutConversation(t *testing.T) {
+	mockClient := &mockGeminiClient{
+		closed: false,
+	}
+
+	// Call with nil conversation
+	session := createChatSessionWithConversation(mockClient, "test-gem-id", models.Model25Flash, nil)
+
+	if session == nil {
+		t.Error("Expected non-nil session with nil conversation")
+	}
+}
+
+// TestCreateChatSessionWithConversation_EmptyConversation tests with empty conversation metadata
+func TestCreateChatSessionWithConversation_EmptyConversation(t *testing.T) {
+	mockClient := &mockGeminiClient{
+		closed: false,
+	}
+
+	// Create a conversation with empty metadata
+	conv := &history.Conversation{
+		CID:  "",
+		RID:  "",
+		RCID: "",
+	}
+
+	session := createChatSessionWithConversation(mockClient, "", models.Model25Flash, conv)
+
+	if session == nil {
+		t.Error("Expected non-nil session with empty conversation metadata")
+	}
+}
+
+// TestCreateChatSessionWithConversation_DifferentModels tests with different models
+func TestCreateChatSessionWithConversation_DifferentModels(t *testing.T) {
+	mockClient := &mockGeminiClient{
+		closed: false,
+	}
+
+	conv := &history.Conversation{
+		CID:  "test-cid",
+		RID:  "test-rid",
+		RCID: "test-rcid",
+	}
+
+	models := []models.Model{
+		models.ModelFast,
+		models.ModelPro,
+		models.ModelThinking,
+	}
+
+	for _, model := range models {
+		t.Run(model.Name, func(t *testing.T) {
+			session := createChatSessionWithConversation(mockClient, "", model, conv)
+			if session == nil {
+				t.Error("Expected non-nil session")
+			}
+		})
+	}
+}
+
+// TestCreateChatSessionWithConversation_WithEmptyGemID tests with empty gem ID string
+func TestCreateChatSessionWithConversation_WithEmptyGemID(t *testing.T) {
+	mockClient := &mockGeminiClient{
+		closed: false,
+	}
+
+	conv := &history.Conversation{
+		CID:  "test-cid",
+		RID:  "test-rid",
+		RCID: "test-rcid",
+	}
+
+	// Empty string should be treated as no gem
+	session := createChatSessionWithConversation(mockClient, "", models.Model25Flash, conv)
+
+	if session == nil {
+		t.Error("Expected non-nil session with empty gem ID")
 	}
 }

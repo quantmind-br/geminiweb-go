@@ -177,7 +177,7 @@ func (s *spinner) stopWithError() {
 
 // runQuery executes a single query and outputs the response
 // If rawOutput is true, only the raw response text is printed without decoration
-func runQuery(prompt string, rawOutput bool) error {
+func runQuery(deps *Dependencies, prompt string, rawOutput bool) error {
 	prompt = strings.TrimSpace(prompt)
 	if prompt == "" {
 		return fmt.Errorf("prompt cannot be empty")
@@ -216,32 +216,39 @@ func runQuery(prompt string, rawOutput bool) error {
 		fmt.Fprintf(os.Stderr, "[verbose] Model: %s\n", modelName)
 	}
 
-	// Build client options
-	clientOpts := []api.ClientOption{
-		api.WithModel(model),
-		api.WithAutoRefresh(false),
-	}
+	var client api.GeminiClientInterface
+	var err error
 
-	// Add browser refresh if enabled (also enables silent auto-login fallback)
-	if browserType, enabled := getBrowserRefresh(); enabled {
-		clientOpts = append(clientOpts, api.WithBrowserRefresh(browserType))
-	}
+	if deps != nil && deps.Client != nil {
+		client = deps.Client
+	} else {
+		// Build client options
+		clientOpts := []api.ClientOption{
+			api.WithModel(model),
+			api.WithAutoRefresh(false),
+		}
 
-	// Add auto-close options from config (less relevant for single queries, but consistent)
-	if cfg.AutoClose {
-		clientOpts = append(clientOpts,
-			api.WithAutoClose(true),
-			api.WithCloseDelay(time.Duration(cfg.CloseDelay)*time.Second),
-			api.WithAutoReInit(cfg.AutoReInit),
-		)
-	}
+		// Add browser refresh if enabled (also enables silent auto-login fallback)
+		if browserType, enabled := getBrowserRefresh(); enabled {
+			clientOpts = append(clientOpts, api.WithBrowserRefresh(browserType))
+		}
 
-	// Create client with nil cookies - Init() will load from disk or browser
-	client, err := api.NewClient(nil, clientOpts...)
-	if err != nil {
-		return fmt.Errorf("failed to create client: %w", err)
+		// Add auto-close options from config (less relevant for single queries, but consistent)
+		if cfg.AutoClose {
+			clientOpts = append(clientOpts,
+				api.WithAutoClose(true),
+				api.WithCloseDelay(time.Duration(cfg.CloseDelay)*time.Second),
+				api.WithAutoReInit(cfg.AutoReInit),
+			)
+		}
+
+		// Create client with nil cookies - Init() will load from disk or browser
+		client, err = api.NewClient(nil, clientOpts...)
+		if err != nil {
+			return fmt.Errorf("failed to create client: %w", err)
+		}
+		defer client.Close()
 	}
-	defer client.Close()
 
 	// Initialize client
 	// Init() handles cookie loading from disk and browser fallback
@@ -261,7 +268,6 @@ func runQuery(prompt string, rawOutput bool) error {
 	if !rawOutput {
 		spin.stopWithSuccess("Connected")
 	}
-
 	// Resolve gem if provided
 	var gemID string
 	if gemFlag != "" {

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"strings"
 )
 
 // ToolCall represents a parsed tool invocation from an AI response.
@@ -53,10 +54,10 @@ func (tc *ToolCall) ToInput() *Input {
 	return input
 }
 
-// toolBlockRegex matches ```tool ... ``` fenced code blocks.
+// toolBlockRegex matches ```tool ... ```, ```json ... ```, or unlabeled fenced code blocks.
 // Uses non-greedy matching (.+?) to handle multiple blocks correctly.
 // The (?s) flag allows . to match newlines within the block.
-var toolBlockRegex = regexp.MustCompile("(?s)```tool\\s*\\n(.+?)\\n```")
+var toolBlockRegex = regexp.MustCompile("(?is)```\\s*(?:tool|json)?\\s*\\n(.+?)\\n```")
 
 // ParseToolCalls extracts and parses all tool calls from a text string.
 // It finds all ```tool code blocks and parses their JSON content.
@@ -137,6 +138,47 @@ func ParseToolCallsLenient(text string) []ToolCall {
 	return calls
 }
 
+// ExtractToolCallsLenient extracts tool calls and returns the cleaned text.
+// Tool blocks that parse successfully are removed from the returned text.
+// Invalid tool blocks are preserved in the text.
+func ExtractToolCallsLenient(text string) ([]ToolCall, string) {
+	matches := toolBlockRegex.FindAllStringSubmatchIndex(text, -1)
+	if len(matches) == 0 {
+		return []ToolCall{}, strings.TrimSpace(text)
+	}
+
+	calls := make([]ToolCall, 0, len(matches))
+	var clean strings.Builder
+	last := 0
+
+	for _, match := range matches {
+		if len(match) < 4 {
+			continue
+		}
+
+		start, end := match[0], match[1]
+		jsonStart, jsonEnd := match[2], match[3]
+		jsonContent := text[jsonStart:jsonEnd]
+
+		var call ToolCall
+		if err := json.Unmarshal([]byte(jsonContent), &call); err == nil {
+			if err := call.Validate(); err == nil {
+				calls = append(calls, call)
+				clean.WriteString(text[last:start])
+				last = end
+				continue
+			}
+		}
+
+		// Keep invalid block in the cleaned text.
+		clean.WriteString(text[last:end])
+		last = end
+	}
+
+	clean.WriteString(text[last:])
+	return calls, strings.TrimSpace(clean.String())
+}
+
 // HasToolCall checks if the text contains at least one tool call block.
 // This is a quick check that doesn't fully parse the JSON.
 func HasToolCall(text string) bool {
@@ -189,6 +231,7 @@ func NewToolCallResult(result *Result) *ToolCallResult {
 			// If there's data, use it as the output
 			tcr.Output = string(result.Output.Data)
 		}
+		tcr.Truncated = result.Output.Truncated
 	}
 
 	return tcr
