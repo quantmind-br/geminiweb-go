@@ -26,7 +26,7 @@ type ResolvedGem struct {
 
 // resolveGemFlag resolves the --gem flag to a gem ID and name
 // Returns empty ResolvedGem if no gem specified
-func resolveGemFlag(client *api.GeminiClient, gemFlag string) (ResolvedGem, error) {
+func resolveGemFlag(client api.GeminiClientInterface, gemFlag string) (ResolvedGem, error) {
 	if gemFlag == "" {
 		return ResolvedGem{}, nil
 	}

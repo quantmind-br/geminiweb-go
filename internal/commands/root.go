@@ -113,7 +113,7 @@ Examples:
 	cmd.Flags().BoolP("version", "v", false, "Show version and exit")
 
 	// Add subcommands
-	cmd.AddCommand(chatCmd)
+	cmd.AddCommand(NewChatCmd(deps))
 	cmd.AddCommand(configCmd)
 	cmd.AddCommand(importCookiesCmd)
 	cmd.AddCommand(autoLoginCmd)

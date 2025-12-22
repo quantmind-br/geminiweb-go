@@ -77,7 +77,8 @@ func (m *mockGeminiClient) FetchGems(includeHidden bool) (*models.GemJar, error)
 	if m.fetchGemsFunc != nil {
 		return m.fetchGemsFunc(includeHidden)
 	}
-	return nil, nil
+	jar := make(models.GemJar)
+	return &jar, nil
 }
 
 func (m *mockGeminiClient) CreateGem(name, prompt, description string) (*models.Gem, error) {

@@ -28,10 +28,12 @@ var chatPersonaFlag string
 // chatFileFlag is the --file flag for providing initial prompt from file
 var chatFileFlag string
 
-var chatCmd = &cobra.Command{
-	Use:   "chat",
-	Short: "Start an interactive chat session",
-	Long: `Start an interactive chat session with Gemini.
+// NewChatCmd creates a new chat command
+func NewChatCmd(deps *Dependencies) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "chat",
+		Short: "Start an interactive chat session",
+		Long: `Start an interactive chat session with Gemini.
 
 The chat maintains conversation context across messages.
 Type 'exit', 'quit', or press Ctrl+C to end the session.
@@ -71,25 +73,39 @@ LOCAL PERSONAS:
 
   Local personas are defined in ~/.geminiweb/personas.json
   Use 'geminiweb persona list' to see available personas.`,
-	Args: cobra.NoArgs,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return runChat()
-	},
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runChat(deps)
+		},
+	}
+
+	cmd.Flags().StringVarP(&chatGemFlag, "gem", "g", "", "Use a gem (by ID or name) - server-side persona")
+	cmd.Flags().BoolVarP(&chatNewFlag, "new", "n", false, "Start a new conversation (skip history selector)")
+	cmd.Flags().StringVarP(&chatPersonaFlag, "persona", "p", "", "Use a local persona (system prompt)")
+	cmd.Flags().StringVarP(&chatFileFlag, "file", "f", "", "Read initial prompt from file")
+
+	return cmd
 }
 
+// Backward compatibility global
+var chatCmd = NewChatCmd(nil)
+
 func init() {
-	chatCmd.Flags().StringVarP(&chatGemFlag, "gem", "g", "", "Use a gem (by ID or name) - server-side persona")
-	chatCmd.Flags().BoolVarP(&chatNewFlag, "new", "n", false, "Start a new conversation (skip history selector)")
-	chatCmd.Flags().StringVarP(&chatPersonaFlag, "persona", "p", "", "Use a local persona (system prompt)")
-	chatCmd.Flags().StringVarP(&chatFileFlag, "file", "f", "", "Read initial prompt from file")
+	// Flags and command structure are now handled in NewChatCmd and NewRootCmd
 }
 
 // maxFileSize is the maximum file size for initial prompt (1MB)
 const maxFileSize = 1 * 1024 * 1024
 
-func runChat() error {
+func runChat(deps *Dependencies) error {
 	modelName := getModel()
 	model := models.ModelFromName(modelName)
+
+	// Determine TUI and Client implementations
+	var tuiImpl TUIInterface = &DefaultTUI{}
+	if deps != nil && deps.TUI != nil {
+		tuiImpl = deps.TUI
+	}
 
 	// Read initial prompt from file if specified
 	var initialPrompt string
@@ -132,7 +148,7 @@ func runChat() error {
 	// Select conversation (new or existing)
 	var selectedConv *history.Conversation
 	if !chatNewFlag {
-		result, err := tui.RunHistorySelector(store, modelName)
+		result, err := tuiImpl.RunHistorySelector(store, modelName)
 		if err != nil {
 			return fmt.Errorf("history selector error: %w", err)
 		}
@@ -145,45 +161,50 @@ func runChat() error {
 		selectedConv = result.Conversation
 	}
 
-	// Load config for auto-close settings
-	cfg, _ := config.LoadConfig()
+	var client api.GeminiClientInterface
+	if deps != nil && deps.Client != nil {
+		client = deps.Client
+	} else {
+		// Load config for auto-close settings
+		cfg, _ := config.LoadConfig()
 
-	// Build client options
-	clientOpts := []api.ClientOption{
-		api.WithModel(model),
-		api.WithAutoRefresh(true),
-	}
+		// Build client options
+		clientOpts := []api.ClientOption{
+			api.WithModel(model),
+			api.WithAutoRefresh(true),
+		}
 
-	// Add browser refresh if enabled (also enables silent auto-login fallback)
-	if browserType, enabled := getBrowserRefresh(); enabled {
-		clientOpts = append(clientOpts, api.WithBrowserRefresh(browserType))
-	}
+		// Add browser refresh if enabled (also enables silent auto-login fallback)
+		if browserType, enabled := getBrowserRefresh(); enabled {
+			clientOpts = append(clientOpts, api.WithBrowserRefresh(browserType))
+		}
 
-	// Add auto-close options from config
-	if cfg.AutoClose {
-		clientOpts = append(clientOpts,
-			api.WithAutoClose(true),
-			api.WithCloseDelay(time.Duration(cfg.CloseDelay)*time.Second),
-			api.WithAutoReInit(cfg.AutoReInit),
-		)
-	}
+		// Add auto-close options from config
+		if cfg.AutoClose {
+			clientOpts = append(clientOpts,
+				api.WithAutoClose(true),
+				api.WithCloseDelay(time.Duration(cfg.CloseDelay)*time.Second),
+				api.WithAutoReInit(cfg.AutoReInit),
+			)
+		}
 
-	// Create client with nil cookies - Init() will load from disk or browser
-	client, err := api.NewClient(nil, clientOpts...)
-	if err != nil {
-		return fmt.Errorf("failed to create client: %w", err)
-	}
-	defer client.Close()
+		// Create client with nil cookies - Init() will load from disk or browser
+		client, err = api.NewClient(nil, clientOpts...)
+		if err != nil {
+			return fmt.Errorf("failed to create client: %w", err)
+		}
+		defer client.Close()
 
-	// Initialize client with animation
-	// Init() handles cookie loading from disk and browser fallback
-	spin := newSpinner("Connecting to Gemini")
-	spin.start()
-	if err := client.Init(); err != nil {
-		spin.stopWithError()
-		return fmt.Errorf("failed to initialize: %w", err)
+		// Initialize client with animation
+		// Init() handles cookie loading from disk and browser fallback
+		spin := newSpinner("Connecting to Gemini")
+		spin.start()
+		if err := client.Init(); err != nil {
+			spin.stopWithError()
+			return fmt.Errorf("failed to initialize: %w", err)
+		}
+		spin.stopWithSuccess("Connected")
 	}
-	spin.stopWithSuccess("Connected")
 
 	// Resolve gem if specified
 	resolvedGem, err := resolveGemFlag(client, chatGemFlag)
@@ -219,7 +240,7 @@ func runChat() error {
 	session := createChatSessionWithConversation(client, resolvedGem.ID, model, selectedConv)
 
 	// Run chat TUI with conversation, gem name, persona, and initial prompt
-	return tui.RunChatWithInitialPrompt(client, session, modelName, selectedConv, store, resolvedGem.Name, persona, initialPrompt)
+	return tuiImpl.RunChatWithInitialPrompt(client, session, modelName, selectedConv, store, resolvedGem.Name, persona, initialPrompt)
 }
 
 // createChatSessionWithConversation creates a chat session, optionally resuming from a conversation
