@@ -2,8 +2,12 @@
 package tui
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/diogo/geminiweb/internal/errors"
 	"github.com/diogo/geminiweb/internal/render"
 )
 
@@ -163,33 +167,32 @@ func rebuildStyles() {
 
 	// Subtitle/model name style
 	subtitleStyle = lipgloss.NewStyle().
-		Foreground(colorAccent)
+		Foreground(colorTextDim)
 
 	// Hint text style
 	hintStyle = lipgloss.NewStyle().
-		Foreground(colorTextDim).
+		Foreground(colorTextMute).
 		Italic(true)
 
 	// Messages area panel
 	messagesAreaStyle = lipgloss.NewStyle().
 		BorderStyle(lipgloss.RoundedBorder()).
 		BorderForeground(colorBorder).
-		Padding(1, 1)
+		Padding(1)
 
 	// User message bubble
 	userBubbleStyle = lipgloss.NewStyle().
 		BorderStyle(lipgloss.RoundedBorder()).
 		BorderForeground(colorSecondary).
-		Foreground(colorText).
 		Padding(0, 1).
-		MarginTop(1).
-		MarginBottom(1)
+		MarginLeft(4)
 
 	// User label style
 	userLabelStyle = lipgloss.NewStyle().
 		Foreground(colorSecondary).
 		Bold(true).
-		MarginBottom(0)
+		MarginBottom(0).
+		MarginLeft(4)
 
 	// Assistant message bubble
 	assistantBubbleStyle = lipgloss.NewStyle().
@@ -197,8 +200,7 @@ func rebuildStyles() {
 		BorderForeground(colorPrimary).
 		Foreground(colorText).
 		Padding(0, 1).
-		MarginTop(1).
-		MarginBottom(1)
+		MarginRight(4)
 
 	// Assistant label style
 	assistantLabelStyle = lipgloss.NewStyle().
@@ -206,19 +208,21 @@ func rebuildStyles() {
 		Bold(true).
 		MarginBottom(0)
 
-	// Tool bubble style
+	// Tool message bubble
 	toolBubbleStyle = lipgloss.NewStyle().
-		BorderStyle(lipgloss.RoundedBorder()).
-		BorderForeground(colorSecondary).
-		Padding(1, 2).
-		MarginTop(1).
-		MarginBottom(1)
+		BorderStyle(lipgloss.NormalBorder()).
+		BorderForeground(colorTextDim).
+		Foreground(colorTextDim).
+		Padding(0, 1).
+		MarginLeft(2).
+		MarginRight(2)
 
 	// Tool label style
 	toolLabelStyle = lipgloss.NewStyle().
-		Foreground(colorSecondary).
-		Bold(true).
-		MarginBottom(0)
+		Foreground(colorTextDim).
+		Italic(true).
+		MarginBottom(0).
+		MarginLeft(2)
 
 	// Thoughts panel style
 	thoughtsStyle = lipgloss.NewStyle().
@@ -232,158 +236,195 @@ func rebuildStyles() {
 
 	// Image section styles
 	imageSectionStyle = lipgloss.NewStyle().
-		BorderStyle(lipgloss.NormalBorder()).
-		BorderForeground(colorWarning).
-		BorderLeft(true).
-		PaddingLeft(1).
-		MarginLeft(1).
-		MarginTop(1)
+		MarginTop(1).
+		MarginBottom(1)
 
 	imageSectionHeaderStyle = lipgloss.NewStyle().
-		Foreground(colorWarning).
-		Bold(true)
+		Foreground(colorTextDim).
+		Bold(true).
+		MarginBottom(0)
 
 	imageLinkStyle = lipgloss.NewStyle().
-		Foreground(colorPrimary).
+		Foreground(colorAccent).
 		Underline(true)
 
 	imageTitleStyle = lipgloss.NewStyle().
-		Foreground(colorText)
+		Foreground(colorText).
+		Italic(true)
 
 	// Input area panel
 	inputPanelStyle = lipgloss.NewStyle().
 		BorderStyle(lipgloss.RoundedBorder()).
-		BorderForeground(colorSecondary).
+		BorderForeground(colorBorder).
 		Padding(0, 1).
 		MarginTop(1)
 
 	// Input label style
 	inputLabelStyle = lipgloss.NewStyle().
-		Foreground(colorSecondary).
-		Bold(true)
+		Foreground(colorPrimary).
+		Bold(true).
+		MarginRight(1)
 
 	// Loading/spinner style
 	loadingStyle = lipgloss.NewStyle().
 		Foreground(colorAccent).
 		Bold(true)
 
-	// Status bar style
+	// Status bar styles
 	statusBarStyle = lipgloss.NewStyle().
-		Foreground(colorTextDim).
+		Foreground(colorTextMute).
 		MarginTop(1)
 
-	// Status bar key style
 	statusKeyStyle = lipgloss.NewStyle().
-		Foreground(colorText).
-		Background(colorSurface).
-		Padding(0, 1)
+		Foreground(colorTextDim).
+		Bold(true)
 
-	// Status bar description style
 	statusDescStyle = lipgloss.NewStyle().
-		Foreground(colorTextDim)
+		Foreground(colorTextMute)
 
 	// Error style
 	errorStyle = lipgloss.NewStyle().
 		Foreground(colorError).
 		Bold(true)
 
-	// Welcome message style
+	// Welcome styles
 	welcomeStyle = lipgloss.NewStyle().
-		Foreground(colorTextDim).
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(colorPrimary).
+		Padding(1, 2).
+		MarginBottom(1).
 		Align(lipgloss.Center)
 
-	// Welcome title style
 	welcomeTitleStyle = lipgloss.NewStyle().
 		Foreground(colorPrimary).
 		Bold(true).
-		Align(lipgloss.Center)
-
-	// Welcome icon style
-	welcomeIconStyle = lipgloss.NewStyle().
-		Foreground(colorAccent).
-		Align(lipgloss.Center)
-
-	// ═══════════════════════════════════════════════════════════════════════════════
-	// CONFIG MENU STYLES
-	// ═══════════════════════════════════════════════════════════════════════════════
-
-	// Config header style
-	configHeaderStyle = lipgloss.NewStyle().
-		BorderStyle(lipgloss.RoundedBorder()).
-		BorderForeground(colorBorder).
-		Padding(0, 2).
+		Copy().
 		MarginBottom(1)
 
-	// Config title style
-	configTitleStyle = lipgloss.NewStyle().
-		Foreground(colorPrimary).
-		Bold(true)
+	welcomeIconStyle = lipgloss.NewStyle().
+		Foreground(colorAccent).
+		MarginBottom(1)
 
-	// Config panel style (for paths and settings)
+	// Config menu styles
+	configHeaderStyle = lipgloss.NewStyle().
+		Foreground(colorPrimary).
+		Bold(true).
+		MarginBottom(1).
+		Align(lipgloss.Center)
+
+	configTitleStyle = lipgloss.NewStyle().
+		Foreground(colorText).
+		Bold(true).
+		MarginBottom(1).
+		PaddingLeft(1)
+
 	configPanelStyle = lipgloss.NewStyle().
 		BorderStyle(lipgloss.RoundedBorder()).
 		BorderForeground(colorBorder).
-		Padding(1, 2).
-		MarginBottom(1)
+		Padding(1, 2)
 
-	// Config section title style
 	configSectionTitleStyle = lipgloss.NewStyle().
-		Foreground(colorAccent).
+		Foreground(colorSecondary).
 		Bold(true).
-		MarginBottom(1)
+		MarginTop(1).
+		MarginBottom(0)
 
-	// Config menu item style (not selected)
 	configMenuItemStyle = lipgloss.NewStyle().
 		Foreground(colorText).
 		PaddingLeft(2)
 
-	// Config menu item style (selected/highlighted)
 	configMenuSelectedStyle = lipgloss.NewStyle().
-		Foreground(colorPrimary).
-		Bold(true)
+		Foreground(colorAccent).
+		Bold(true).
+		PaddingLeft(0).
+		SetString("> ")
 
-	// Config cursor style
 	configCursorStyle = lipgloss.NewStyle().
-		Foreground(colorPrimary).
-		Bold(true)
-
-	// Config value style (for settings values)
-	configValueStyle = lipgloss.NewStyle().
 		Foreground(colorAccent)
 
-	// Config enabled value style
+	configValueStyle = lipgloss.NewStyle().
+		Foreground(colorTextDim)
+
 	configEnabledStyle = lipgloss.NewStyle().
-		Foreground(colorSecondary)
+		Foreground(lipgloss.Color("#9ece6a")) // Green
 
-	// Config disabled value style
 	configDisabledStyle = lipgloss.NewStyle().
-		Foreground(colorTextDim)
+		Foreground(lipgloss.Color("#f7768e")) // Red
 
-	// Config path style
 	configPathStyle = lipgloss.NewStyle().
-		Foreground(colorTextDim)
+		Foreground(colorTextMute).
+		Italic(true)
 
-	// Config status ok style
 	configStatusOkStyle = lipgloss.NewStyle().
-		Foreground(colorSecondary)
+		Foreground(lipgloss.Color("#9ece6a"))
 
-	// Config status error style
 	configStatusErrorStyle = lipgloss.NewStyle().
-		Foreground(colorError)
+		Foreground(lipgloss.Color("#f7768e"))
 
-	// Config feedback message style
 	configFeedbackStyle = lipgloss.NewStyle().
-		Foreground(colorSecondary).
-		Bold(true).
+		Foreground(colorTextDim).
+		Italic(true).
 		MarginTop(1)
 
-	// Config status bar style
 	configStatusBarStyle = lipgloss.NewStyle().
-		Foreground(colorTextDim).
-		MarginTop(1)
+		Foreground(colorTextMute).
+		MarginTop(1).
+		Align(lipgloss.Center)
 }
 
-// GetCurrentThemeName returns the name of the current TUI theme
-func GetCurrentThemeName() string {
-	return render.GetTUITheme().Name
+// FormatError returns a styled error message with additional context.
+// It extracts details from structured GeminiError types if available.
+func FormatError(err error) string {
+	if err == nil {
+		return ""
+	}
+
+	// Use colors from theme
+	errStyle := lipgloss.NewStyle().Foreground(colorError)
+	dimStyle := lipgloss.NewStyle().Foreground(colorTextDim)
+
+	var sb strings.Builder
+	sb.WriteString(errStyle.Render(fmt.Sprintf("✗ %v", err)))
+
+	// Extract additional context from structured errors
+	if status := errors.GetHTTPStatus(err); status > 0 {
+		sb.WriteString(dimStyle.Render(fmt.Sprintf("\n  HTTP Status: %d", status)))
+	}
+
+	if code := errors.GetErrorCode(err); code != errors.ErrCodeUnknown {
+		sb.WriteString(dimStyle.Render(fmt.Sprintf("\n  Error Code: %d (%s)", code, code.String())))
+	}
+
+	if endpoint := errors.GetEndpoint(err); endpoint != "" {
+		sb.WriteString(dimStyle.Render(fmt.Sprintf("\n  Endpoint: %s", endpoint)))
+	}
+
+	// Show response body if available (contains detailed error info like blocking URLs)
+	if body := errors.GetResponseBody(err); body != "" {
+		sb.WriteString(dimStyle.Render(fmt.Sprintf("\n\n  %s", strings.ReplaceAll(body, "\n", "\n  "))))
+	} else {
+		// Provide helpful hints based on error type only if no body
+		switch {
+		case errors.IsAuthError(err):
+			sb.WriteString(dimStyle.Render("\n  Hint: Try running 'geminiweb auto-login' to refresh your session"))
+		case errors.IsRateLimitError(err):
+			sb.WriteString(dimStyle.Render("\n  Hint: You've hit the usage limit. Try again later or use a different model"))
+		case errors.IsNetworkError(err):
+			sb.WriteString(dimStyle.Render("\n  Hint: Check your internet connection and try again"))
+		case errors.IsTimeoutError(err):
+			sb.WriteString(dimStyle.Render("\n  Hint: Request timed out. Try again or check your connection"))
+		case errors.IsUploadError(err):
+			sb.WriteString(dimStyle.Render("\n  Hint: File upload failed. Check the file exists and is accessible"))
+		}
+	}
+
+	return sb.String()
+}
+
+// PrintError prints a styled error message to stderr.
+func PrintError(err error) {
+	if err == nil {
+		return
+	}
+	fmt.Println(FormatError(err))
 }
