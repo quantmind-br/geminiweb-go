@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/diogo/geminiweb/internal/config"
+	"github.com/diogo/geminiweb/internal/tui"
 )
 
 // PersonaReaderInterface defines the interface for reading persona input
@@ -40,7 +41,7 @@ func NewPersonaCmd(deps *Dependencies) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "persona",
 		Short: "Manage chat personas",
-		Long:  `View and manage personas (system prompts) for chat sessions.`, 
+		Long:  `View and manage personas (system prompts) for chat sessions.`,
 	}
 
 	cmd.AddCommand(NewPersonaListCmd(deps))
@@ -48,6 +49,7 @@ func NewPersonaCmd(deps *Dependencies) *cobra.Command {
 	cmd.AddCommand(NewPersonaAddCmd(deps))
 	cmd.AddCommand(NewPersonaDeleteCmd(deps))
 	cmd.AddCommand(NewPersonaSetDefaultCmd(deps))
+	cmd.AddCommand(NewPersonaManageCmd(deps))
 
 	return cmd
 }
@@ -102,6 +104,17 @@ func NewPersonaSetDefaultCmd(deps *Dependencies) *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runPersonaSetDefault(cmd, args)
+		},
+	}
+}
+
+func NewPersonaManageCmd(deps *Dependencies) *cobra.Command {
+	return &cobra.Command{
+		Use:   "manage",
+		Short: "Launch the persona manager TUI",
+		Long:  `Launch an interactive Terminal UI for managing personas with create, edit, delete, and set default operations.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runPersonaManage(cmd, args)
 		},
 	}
 }
@@ -226,4 +239,9 @@ func runPersonaSetDefault(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("Persona '%s' set as default.\n", name)
 	return nil
+}
+
+func runPersonaManage(cmd *cobra.Command, args []string) error {
+	store := tui.NewPersonaStore()
+	return tui.RunPersonaManagerTUI(store)
 }

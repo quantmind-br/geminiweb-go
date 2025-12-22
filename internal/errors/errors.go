@@ -1160,3 +1160,135 @@ func IsGemError(err error) bool {
 	var gemErr *GemError
 	return errors.As(err, &gemErr)
 }
+
+// PersonaNotFoundError represents an error when a persona is not found
+type PersonaNotFoundError struct {
+	Name string
+}
+
+func (e *PersonaNotFoundError) Error() string {
+	return fmt.Sprintf("persona '%s' not found", e.Name)
+}
+
+// Is allows comparison with other errors
+func (e *PersonaNotFoundError) Is(target error) bool {
+	_, ok := target.(*PersonaNotFoundError)
+	return ok
+}
+
+// NewPersonaNotFoundError creates a new PersonaNotFoundError
+func NewPersonaNotFoundError(name string) *PersonaNotFoundError {
+	return &PersonaNotFoundError{Name: name}
+}
+
+// DuplicatePersonaError represents an error when a persona with the same name already exists
+type DuplicatePersonaError struct {
+	Name string
+}
+
+func (e *DuplicatePersonaError) Error() string {
+	return fmt.Sprintf("persona '%s' already exists", e.Name)
+}
+
+// Is allows comparison with other errors
+func (e *DuplicatePersonaError) Is(target error) bool {
+	_, ok := target.(*DuplicatePersonaError)
+	return ok
+}
+
+// NewDuplicatePersonaError creates a new DuplicatePersonaError
+func NewDuplicatePersonaError(name string) *DuplicatePersonaError {
+	return &DuplicatePersonaError{Name: name}
+}
+
+// ValidationError represents a validation error for persona fields
+type ValidationError struct {
+	Field       string
+	Message     string
+	FieldErrors map[string]string
+}
+
+func (e *ValidationError) Error() string {
+	if e.Field != "" {
+		return fmt.Sprintf("validation failed for field '%s': %s", e.Field, e.Message)
+	}
+	if len(e.FieldErrors) > 0 {
+		var parts []string
+		for field, msg := range e.FieldErrors {
+			parts = append(parts, fmt.Sprintf("%s: %s", field, msg))
+		}
+		return fmt.Sprintf("validation failed: %s", strings.Join(parts, ", "))
+	}
+	return "validation failed"
+}
+
+// Is allows comparison with other errors
+func (e *ValidationError) Is(target error) bool {
+	_, ok := target.(*ValidationError)
+	return ok
+}
+
+// NewValidationError creates a new ValidationError for a single field
+func NewValidationError(field, message string) *ValidationError {
+	return &ValidationError{
+		Field:   field,
+		Message: message,
+	}
+}
+
+// NewValidationErrorWithFields creates a new ValidationError with multiple field errors
+func NewValidationErrorWithFields(fieldErrors map[string]string) *ValidationError {
+	return &ValidationError{
+		FieldErrors: fieldErrors,
+	}
+}
+
+// ConcurrentModificationError represents an error when concurrent modifications conflict
+type ConcurrentModificationError struct {
+	Message string
+}
+
+func (e *ConcurrentModificationError) Error() string {
+	if e.Message == "" {
+		return "concurrent modification detected"
+	}
+	return fmt.Sprintf("concurrent modification: %s", e.Message)
+}
+
+// Is allows comparison with other errors
+func (e *ConcurrentModificationError) Is(target error) bool {
+	_, ok := target.(*ConcurrentModificationError)
+	return ok
+}
+
+// NewConcurrentModificationError creates a new ConcurrentModificationError
+func NewConcurrentModificationError(message string) *ConcurrentModificationError {
+	return &ConcurrentModificationError{Message: message}
+}
+
+// IsPersonaNotFoundError checks if an error is a PersonaNotFoundError
+func IsPersonaNotFoundError(err error) bool {
+	if err == nil {
+		return false
+	}
+	var target *PersonaNotFoundError
+	return errors.As(err, &target)
+}
+
+// IsDuplicatePersonaError checks if an error is a DuplicatePersonaError
+func IsDuplicatePersonaError(err error) bool {
+	if err == nil {
+		return false
+	}
+	var target *DuplicatePersonaError
+	return errors.As(err, &target)
+}
+
+// IsValidationError checks if an error is a ValidationError
+func IsValidationError(err error) bool {
+	if err == nil {
+		return false
+	}
+	var target *ValidationError
+	return errors.As(err, &target)
+}

@@ -322,3 +322,54 @@ func FormatSystemPrompt(persona *Persona, userMessage string) string {
 [User Message]
 %s`, persona.SystemPrompt, userMessage)
 }
+
+// Validation constants
+const (
+	MaxNameLength        = 50
+	MaxDescriptionLength = 200
+	MaxPromptLength      = 32 * 1024 // 32KB
+	MinNameLength        = 1
+)
+
+// ValidatePersona validates a persona's fields
+func ValidatePersona(p Persona) error {
+	fieldErrors := make(map[string]string)
+
+	// Validate name
+	if p.Name == "" {
+		fieldErrors["name"] = "name is required"
+	} else if len(p.Name) > MaxNameLength {
+		fieldErrors["name"] = fmt.Sprintf("name too long (max %d characters)", MaxNameLength)
+	} else if !isValidPersonaName(p.Name) {
+		fieldErrors["name"] = "name must contain only alphanumeric characters, underscores, and hyphens"
+	}
+
+	// Validate description (optional but has max length)
+	if len(p.Description) > MaxDescriptionLength {
+		fieldErrors["description"] = fmt.Sprintf("description too long (max %d characters)", MaxDescriptionLength)
+	}
+
+	// Validate system prompt
+	if len(p.SystemPrompt) > MaxPromptLength {
+		fieldErrors["system_prompt"] = fmt.Sprintf("system prompt too long (max %d characters)", MaxPromptLength)
+	}
+
+	if len(fieldErrors) > 0 {
+		return fmt.Errorf("validation failed: %v", fieldErrors)
+	}
+
+	return nil
+}
+
+// isValidPersonaName checks if a persona name contains only valid characters
+func isValidPersonaName(name string) bool {
+	if name == "default" {
+		return true
+	}
+	for _, c := range name {
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-') {
+			return false
+		}
+	}
+	return true
+}
