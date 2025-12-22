@@ -17,6 +17,6 @@
 - [x] Task: Implement tests for `internal/commands/autologin.go` (Browser detection logic). 0aea272
 ## Phase 4: Error Handling Standardization
 
-- [ ] Task: Create a centralized error printing helper in `internal/tui/styles` using `lipgloss`.
+- [x] Task: Create a centralized error printing helper in `internal/tui/styles` using `lipgloss`. f0b9d7a
 - [ ] Task: Refactor `cmd/geminiweb/main.go` to use the new error helper for top-level command errors.
 - [ ] Task: Conductor - User Manual Verification 'Error Handling Standardization' (Protocol in workflow.md)
