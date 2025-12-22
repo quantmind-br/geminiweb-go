@@ -498,6 +498,37 @@ func TestGetBrowserRefresh(t *testing.T) {
 	})
 }
 
+func TestNewRootCmd(t *testing.T) {
+	mockClient := &mockGeminiClient{}
+	deps := &Dependencies{
+		Client: mockClient,
+	}
+
+	cmd := NewRootCmd(deps)
+	if cmd == nil {
+		t.Fatal("NewRootCmd returned nil")
+	}
+
+	if cmd.Use != "geminiweb [prompt]" {
+		t.Errorf("Expected use 'geminiweb [prompt]', got %s", cmd.Use)
+	}
+
+	// Verify subcommands are attached
+	expectedSubcommands := []string{"chat", "config", "gems"}
+	for _, sub := range expectedSubcommands {
+		found := false
+		for _, c := range cmd.Commands() {
+			if c.Name() == sub {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("Subcommand %s not found in NewRootCmd", sub)
+		}
+	}
+}
+
 // TestExecuteWrapper tests the Execute() wrapper function
 func TestExecuteWrapper(t *testing.T) {
 	t.Run("successful_execution_no_exit", func(t *testing.T) {

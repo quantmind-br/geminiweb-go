@@ -113,8 +113,6 @@ Examples:
 	cmd.Flags().BoolP("version", "v", false, "Show version and exit")
 
 	// Add subcommands
-	// Note: We are using the global variables here because they are defined in other files
-	// and added via init(). To fully refactor, we would need factory functions for them too.
 	cmd.AddCommand(chatCmd)
 	cmd.AddCommand(configCmd)
 	cmd.AddCommand(importCookiesCmd)
@@ -123,80 +121,41 @@ Examples:
 	cmd.AddCommand(personaCmd)
 	cmd.AddCommand(gemsCmd)
 
-		return cmd
+	return cmd
+}
 
+// Execute runs the root command
+func Execute() {
+	if err := NewRootCmd(nil).Execute(); err != nil {
+		os.Exit(1)
+	}
+}
+
+// getModel returns the model to use (from flag or config)
+func getModel() string {
+	if modelFlag != "" {
+		return modelFlag
 	}
 
-	
-
-	// Execute runs the root command
-
-	func Execute() {
-
-		if err := NewRootCmd(nil).Execute(); err != nil {
-
-			os.Exit(1)
-
-		}
-
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		return "gemini-2.5-flash"
 	}
 
-	
+	return cfg.DefaultModel
+}
 
-	// getModel returns the model to use (from flag or config)
-
-	func getModel() string {
-
-		if modelFlag != "" {
-
-			return modelFlag
-
-		}
-
-	
-
-		cfg, err := config.LoadConfig()
-
-		if err != nil {
-
-			return "gemini-2.5-flash"
-
-		}
-
-	
-
-		return cfg.DefaultModel
-
+// getBrowserRefresh returns the browser type for auto-refresh, or empty if disabled
+func getBrowserRefresh() (browser.SupportedBrowser, bool) {
+	if browserRefreshFlag == "" {
+		return "", false
 	}
 
-	
-
-	// getBrowserRefresh returns the browser type for auto-refresh, or empty if disabled
-
-	func getBrowserRefresh() (browser.SupportedBrowser, bool) {
-
-		if browserRefreshFlag == "" {
-
-			return "", false
-
-		}
-
-	
-
-		browserType, err := browser.ParseBrowser(browserRefreshFlag)
-
-		if err != nil {
-
-			fmt.Fprintf(os.Stderr, "Warning: invalid browser-refresh value '%s', disabling browser refresh\n", browserRefreshFlag)
-
-			return "", false
-
-		}
-
-	
-
-		return browserType, true
-
+	browserType, err := browser.ParseBrowser(browserRefreshFlag)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: invalid browser-refresh value '%s', disabling browser refresh\n", browserRefreshFlag)
+		return "", false
 	}
 
-	
+	return browserType, true
+}
