@@ -52,6 +52,9 @@ func (m *mockGemsClient) UploadImage(filePath string) (*api.UploadedImage, error
 func (m *mockGemsClient) UploadFile(filePath string) (*api.UploadedFile, error) {
 	return nil, nil
 }
+func (m *mockGemsClient) UploadText(content string, fileName string) (*api.UploadedFile, error) {
+	return nil, nil
+}
 func (m *mockGemsClient) RefreshFromBrowser() (bool, error) { return false, nil }
 func (m *mockGemsClient) IsBrowserRefreshEnabled() bool     { return false }
 func (m *mockGemsClient) CreateGem(name, prompt, description string) (*models.Gem, error) {
