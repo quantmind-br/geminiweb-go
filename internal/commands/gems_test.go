@@ -507,7 +507,7 @@ func TestRunGemsCreate_Success(t *testing.T) {
 	// Run the command
 	cmd := &cobra.Command{Use: "create"}
 	cmd.SetArgs([]string{"test-gem"})
-	err := runGemsCreate(cmd, []string{"test-gem"})
+	err := runGemsCreate(nil, []string{"test-gem"})
 
 	if err != nil {
 		t.Errorf("runGemsCreate() error = %v", err)
@@ -529,7 +529,7 @@ func TestRunGemsCreate_NoPrompt(t *testing.T) {
 	gemPromptFile = ""
 
 	// Run the command
-	err := runGemsCreate(&cobra.Command{}, []string{"test-gem"})
+	err := runGemsCreate(nil, []string{"test-gem"})
 
 	if err == nil {
 		t.Error("runGemsCreate() expected error for missing prompt, got nil")
@@ -589,7 +589,7 @@ func TestRunGemsCreate_WithPromptFile(t *testing.T) {
 	defer func() { createGemsClientFunc = originalCreateGemsClient }()
 
 	// Run the command
-	err := runGemsCreate(&cobra.Command{}, []string{"test-gem"})
+	err := runGemsCreate(nil, []string{"test-gem"})
 
 	if err != nil {
 		t.Errorf("runGemsCreate() error = %v", err)
@@ -611,7 +611,7 @@ func TestRunGemsCreate_ClientError(t *testing.T) {
 	defer func() { createGemsClientFunc = originalCreateGemsClient }()
 
 	// Run the command
-	err := runGemsCreate(&cobra.Command{}, []string{"test-gem"})
+	err := runGemsCreate(nil, []string{"test-gem"})
 
 	if err == nil {
 		t.Error("runGemsCreate() expected error, got nil")
@@ -674,7 +674,7 @@ func TestRunGemsUpdate_Success(t *testing.T) {
 	defer func() { createGemsClientFunc = originalCreateGemsClient }()
 
 	// Run the command
-	err := runGemsUpdate(&cobra.Command{}, []string{"gem-id-123"})
+	err := runGemsUpdate(nil, []string{"gem-id-123"})
 
 	if err != nil {
 		t.Errorf("runGemsUpdate() error = %v", err)
@@ -710,7 +710,7 @@ func TestRunGemsDelete_Success(t *testing.T) {
 	defer func() { createGemsClientFunc = originalCreateGemsClient }()
 
 	// Run the command
-	err := runGemsDelete(&cobra.Command{}, []string{"gem-id-123"})
+	err := runGemsDelete(nil, []string{"gem-id-123"})
 
 	if err != nil {
 		t.Errorf("runGemsDelete() error = %v", err)
@@ -748,7 +748,7 @@ func TestRunGemsShow_Success(t *testing.T) {
 	os.Stdout = w
 
 	// Run the command
-	err := runGemsShow(&cobra.Command{}, []string{"gem-id-123"})
+	err := runGemsShow(nil, []string{"gem-id-123"})
 
 	// Restore stdout
 	_ = w.Close()
@@ -777,7 +777,7 @@ func TestRunGemsShow_NotFound(t *testing.T) {
 	defer func() { createGemsClientFunc = originalCreateGemsClient }()
 
 	// Run the command
-	err := runGemsShow(&cobra.Command{}, []string{"nonexistent"})
+	err := runGemsShow(nil, []string{"nonexistent"})
 
 	if err == nil {
 		t.Error("runGemsShow() expected error for not found gem, got nil")
@@ -847,7 +847,7 @@ func TestRunGemsUpdate_SystemGem(t *testing.T) {
 	defer func() { createGemsClientFunc = originalCreateGemsClient }()
 
 	// Run the command
-	err := runGemsUpdate(&cobra.Command{}, []string{"system-gem"})
+	err := runGemsUpdate(nil, []string{"system-gem"})
 
 	if err == nil {
 		t.Error("runGemsUpdate() expected error for system gem, got nil")
@@ -876,7 +876,7 @@ func TestRunGemsUpdate_GemNotFound(t *testing.T) {
 	defer func() { createGemsClientFunc = originalCreateGemsClient }()
 
 	// Run the command
-	err := runGemsUpdate(&cobra.Command{}, []string{"nonexistent"})
+	err := runGemsUpdate(nil, []string{"nonexistent"})
 
 	if err == nil {
 		t.Error("runGemsUpdate() expected error for not found gem, got nil")
@@ -904,7 +904,7 @@ func TestRunGemsUpdate_FetchError(t *testing.T) {
 	defer func() { createGemsClientFunc = originalCreateGemsClient }()
 
 	// Run the command
-	err := runGemsUpdate(&cobra.Command{}, []string{"gem-id"})
+	err := runGemsUpdate(nil, []string{"gem-id"})
 
 	if err == nil {
 		t.Error("runGemsUpdate() expected error, got nil")
@@ -949,7 +949,7 @@ func TestRunGemsUpdate_UpdateError(t *testing.T) {
 	defer func() { createGemsClientFunc = originalCreateGemsClient }()
 
 	// Run the command
-	err := runGemsUpdate(&cobra.Command{}, []string{"gem-id"})
+	err := runGemsUpdate(nil, []string{"gem-id"})
 
 	if err == nil {
 		t.Error("runGemsUpdate() expected error, got nil")
@@ -1018,7 +1018,7 @@ func TestRunGemsUpdate_WithPromptFile(t *testing.T) {
 	defer func() { createGemsClientFunc = originalCreateGemsClient }()
 
 	// Run the command
-	err := runGemsUpdate(&cobra.Command{}, []string{"gem-id"})
+	err := runGemsUpdate(nil, []string{"gem-id"})
 
 	if err != nil {
 		t.Errorf("runGemsUpdate() error = %v", err)
@@ -1058,7 +1058,7 @@ func TestRunGemsUpdate_InvalidPromptFile(t *testing.T) {
 	defer func() { createGemsClientFunc = originalCreateGemsClient }()
 
 	// Run the command
-	err := runGemsUpdate(&cobra.Command{}, []string{"gem-id"})
+	err := runGemsUpdate(nil, []string{"gem-id"})
 
 	if err == nil {
 		t.Error("runGemsUpdate() expected error for invalid file, got nil")
@@ -1095,7 +1095,7 @@ func TestRunGemsDelete_SystemGem(t *testing.T) {
 	defer func() { createGemsClientFunc = originalCreateGemsClient }()
 
 	// Run the command
-	err := runGemsDelete(&cobra.Command{}, []string{"system-gem"})
+	err := runGemsDelete(nil, []string{"system-gem"})
 
 	if err == nil {
 		t.Error("runGemsDelete() expected error for system gem, got nil")
@@ -1124,7 +1124,7 @@ func TestRunGemsDelete_GemNotFound(t *testing.T) {
 	defer func() { createGemsClientFunc = originalCreateGemsClient }()
 
 	// Run the command
-	err := runGemsDelete(&cobra.Command{}, []string{"nonexistent"})
+	err := runGemsDelete(nil, []string{"nonexistent"})
 
 	if err == nil {
 		t.Error("runGemsDelete() expected error for not found gem, got nil")
@@ -1152,7 +1152,7 @@ func TestRunGemsDelete_FetchError(t *testing.T) {
 	defer func() { createGemsClientFunc = originalCreateGemsClient }()
 
 	// Run the command
-	err := runGemsDelete(&cobra.Command{}, []string{"gem-id"})
+	err := runGemsDelete(nil, []string{"gem-id"})
 
 	if err == nil {
 		t.Error("runGemsDelete() expected error, got nil")
@@ -1192,7 +1192,7 @@ func TestRunGemsDelete_DeleteError(t *testing.T) {
 	defer func() { createGemsClientFunc = originalCreateGemsClient }()
 
 	// Run the command
-	err := runGemsDelete(&cobra.Command{}, []string{"gem-id"})
+	err := runGemsDelete(nil, []string{"gem-id"})
 
 	if err == nil {
 		t.Error("runGemsDelete() expected error, got nil")
@@ -1220,7 +1220,7 @@ func TestRunGemsShow_FetchError(t *testing.T) {
 	defer func() { createGemsClientFunc = originalCreateGemsClient }()
 
 	// Run the command
-	err := runGemsShow(&cobra.Command{}, []string{"gem-id"})
+	err := runGemsShow(nil, []string{"gem-id"})
 
 	if err == nil {
 		t.Error("runGemsShow() expected error, got nil")
@@ -1262,7 +1262,7 @@ func TestRunGemsShow_SystemGem(t *testing.T) {
 	os.Stdout = w
 
 	// Run the command
-	err := runGemsShow(&cobra.Command{}, []string{"system-gem"})
+	err := runGemsShow(nil, []string{"system-gem"})
 
 	// Restore stdout
 	_ = w.Close()
@@ -1295,7 +1295,7 @@ func TestRunGemsCreate_CreateError(t *testing.T) {
 	defer func() { createGemsClientFunc = originalCreateGemsClient }()
 
 	// Run the command
-	err := runGemsCreate(&cobra.Command{}, []string{"test-gem"})
+	err := runGemsCreate(nil, []string{"test-gem"})
 
 	if err == nil {
 		t.Error("runGemsCreate() expected error, got nil")
@@ -1321,7 +1321,7 @@ func TestRunGemsCreate_InvalidPromptFile(t *testing.T) {
 	gemPromptFile = "/nonexistent/path/prompt.txt"
 
 	// Run the command
-	err := runGemsCreate(&cobra.Command{}, []string{"test-gem"})
+	err := runGemsCreate(nil, []string{"test-gem"})
 
 	if err == nil {
 		t.Error("runGemsCreate() expected error for invalid file, got nil")

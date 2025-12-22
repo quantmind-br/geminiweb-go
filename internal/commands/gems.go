@@ -11,14 +11,12 @@ import (
 
 	"github.com/diogo/geminiweb/internal/api"
 	"github.com/diogo/geminiweb/internal/models"
-	"github.com/diogo/geminiweb/internal/tui"
 )
 
 // createGemsClientFunc is a variable that can be overridden for testing
 var createGemsClientFunc = func() (api.GeminiClientInterface, error) {
 	return createGemsClient()
 }
-
 
 // GemReaderInterface defines the interface for reading gem input
 type GemReaderInterface interface {
@@ -42,10 +40,12 @@ func (r *GemStdInReader) ReadString(delim byte) (string, error) {
 	return r.reader.ReadString(delim)
 }
 
-var gemsCmd = &cobra.Command{
-	Use:   "gems",
-	Short: "Manage Gemini Gems (server-side personas)",
-	Long: `Gems are custom personas stored on Google's servers.
+// NewGemsCmd creates a new gems command
+func NewGemsCmd(deps *Dependencies) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "gems",
+		Short: "Manage Gemini Gems (server-side personas)",
+		Long: `Gems are custom personas stored on Google's servers.
 Unlike local personas, gems sync across devices with your Google account.
 
 INTERACTIVE MODE (default):
@@ -70,13 +70,26 @@ KEYBOARD SHORTCUTS (interactive mode):
 QUICK START:
   geminiweb gems             # Open interactive gems manager
   geminiweb chat --gem code  # Start chat with a gem directly`,
-	RunE: runGemsInteractive,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runGemsInteractive(deps, args)
+		},
+	}
+
+	cmd.AddCommand(NewGemsListCmd(deps))
+	cmd.AddCommand(NewGemsCreateCmd(deps))
+	cmd.AddCommand(NewGemsUpdateCmd(deps))
+	cmd.AddCommand(NewGemsDeleteCmd(deps))
+	cmd.AddCommand(NewGemsShowCmd(deps))
+
+	return cmd
 }
 
-var gemsListCmd = &cobra.Command{
-	Use:   "list",
-	Short: "List all gems",
-	Long: `Browse all gems in an interactive TUI.
+// NewGemsListCmd creates a new gems list command
+func NewGemsListCmd(deps *Dependencies) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "list",
+		Short: "List all gems",
+		Long: `Browse all gems in an interactive TUI.
 
 KEYBOARD SHORTCUTS:
   c        Start chat with selected gem
@@ -84,36 +97,83 @@ KEYBOARD SHORTCUTS:
   Enter    View gem details
   /        Search gems
   q        Quit`,
-	RunE: runGemsList,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runGemsList(deps, args)
+		},
+	}
+
+	cmd.Flags().BoolVar(&gemsIncludeHidden, "hidden", false, "Include hidden system gems")
+	return cmd
 }
 
-var gemsCreateCmd = &cobra.Command{
-	Use:   "create <name>",
-	Short: "Create a new gem",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runGemsCreate,
+// NewGemsCreateCmd creates a new gems create command
+func NewGemsCreateCmd(deps *Dependencies) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "create <name>",
+		Short: "Create a new gem",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runGemsCreate(deps, args)
+		},
+	}
+
+	cmd.Flags().StringVarP(&gemPrompt, "prompt", "p", "", "System prompt for the gem")
+	cmd.Flags().StringVarP(&gemDescription, "description", "d", "", "Description")
+	cmd.Flags().StringVarP(&gemPromptFile, "file", "f", "", "Read prompt from file")
+
+	return cmd
 }
 
-var gemsUpdateCmd = &cobra.Command{
-	Use:   "update <id-or-name>",
-	Short: "Update an existing gem",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runGemsUpdate,
+// NewGemsUpdateCmd creates a new gems update command
+func NewGemsUpdateCmd(deps *Dependencies) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "update <id-or-name>",
+		Short: "Update an existing gem",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runGemsUpdate(deps, args)
+		},
+	}
+
+	cmd.Flags().StringVarP(&gemPrompt, "prompt", "p", "", "New system prompt")
+	cmd.Flags().StringVarP(&gemDescription, "description", "d", "", "New description")
+	cmd.Flags().StringVarP(&gemPromptFile, "file", "f", "", "Read prompt from file")
+	cmd.Flags().StringVarP(&gemName, "name", "n", "", "New name for the gem")
+
+	return cmd
 }
 
-var gemsDeleteCmd = &cobra.Command{
-	Use:   "delete <id-or-name>",
-	Short: "Delete a gem",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runGemsDelete,
+// NewGemsDeleteCmd creates a new gems delete command
+func NewGemsDeleteCmd(deps *Dependencies) *cobra.Command {
+	return &cobra.Command{
+		Use:   "delete <id-or-name>",
+		Short: "Delete a gem",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runGemsDelete(deps, args)
+		},
+	}
 }
 
-var gemsShowCmd = &cobra.Command{
-	Use:   "show <id-or-name>",
-	Short: "Show gem details",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runGemsShow,
+// NewGemsShowCmd creates a new gems show command
+func NewGemsShowCmd(deps *Dependencies) *cobra.Command {
+	return &cobra.Command{
+		Use:   "show <id-or-name>",
+		Short: "Show gem details",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runGemsShow(deps, args)
+		},
+	}
 }
+
+// Backward compatibility globals
+var gemsCmd = NewGemsCmd(nil)
+var gemsListCmd = NewGemsListCmd(nil)
+var gemsCreateCmd = NewGemsCreateCmd(nil)
+var gemsUpdateCmd = NewGemsUpdateCmd(nil)
+var gemsDeleteCmd = NewGemsDeleteCmd(nil)
+var gemsShowCmd = NewGemsShowCmd(nil)
 
 // Flags
 var (
@@ -125,36 +185,32 @@ var (
 )
 
 func init() {
-	gemsCmd.AddCommand(gemsListCmd)
-	gemsCmd.AddCommand(gemsCreateCmd)
-	gemsCmd.AddCommand(gemsUpdateCmd)
-	gemsCmd.AddCommand(gemsDeleteCmd)
-	gemsCmd.AddCommand(gemsShowCmd)
-
-	// Flags
-	gemsListCmd.Flags().BoolVar(&gemsIncludeHidden, "hidden", false, "Include hidden system gems")
-
-	gemsCreateCmd.Flags().StringVarP(&gemPrompt, "prompt", "p", "", "System prompt for the gem")
-	gemsCreateCmd.Flags().StringVarP(&gemDescription, "description", "d", "", "Description")
-	gemsCreateCmd.Flags().StringVarP(&gemPromptFile, "file", "f", "", "Read prompt from file")
-
-	gemsUpdateCmd.Flags().StringVarP(&gemPrompt, "prompt", "p", "", "New system prompt")
-	gemsUpdateCmd.Flags().StringVarP(&gemDescription, "description", "d", "", "New description")
-	gemsUpdateCmd.Flags().StringVarP(&gemPromptFile, "file", "f", "", "Read prompt from file")
-	gemsUpdateCmd.Flags().StringVarP(&gemName, "name", "n", "", "New name for the gem")
+	// Root flags and commands are handled in NewRootCmd
 }
 
 // runGemsInteractive runs the interactive gems menu (default when no subcommand)
-func runGemsInteractive(cmd *cobra.Command, args []string) error {
-	client, err := createGemsClientFunc()
-	if err != nil {
-		return err
+func runGemsInteractive(deps *Dependencies, args []string) error {
+	var client api.GeminiClientInterface
+	var err error
+	if deps != nil && deps.Client != nil {
+		client = deps.Client
+	} else {
+		client, err = createGemsClientFunc()
+		if err != nil {
+			return err
+		}
+		defer client.Close()
+	}
+
+	// Determine which TUI implementation to use
+	var tuiImpl TUIInterface = &DefaultTUI{}
+	if deps != nil && deps.TUI != nil {
+		tuiImpl = deps.TUI
 	}
 
 	// Launch the interactive TUI for gems with full functionality
-	result, err := tui.RunGemsTUI(client, gemsIncludeHidden)
+	result, err := tuiImpl.RunGemsTUI(client, gemsIncludeHidden)
 	if err != nil {
-		client.Close()
 		return err
 	}
 
@@ -163,24 +219,34 @@ func runGemsInteractive(cmd *cobra.Command, args []string) error {
 		modelName := getModel()
 		model := models.ModelFromName(modelName)
 		session := createChatSession(client, result.GemID, model)
-		defer client.Close()
-		return tui.RunChatWithSession(client, session, modelName)
+		return tuiImpl.RunChatWithSession(client, session, modelName)
 	}
 
-	client.Close()
 	return nil
 }
 
-func runGemsList(cmd *cobra.Command, args []string) error {
-	client, err := createGemsClientFunc()
-	if err != nil {
-		return err
+func runGemsList(deps *Dependencies, args []string) error {
+	var client api.GeminiClientInterface
+	var err error
+	if deps != nil && deps.Client != nil {
+		client = deps.Client
+	} else {
+		client, err = createGemsClientFunc()
+		if err != nil {
+			return err
+		}
+		defer client.Close()
+	}
+
+	// Determine which TUI implementation to use
+	var tuiImpl TUIInterface = &DefaultTUI{}
+	if deps != nil && deps.TUI != nil {
+		tuiImpl = deps.TUI
 	}
 
 	// Launch the interactive TUI for gems
-	result, err := tui.RunGemsTUI(client, gemsIncludeHidden)
+	result, err := tuiImpl.RunGemsTUI(client, gemsIncludeHidden)
 	if err != nil {
-		client.Close()
 		return err
 	}
 
@@ -191,16 +257,14 @@ func runGemsList(cmd *cobra.Command, args []string) error {
 		model := models.ModelFromName(modelName)
 		session := createChatSession(client, result.GemID, model)
 
-		// Run chat TUI (don't close client - it's used by the session)
-		defer client.Close()
-		return tui.RunChatWithSession(client, session, modelName)
+		// Run chat TUI
+		return tuiImpl.RunChatWithSession(client, session, modelName)
 	}
 
-	client.Close()
 	return nil
 }
 
-func runGemsCreate(cmd *cobra.Command, args []string) error {
+func runGemsCreate(deps *Dependencies, args []string) error {
 	name := args[0]
 
 	prompt := gemPrompt
@@ -216,11 +280,17 @@ func runGemsCreate(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("prompt is required (use -p or -f)")
 	}
 
-	client, err := createGemsClientFunc()
-	if err != nil {
-		return err
+	var client api.GeminiClientInterface
+	var err error
+	if deps != nil && deps.Client != nil {
+		client = deps.Client
+	} else {
+		client, err = createGemsClientFunc()
+		if err != nil {
+			return err
+		}
+		defer client.Close()
 	}
-	defer client.Close()
 
 	gem, err := client.CreateGem(name, prompt, gemDescription)
 	if err != nil {
@@ -231,14 +301,20 @@ func runGemsCreate(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func runGemsUpdate(cmd *cobra.Command, args []string) error {
+func runGemsUpdate(deps *Dependencies, args []string) error {
 	idOrName := args[0]
 
-	client, err := createGemsClientFunc()
-	if err != nil {
-		return err
+	var client api.GeminiClientInterface
+	var err error
+	if deps != nil && deps.Client != nil {
+		client = deps.Client
+	} else {
+		client, err = createGemsClientFunc()
+		if err != nil {
+			return err
+		}
+		defer client.Close()
 	}
-	defer client.Close()
 
 	gems, err := client.FetchGems(false)
 	if err != nil {
@@ -286,14 +362,20 @@ func runGemsUpdate(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func runGemsDelete(cmd *cobra.Command, args []string) error {
+func runGemsDelete(deps *Dependencies, args []string) error {
 	idOrName := args[0]
 
-	client, err := createGemsClientFunc()
-	if err != nil {
-		return err
+	var client api.GeminiClientInterface
+	var err error
+	if deps != nil && deps.Client != nil {
+		client = deps.Client
+	} else {
+		client, err = createGemsClientFunc()
+		if err != nil {
+			return err
+		}
+		defer client.Close()
 	}
-	defer client.Close()
 
 	gems, err := client.FetchGems(false)
 	if err != nil {
@@ -317,14 +399,20 @@ func runGemsDelete(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func runGemsShow(cmd *cobra.Command, args []string) error {
+func runGemsShow(deps *Dependencies, args []string) error {
 	idOrName := args[0]
 
-	client, err := createGemsClientFunc()
-	if err != nil {
-		return err
+	var client api.GeminiClientInterface
+	var err error
+	if deps != nil && deps.Client != nil {
+		client = deps.Client
+	} else {
+		client, err = createGemsClientFunc()
+		if err != nil {
+			return err
+		}
+		defer client.Close()
 	}
-	defer client.Close()
 
 	gems, err := client.FetchGems(true)
 	if err != nil {

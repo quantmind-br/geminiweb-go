@@ -119,7 +119,7 @@ Examples:
 	cmd.AddCommand(autoLoginCmd)
 	cmd.AddCommand(historyCmd)
 	cmd.AddCommand(personaCmd)
-	cmd.AddCommand(gemsCmd)
+	cmd.AddCommand(NewGemsCmd(deps))
 
 	return cmd
 }
