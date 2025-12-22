@@ -12,7 +12,7 @@
 ## Phase 3: Refactor and Test `internal/commands`
 
 - [x] Task: Refactor `internal/commands/root.go` to support dependency injection for client creation. 696bbd3
-- [ ] Task: Implement table-driven tests for `internal/commands/gems.go` (List, Create, Delete).
+- [x] Task: Implement table-driven tests for `internal/commands/gems.go` (List, Create, Delete). 1592a7c
 - [ ] Task: Implement tests for `internal/commands/chat.go` (Session initialization flags).
 - [ ] Task: Implement tests for `internal/commands/autologin.go` (Browser detection logic).
 
