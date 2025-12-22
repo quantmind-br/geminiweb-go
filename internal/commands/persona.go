@@ -42,6 +42,10 @@ func NewPersonaCmd(deps *Dependencies) *cobra.Command {
 		Use:   "persona",
 		Short: "Manage chat personas",
 		Long:  `View and manage personas (system prompts) for chat sessions.`,
+		// Default to manage TUI when no subcommand is provided
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runPersonaManage(cmd, args)
+		},
 	}
 
 	cmd.AddCommand(NewPersonaListCmd(deps))
