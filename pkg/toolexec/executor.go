@@ -61,6 +61,14 @@ type executorConfig struct {
 	// Middlewares are applied in order, with the first middleware being the
 	// outermost wrapper.
 	middlewareChain *MiddlewareChain
+
+	// securityPolicy is the security policy for validating tool executions.
+	// If nil, no security validation is performed.
+	securityPolicy SecurityPolicy
+
+	// confirmHandler is the handler for requesting user confirmation.
+	// If nil, no confirmation is requested even if the tool requires it.
+	confirmHandler ConfirmationHandler
 }
 
 // defaultConfig returns the default executor configuration.
@@ -117,13 +125,18 @@ func NewExecutor(registry Registry, opts ...ExecutorOption) *executor {
 //  1. Look up the tool in the registry
 //  2. Apply timeout if configured
 //  3. Check context before execution
-//  4. Apply middleware chain (if configured)
-//  5. Execute the tool with panic recovery
-//  6. Return the output or error
+//  4. Validate against security policy (if configured)
+//  5. Request confirmation if tool requires it (if handler configured)
+//  6. Apply middleware chain (if configured)
+//  7. Execute the tool with panic recovery
+//  8. Return the output or error
 //
 // The context is used for cancellation and can have a timeout applied.
 // If the executor has a default timeout configured and the context has no
 // deadline, a timeout will be applied.
+//
+// Security validation happens before confirmation, and both happen before
+// the actual tool execution.
 //
 // Middleware chain is applied around the tool execution, allowing pre/post
 // execution hooks for logging, validation, metrics, etc.
@@ -150,19 +163,49 @@ func (e *executor) Execute(ctx context.Context, toolName string, input *Input) (
 	default:
 	}
 
-	// Step 4: Create the base execution function
+	// Step 4: Validate against security policy if configured
+	if e.config.securityPolicy != nil {
+		// Convert input params to args for security validation
+		args := make(map[string]any)
+		if input != nil && input.Params != nil {
+			args = input.Params
+		}
+		if err := e.config.securityPolicy.Validate(ctx, toolName, args); err != nil {
+			return nil, fmt.Errorf("security validation failed: %w", err)
+		}
+	}
+
+	// Step 5: Request confirmation if tool requires it and handler is configured
+	if e.config.confirmHandler != nil {
+		// Convert input params to args for confirmation check
+		args := make(map[string]any)
+		if input != nil && input.Params != nil {
+			args = input.Params
+		}
+		if tool.RequiresConfirmation(args) {
+			confirmed, err := e.config.confirmHandler.RequestConfirmation(ctx, tool, args)
+			if err != nil {
+				return nil, fmt.Errorf("confirmation failed: %w", err)
+			}
+			if !confirmed {
+				return nil, NewUserDeniedError(toolName)
+			}
+		}
+	}
+
+	// Step 6: Create the base execution function
 	// This function performs the actual tool execution with error wrapping
 	baseFn := func(ctx context.Context, toolName string, input *Input) (*Output, error) {
 		return e.executeToolDirectly(ctx, tool, toolName, input)
 	}
 
-	// Step 5: Apply middleware chain if configured
+	// Step 7: Apply middleware chain if configured
 	execFn := baseFn
 	if e.config.middlewareChain != nil && e.config.middlewareChain.Len() > 0 {
 		execFn = e.config.middlewareChain.Wrap(baseFn)
 	}
 
-	// Step 6: Execute with optional panic recovery
+	// Step 8: Execute with optional panic recovery
 	// Note: If middleware chain includes RecoveryMiddleware, this provides
 	// a second layer of protection. The executor's panic recovery is always
 	// the outermost layer when enabled.

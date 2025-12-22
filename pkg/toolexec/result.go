@@ -102,6 +102,12 @@ var (
 
 	// ErrTimeout is returned when execution times out.
 	ErrTimeout = errors.New("execution timed out")
+
+	// ErrUserDenied is returned when the user denies confirmation for a tool execution.
+	ErrUserDenied = errors.New("user denied confirmation")
+
+	// ErrSecurityViolation is returned when a tool execution violates security policy.
+	ErrSecurityViolation = errors.New("security policy violation")
 )
 
 // ToolError is the base error type for all tool execution errors.
@@ -527,6 +533,107 @@ func (e *MiddlewareError) Unwrap() error {
 	return e.Cause
 }
 
+// UserDeniedError represents an error when the user denies confirmation.
+type UserDeniedError struct {
+	*ToolError
+}
+
+// NewUserDeniedError creates a new UserDeniedError.
+func NewUserDeniedError(toolName string) *UserDeniedError {
+	return &UserDeniedError{
+		ToolError: &ToolError{
+			Operation: "confirm",
+			ToolName:  toolName,
+			Message:   fmt.Sprintf("user denied confirmation for tool '%s'", toolName),
+		},
+	}
+}
+
+// Error implements the error interface.
+func (e *UserDeniedError) Error() string {
+	return fmt.Sprintf("user denied confirmation for tool '%s'", e.ToolName)
+}
+
+// Is allows comparison with sentinel errors.
+func (e *UserDeniedError) Is(target error) bool {
+	if target == ErrUserDenied {
+		return true
+	}
+	if _, ok := target.(*UserDeniedError); ok {
+		return true
+	}
+	return false
+}
+
+// Unwrap returns the underlying cause.
+func (e *UserDeniedError) Unwrap() error {
+	return e.Cause
+}
+
+// SecurityViolationError represents a security policy violation.
+type SecurityViolationError struct {
+	*ToolError
+	// Reason is the specific reason for the security violation.
+	Reason string
+	// Pattern is the pattern that matched (for blacklist violations).
+	Pattern string
+	// Path is the path that was blocked (for path violations).
+	Path string
+}
+
+// NewSecurityViolationError creates a new SecurityViolationError.
+func NewSecurityViolationError(toolName, reason string) *SecurityViolationError {
+	return &SecurityViolationError{
+		ToolError: &ToolError{
+			Operation: "security",
+			ToolName:  toolName,
+			Message:   reason,
+		},
+		Reason: reason,
+	}
+}
+
+// NewSecurityViolationErrorWithPattern creates a SecurityViolationError for a pattern match.
+func NewSecurityViolationErrorWithPattern(toolName, reason, pattern string) *SecurityViolationError {
+	e := NewSecurityViolationError(toolName, reason)
+	e.Pattern = pattern
+	return e
+}
+
+// NewSecurityViolationErrorWithPath creates a SecurityViolationError for a path violation.
+func NewSecurityViolationErrorWithPath(toolName, reason, path string) *SecurityViolationError {
+	e := NewSecurityViolationError(toolName, reason)
+	e.Path = path
+	return e
+}
+
+// Error implements the error interface.
+func (e *SecurityViolationError) Error() string {
+	if e.Pattern != "" {
+		return fmt.Sprintf("security violation for tool '%s': %s (pattern: %s)", e.ToolName, e.Reason, e.Pattern)
+	}
+	if e.Path != "" {
+		return fmt.Sprintf("security violation for tool '%s': %s (path: %s)", e.ToolName, e.Reason, e.Path)
+	}
+	return fmt.Sprintf("security violation for tool '%s': %s", e.ToolName, e.Reason)
+}
+
+// Is allows comparison with sentinel errors.
+func (e *SecurityViolationError) Is(target error) bool {
+	if target == ErrSecurityViolation {
+		return true
+	}
+	if _, ok := target.(*SecurityViolationError); ok {
+		return true
+	}
+	return false
+}
+
+// Unwrap returns the underlying cause.
+func (e *SecurityViolationError) Unwrap() error {
+	return e.Cause
+}
+
 // Helper functions for error checking
 
 // IsToolNotFoundError checks if an error is a ToolNotFoundError.
@@ -613,6 +720,30 @@ func IsMiddlewareError(err error) bool {
 	return errors.As(err, &mwErr)
 }
 
+// IsUserDeniedError checks if an error is a UserDeniedError.
+func IsUserDeniedError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, ErrUserDenied) {
+		return true
+	}
+	var userDeniedErr *UserDeniedError
+	return errors.As(err, &userDeniedErr)
+}
+
+// IsSecurityViolationError checks if an error is a SecurityViolationError.
+func IsSecurityViolationError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, ErrSecurityViolation) {
+		return true
+	}
+	var secErr *SecurityViolationError
+	return errors.As(err, &secErr)
+}
+
 // GetToolName extracts the tool name from an error, if available.
 func GetToolName(err error) string {
 	if err == nil {
@@ -657,6 +788,16 @@ func GetToolName(err error) string {
 	var mwErr *MiddlewareError
 	if errors.As(err, &mwErr) {
 		return mwErr.ToolName
+	}
+
+	var userDeniedErr *UserDeniedError
+	if errors.As(err, &userDeniedErr) {
+		return userDeniedErr.ToolName
+	}
+
+	var secErr *SecurityViolationError
+	if errors.As(err, &secErr) {
+		return secErr.ToolName
 	}
 
 	return ""

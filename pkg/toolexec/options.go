@@ -159,6 +159,52 @@ func WithNoTimeout() ExecutorOption {
 	}
 }
 
+// WithSecurityPolicy sets the security policy for validating tool executions.
+// The security policy is checked before each tool execution. If validation
+// fails, the execution is blocked and a SecurityViolationError is returned.
+//
+// If policy is nil, security validation is disabled.
+//
+// Example:
+//
+//	executor := NewExecutor(registry,
+//	    WithSecurityPolicy(DefaultSecurityPolicy()),
+//	)
+func WithSecurityPolicy(policy SecurityPolicy) ExecutorOption {
+	return func(c *executorConfig) {
+		c.securityPolicy = policy
+	}
+}
+
+// WithConfirmationHandler sets the handler for requesting user confirmation.
+// The handler is called when a tool's RequiresConfirmation() returns true.
+// If the user denies, a UserDeniedError is returned.
+//
+// If handler is nil, confirmation is disabled (tools execute without asking).
+//
+// Example:
+//
+//	executor := NewExecutor(registry,
+//	    WithConfirmationHandler(&AutoApproveHandler{}),
+//	)
+func WithConfirmationHandler(handler ConfirmationHandler) ExecutorOption {
+	return func(c *executorConfig) {
+		c.confirmHandler = handler
+	}
+}
+
+// WithDefaultSecurityPolicy sets the executor to use the default security
+// policy which includes blacklist and path validation.
+//
+// Example:
+//
+//	executor := NewExecutor(registry, WithDefaultSecurityPolicy())
+func WithDefaultSecurityPolicy() ExecutorOption {
+	return func(c *executorConfig) {
+		c.securityPolicy = DefaultSecurityPolicy()
+	}
+}
+
 // applyOptions applies all options to the config.
 // This is an internal helper function.
 func applyOptions(config *executorConfig, opts ...ExecutorOption) {
@@ -186,15 +232,23 @@ type ExecutorConfig struct {
 
 	// MiddlewareCount is the number of middlewares in the chain.
 	MiddlewareCount int
+
+	// HasSecurityPolicy indicates whether a security policy is configured.
+	HasSecurityPolicy bool
+
+	// HasConfirmationHandler indicates whether a confirmation handler is configured.
+	HasConfirmationHandler bool
 }
 
 // Config returns the executor's configuration for inspection.
 // The returned struct is a copy; modifications do not affect the executor.
 func (e *executor) Config() ExecutorConfig {
 	config := ExecutorConfig{
-		Timeout:       e.config.timeout,
-		MaxConcurrent: e.config.maxConcurrent,
-		RecoverPanics: e.config.recoverPanics,
+		Timeout:                e.config.timeout,
+		MaxConcurrent:          e.config.maxConcurrent,
+		RecoverPanics:          e.config.recoverPanics,
+		HasSecurityPolicy:      e.config.securityPolicy != nil,
+		HasConfirmationHandler: e.config.confirmHandler != nil,
 	}
 
 	if e.config.middlewareChain != nil {

@@ -11,9 +11,10 @@ import (
 
 // MockTool is a mock implementation of the Tool interface for testing.
 type MockTool struct {
-	name        string
-	description string
-	executeFunc func(ctx context.Context, input *Input) (*Output, error)
+	name                 string
+	description          string
+	executeFunc          func(ctx context.Context, input *Input) (*Output, error)
+	requiresConfirmation bool
 }
 
 // NewMockTool creates a new MockTool with the given name and description.
@@ -42,9 +43,20 @@ func (m *MockTool) Execute(ctx context.Context, input *Input) (*Output, error) {
 	return NewOutput().WithMessage("mock executed"), nil
 }
 
+// RequiresConfirmation implements Tool.RequiresConfirmation.
+func (m *MockTool) RequiresConfirmation(args map[string]any) bool {
+	return m.requiresConfirmation
+}
+
 // WithExecuteFunc sets a custom execute function for the mock tool.
 func (m *MockTool) WithExecuteFunc(fn func(ctx context.Context, input *Input) (*Output, error)) *MockTool {
 	m.executeFunc = fn
+	return m
+}
+
+// WithRequiresConfirmation sets whether the mock tool requires confirmation.
+func (m *MockTool) WithRequiresConfirmation(requires bool) *MockTool {
+	m.requiresConfirmation = requires
 	return m
 }
 

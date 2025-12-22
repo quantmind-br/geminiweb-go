@@ -29,6 +29,10 @@ func (m *mockTool) Execute(ctx context.Context, input *Input) (*Output, error) {
 	return NewOutput().WithMessage("mock executed"), nil
 }
 
+func (m *mockTool) RequiresConfirmation(args map[string]any) bool {
+	return false
+}
+
 // newMockTool creates a mock tool with the given name.
 func newMockTool(name string) *mockTool {
 	return &mockTool{

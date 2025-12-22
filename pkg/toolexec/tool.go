@@ -27,6 +27,13 @@ type Tool interface {
 	// Implementations must check ctx.Done() before and during long-running operations.
 	// Returns an error if execution fails or is cancelled.
 	Execute(ctx context.Context, input *Input) (*Output, error)
+
+	// RequiresConfirmation returns whether this tool requires user confirmation
+	// before execution. This allows tools to declare security requirements based
+	// on specific arguments (e.g., destructive operations, sensitive file access).
+	// The executor will call ConfirmationHandler.RequestConfirmation() if this
+	// returns true and a confirmation handler is configured.
+	RequiresConfirmation(args map[string]any) bool
 }
 
 // Input represents the input data passed to a tool for execution.
