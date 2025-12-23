@@ -83,3 +83,9 @@ TASKS.md
 
 # Auto Claude data directory
 .auto-claude/
+
+# BMAD workflow framework (documentation/tooling)
+_bmad/
+
+# Litho cache directory
+.litho/
