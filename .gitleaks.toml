@@ -1,0 +1,14 @@
+title = "Gitleaks Configuration for geminiweb-go"
+
+# Extend the default configuration
+[extend]
+useDefault = true
+
+# Allowlist for paths and rules that cause false positives
+[allowlist]
+  description = "Global allowlist"
+  paths = [
+    '''_bmad''',           # Exclude _bmad directory (contains hashes in CSV files)
+    '''.litho''',           # Exclude .litho cache directory
+    '''Gemini-API''',       # Exclude Gemini-API subproject
+  ]
