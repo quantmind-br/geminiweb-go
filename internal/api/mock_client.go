@@ -11,38 +11,38 @@ import (
 // MockGeminiClient is a mock implementation of GeminiClientInterface for testing
 type MockGeminiClient struct {
 	// Mock return values
-	InitErr              error
-	AccessToken          string
-	Cookies              *config.Cookies
-	Model                models.Model
-	IsClosedVal          bool
+	InitErr               error
+	AccessToken           string
+	Cookies               *config.Cookies
+	Model                 models.Model
+	IsClosedVal           bool
 	IsAutoCloseEnabledVal bool
-	ChatSession          *ChatSession
-	GenerateContentVal   *models.ModelOutput
-	GenerateContentErr   error
-	UploadImageVal       *UploadedImage
-	UploadImageErr       error
-	UploadFileVal        *UploadedFile
-	UploadFileErr        error
-	DownloadImageVal     string
-	DownloadImageErr     error
-	DownloadAllImagesVal []string
-	DownloadAllImagesErr error
+	ChatSession           *ChatSession
+	GenerateContentVal    *models.ModelOutput
+	GenerateContentErr    error
+	UploadImageVal        *UploadedImage
+	UploadImageErr        error
+	UploadFileVal         *UploadedFile
+	UploadFileErr         error
+	DownloadImageVal      string
+	DownloadImageErr      error
+	DownloadAllImagesVal  []string
+	DownloadAllImagesErr  error
 	RefreshFromBrowserVal bool
 	RefreshFromBrowserErr error
 	BrowserRefreshEnabled bool
-	GemsJar              *models.GemJar
-	GemsErr              error
-	GemVal               *models.Gem
-	GemErr               error
-	BatchResponseVal     []BatchResponse
-	BatchResponseErr     error
+	GemsJar               *models.GemJar
+	GemsErr               error
+	GemVal                *models.Gem
+	GemErr                error
+	BatchResponseVal      []BatchResponse
+	BatchResponseErr      error
 
 	// Call counters/recorders
-	InitCalled           bool
-	CloseCalled          bool
+	InitCalled            bool
+	CloseCalled           bool
 	GenerateContentCalled bool
-	LastPrompt           string
+	LastPrompt            string
 }
 
 // Ensure MockGeminiClient implements GeminiClientInterface
@@ -107,22 +107,17 @@ func (m *MockGeminiClient) UploadImage(filePath string) (*UploadedImage, error) 
 
 func (m *MockGeminiClient) UploadFile(filePath string) (*UploadedFile, error) {
 
-        return m.UploadFileVal, m.UploadFileErr
+	return m.UploadFileVal, m.UploadFileErr
 
 }
-
-
 
 func (m *MockGeminiClient) UploadText(content string, fileName string) (*UploadedFile, error) {
 
-        return m.UploadFileVal, m.UploadFileErr
+	return m.UploadFileVal, m.UploadFileErr
 
 }
 
-
-
 func (m *MockGeminiClient) DownloadImage(img models.WebImage, opts ImageDownloadOptions) (string, error) {
-
 
 	return m.DownloadImageVal, m.DownloadImageErr
 }

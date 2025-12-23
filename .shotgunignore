@@ -1,42 +1,70 @@
-# Test files
-*_test.go
-**/testdata/
-**/*_test.go
-
-# Test output and coverage
-*.test
-*.out
-coverage.out
-coverage.html
-
-# Test binaries and build artifacts
-build/
-geminiweb
-
-# Temporary test files
-*.tmp
-*.temp
-
-# OS and editor files that might interfere with tests
-.DS_Store
-Thumbs.db
-*.swp
-*.swo
-*~
-
-# IDE configuration files
-.vscode/
-.idea/
-
-# Local configuration that shouldn't be in tests
-cookies.json
-config.json
-
-# Go workspace
-go.work
-
-# Requests folder
-# requests/
-
-# Shotgun prompt files (already in gitignore but worth repeating)
-shotgun-prompt-*
+pkg/toolexec/executor_race_test.go
+pkg/toolexec/result_edge_test.go
+pkg/toolexec/registry_edge_test.go
+pkg/toolexec/integration_test.go
+pkg/toolexec/tool_search_test.go
+pkg/toolexec/tool_file_write_test.go
+pkg/toolexec/tool_file_read_test.go
+pkg/toolexec/tool_bash_test.go
+pkg/toolexec/security_test.go
+pkg/toolexec/result_test.go
+pkg/toolexec/registry_test.go
+pkg/toolexec/protocol_test.go
+pkg/toolexec/middleware_test.go
+pkg/toolexec/executor_test.go
+pkg/toolexec/example_test.go
+pkg/toolexec/confirmation_test.go
+internal/config/cookies_test.go
+internal/render/config_test.go
+internal/config/config_test.go
+internal/render/themes_test.go
+internal/browser/browser_test.go
+internal/render/tui_themes_test.go
+internal/config/personas_test.go
+internal/render/render_test.go
+internal/render/cache_test.go
+internal/render/render_bench_test.go
+internal/history/store_test.go
+internal/history/resolver_test.go
+internal/history/meta_test.go
+internal/history/export_test.go
+internal/errors/errors_test.go
+internal/tui/history_manager_test.go
+internal/tui/config_model_test.go
+internal/commands/persona_test.go
+internal/commands/import_test.go
+internal/commands/history_test.go
+internal/models/models_test.go
+internal/tui/history_selector_test.go
+internal/models/extensions_test.go
+internal/models/response_test.go
+internal/models/gems_test.go
+internal/tui/gems_model_extra_test.go
+internal/commands/spinner_test.go
+internal/tui/image_selector_test.go
+internal/commands/execute_test.go
+internal/commands/truncate_test.go
+internal/commands/format_error_test.go
+internal/commands/root_test.go
+internal/commands/query_test.go
+internal/commands/chat_test.go
+internal/tui/model_test.go
+internal/commands/gems_table_test.go
+internal/commands/session_test.go
+internal/tui/gems_model_test.go
+internal/commands/gems_test.go
+internal/commands/autologin_test.go
+internal/commands/autologin_table_test.go
+internal/commands/chat_table_test.go
+internal/api/mock_test.go
+internal/api/batch_test.go
+internal/api/token_test.go
+internal/api/mock_client_test.go
+internal/api/session_test.go
+internal/api/generate_test.go
+internal/api/gems_test.go
+internal/api/client_test.go
+internal/api/rotate_test.go
+internal/api/download_test.go
+internal/api/upload_test.go
+_bmad

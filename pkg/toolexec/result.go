@@ -341,15 +341,16 @@ func NewValidationError(toolName, message string) *ValidationError {
 
 // NewValidationErrorForField creates a ValidationError for a specific field.
 func NewValidationErrorForField(toolName, field, message string) *ValidationError {
-        return &ValidationError{
-                ToolError: &ToolError{
-                        Operation: "validate input",
-                        ToolName:  toolName,
-                        Message:   message,
-                },
-                Field: field,
-        }
+	return &ValidationError{
+		ToolError: &ToolError{
+			Operation: "validate input",
+			ToolName:  toolName,
+			Message:   message,
+		},
+		Field: field,
+	}
 }
+
 // Error implements the error interface.
 func (e *ValidationError) Error() string {
 	if e.Field != "" {

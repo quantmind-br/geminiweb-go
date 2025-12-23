@@ -140,15 +140,15 @@ func (m *DynamicMockHttpClient) Do(req *fhttp.Request) (*fhttp.Response, error) 
 }
 
 // Implement all other tls_client.HttpClient interface methods with empty stubs
-func (m *DynamicMockHttpClient) GetCookies(u *url.URL) []*fhttp.Cookie { return nil }
+func (m *DynamicMockHttpClient) GetCookies(u *url.URL) []*fhttp.Cookie          { return nil }
 func (m *DynamicMockHttpClient) SetCookies(u *url.URL, cookies []*fhttp.Cookie) {}
-func (m *DynamicMockHttpClient) SetCookieJar(jar fhttp.CookieJar) {}
-func (m *DynamicMockHttpClient) GetCookieJar() fhttp.CookieJar { return nil }
-func (m *DynamicMockHttpClient) SetProxy(proxyUrl string) error { return nil }
-func (m *DynamicMockHttpClient) GetProxy() string { return "" }
-func (m *DynamicMockHttpClient) SetFollowRedirect(followRedirect bool) {}
-func (m *DynamicMockHttpClient) GetFollowRedirect() bool { return false }
-func (m *DynamicMockHttpClient) CloseIdleConnections() {}
+func (m *DynamicMockHttpClient) SetCookieJar(jar fhttp.CookieJar)               {}
+func (m *DynamicMockHttpClient) GetCookieJar() fhttp.CookieJar                  { return nil }
+func (m *DynamicMockHttpClient) SetProxy(proxyUrl string) error                 { return nil }
+func (m *DynamicMockHttpClient) GetProxy() string                               { return "" }
+func (m *DynamicMockHttpClient) SetFollowRedirect(followRedirect bool)          {}
+func (m *DynamicMockHttpClient) GetFollowRedirect() bool                        { return false }
+func (m *DynamicMockHttpClient) CloseIdleConnections()                          {}
 func (m *DynamicMockHttpClient) Get(url string) (*fhttp.Response, error) {
 	if m.DoFunc != nil {
 		return m.DoFunc(&fhttp.Request{})

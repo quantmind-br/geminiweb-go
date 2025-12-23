@@ -17,7 +17,7 @@ const (
 // ConversationMeta stores global metadata per conversation
 type ConversationMeta struct {
 	ID         string `json:"id"`
-	Title      string `json:"title"`       // Cached title for quick listing
+	Title      string `json:"title"` // Cached title for quick listing
 	IsFavorite bool   `json:"is_favorite"`
 }
 

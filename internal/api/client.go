@@ -211,9 +211,9 @@ func NewClient(cookies *config.Cookies, opts ...ClientOption) (*GeminiClient, er
 		browserRefreshMinWait: 30 * time.Second, // Minimum wait between browser refreshes
 		cookieLoader:          config.LoadCookies,
 		// Auto-close defaults
-		autoClose:  false,             // Disabled by default (opt-in feature)
-		closeDelay: 5 * time.Minute,   // Default: 5 minutes of inactivity
-		autoReInit: true,              // Default: auto re-init when auto-close is enabled
+		autoClose:  false,           // Disabled by default (opt-in feature)
+		closeDelay: 5 * time.Minute, // Default: 5 minutes of inactivity
+		autoReInit: true,            // Default: auto re-init when auto-close is enabled
 	}
 
 	// Apply options first (allows injecting custom HTTP client)

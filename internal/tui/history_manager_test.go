@@ -13,20 +13,20 @@ import (
 
 // mockHistoryManagerStore is a mock implementation of HistoryManagerStore for testing
 type mockHistoryManagerStore struct {
-	conversations      []*history.Conversation
-	listErr            error
-	deleteErr          error
-	updateTitleErr     error
-	toggleFavoriteErr  error
-	swapErr            error
-	exportErr          error
-	deletedID          string
-	updatedTitleID     string
-	updatedTitle       string
-	toggledFavoriteID  string
-	swappedIDs         []string
-	exportedID         string
-	favoriteState      bool
+	conversations     []*history.Conversation
+	listErr           error
+	deleteErr         error
+	updateTitleErr    error
+	toggleFavoriteErr error
+	swapErr           error
+	exportErr         error
+	deletedID         string
+	updatedTitleID    string
+	updatedTitle      string
+	toggledFavoriteID string
+	swappedIDs        []string
+	exportedID        string
+	favoriteState     bool
 }
 
 func (m *mockHistoryManagerStore) ListConversations() ([]*history.Conversation, error) {

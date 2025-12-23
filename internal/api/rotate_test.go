@@ -89,7 +89,6 @@ func TestRotateCookies_RateLimit(t *testing.T) {
 	// but we've verified the rate limit check logic exists
 }
 
-
 func TestCookieRotator_NewCookieRotator(t *testing.T) {
 	// We can't create a real client in tests, but we can test the structure
 	// by checking if the function signature is correct

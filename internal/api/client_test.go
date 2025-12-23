@@ -838,10 +838,10 @@ func TestGeminiClient_WithBrowserRefresh(t *testing.T) {
 	}
 
 	tests := []struct {
-		name         string
-		browserType  browser.SupportedBrowser
-		wantEnabled  bool
-		wantBrowser  browser.SupportedBrowser
+		name        string
+		browserType browser.SupportedBrowser
+		wantEnabled bool
+		wantBrowser browser.SupportedBrowser
 	}{
 		{
 			name:        "with chrome",
@@ -1416,7 +1416,7 @@ func TestGeminiClient_InitWithExpiredCookies(t *testing.T) {
 		callCount := 0
 		sequentialMockClient := &SequentialMockHttpClient{
 			responses: []mockResponse{
-				{statusCode: 401, body: []byte("unauthorized")}, // First call fails
+				{statusCode: 401, body: []byte("unauthorized")},             // First call fails
 				{statusCode: 200, body: []byte(`{"SNlM0e":"fresh_token"}`)}, // Second call succeeds
 			},
 			callCount: &callCount,

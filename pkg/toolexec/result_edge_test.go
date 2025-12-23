@@ -9,7 +9,7 @@ import (
 
 func TestErrorUnwrapping(t *testing.T) {
 	inner := errors.New("inner error")
-	
+
 	t.Run("ToolError unwrapping", func(t *testing.T) {
 		err := NewToolErrorWithCause("op", "tool", inner)
 		if errors.Unwrap(err) != inner {
@@ -75,7 +75,7 @@ func TestErrorUnwrapping(t *testing.T) {
 		if !errors.Is(ee, ErrExecutionFailed) {
 			t.Error("Should be able to find ErrExecutionFailed")
 		}
-		
+
 		var target *ToolError
 		if !errors.As(ee, &target) {
 			t.Error("Should be able to extract ToolError using errors.As")
@@ -150,7 +150,7 @@ func TestErrorHelpers(t *testing.T) {
 	if IsToolNotFoundError(errors.New("other")) {
 		t.Error("IsToolNotFoundError(other) should be false")
 	}
-	
+
 	// Repeat for others to gain coverage
 	IsDuplicateToolError(nil)
 	IsExecutionError(nil)
@@ -163,11 +163,11 @@ func TestErrorHelpers(t *testing.T) {
 
 func TestToolErrorIs(t *testing.T) {
 	te := &ToolError{Operation: "execute", ToolName: "tool1"}
-	
+
 	if !te.Is(ErrExecutionFailed) {
 		t.Error("ToolError with 'execute' operation should match ErrExecutionFailed")
 	}
-	
+
 	te2 := &ToolError{ToolName: "tool1"}
 	if !te.Is(te2) {
 		t.Error("ToolError should match another ToolError with same ToolName")
@@ -186,7 +186,7 @@ func TestToolErrorIs(t *testing.T) {
 func TestResultMethodsEdgeCases(t *testing.T) {
 	r := NewResult("t", nil, nil)
 	r.WithTiming(time.Now(), time.Now())
-	
+
 	r2 := NewErrorResult("t", errors.New("e"))
 	if r2.IsSuccess() {
 		t.Error("NewErrorResult should not be success")

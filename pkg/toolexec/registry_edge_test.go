@@ -87,9 +87,9 @@ func TestRegistryEdgeCases(t *testing.T) {
 		t2 := NewMockTool("t2", "d2")
 		// t3 has empty name, should be skipped
 		t3 := NewMockTool("", "d3")
-		
+
 		r := NewRegistryWithOptions(WithTools(t1, t2, nil, t3, t1))
-		
+
 		if r.Count() != 2 {
 			t.Errorf("Expected 2 tools, got %d", r.Count())
 		}

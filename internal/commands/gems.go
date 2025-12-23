@@ -467,17 +467,17 @@ func createGemsClient() (*api.GeminiClient, error) {
 // resolveGem resolves a gem by ID or name using the provided client
 // Returns the gem ID if found, empty string otherwise
 func resolveGem(client api.GeminiClientInterface, idOrName string) (*models.Gem, error) {
-		gems, err := client.FetchGems(false)
-		if err != nil {
-			return nil, fmt.Errorf("failed to fetch gems: %w", err)
-		}
-	
-		if gems == nil {
-			return nil, fmt.Errorf("gem '%s' not found (no gems available)", idOrName)
-		}
-	
-		gem := gems.Get(idOrName, idOrName)
-	
+	gems, err := client.FetchGems(false)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch gems: %w", err)
+	}
+
+	if gems == nil {
+		return nil, fmt.Errorf("gem '%s' not found (no gems available)", idOrName)
+	}
+
+	gem := gems.Get(idOrName, idOrName)
+
 	if gem == nil {
 		return nil, fmt.Errorf("gem '%s' not found", idOrName)
 	}

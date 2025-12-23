@@ -12,8 +12,8 @@ import (
 // GreetingTool is a simple tool that returns a greeting message.
 type GreetingTool struct{}
 
-func (t *GreetingTool) Name() string                              { return "greeting" }
-func (t *GreetingTool) Description() string                       { return "Returns a greeting message" }
+func (t *GreetingTool) Name() string                                  { return "greeting" }
+func (t *GreetingTool) Description() string                           { return "Returns a greeting message" }
 func (t *GreetingTool) RequiresConfirmation(args map[string]any) bool { return false }
 
 func (t *GreetingTool) Execute(ctx context.Context, input *toolexec.Input) (*toolexec.Output, error) {
@@ -38,8 +38,8 @@ func (t *GreetingTool) Execute(ctx context.Context, input *toolexec.Input) (*too
 // CalculatorTool performs basic arithmetic operations.
 type CalculatorTool struct{}
 
-func (t *CalculatorTool) Name() string                              { return "calculator" }
-func (t *CalculatorTool) Description() string                       { return "Performs arithmetic operations" }
+func (t *CalculatorTool) Name() string                                  { return "calculator" }
+func (t *CalculatorTool) Description() string                           { return "Performs arithmetic operations" }
 func (t *CalculatorTool) RequiresConfirmation(args map[string]any) bool { return false }
 
 func (t *CalculatorTool) Execute(ctx context.Context, input *toolexec.Input) (*toolexec.Output, error) {
@@ -74,8 +74,8 @@ type SlowTool struct {
 	duration time.Duration
 }
 
-func (t *SlowTool) Name() string                              { return "slow" }
-func (t *SlowTool) Description() string                       { return "Simulates a slow operation" }
+func (t *SlowTool) Name() string                                  { return "slow" }
+func (t *SlowTool) Description() string                           { return "Simulates a slow operation" }
 func (t *SlowTool) RequiresConfirmation(args map[string]any) bool { return false }
 
 func (t *SlowTool) Execute(ctx context.Context, input *toolexec.Input) (*toolexec.Output, error) {

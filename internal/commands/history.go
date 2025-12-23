@@ -83,7 +83,7 @@ func NewHistoryClearCmd(deps *Dependencies) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "clear",
 		Short: "Delete all conversations",
-		Long:  "Delete all conversations. Use --force to skip confirmation.", 
+		Long:  "Delete all conversations. Use --force to skip confirmation.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runHistoryClear(cmd, args)
 		},

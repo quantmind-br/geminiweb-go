@@ -143,7 +143,6 @@ func TestMarkdownWithDarkTheme_CodeBlockSeparators(t *testing.T) {
 	}
 }
 
-
 func TestGetBuiltinTheme_Catppuccin(t *testing.T) {
 	theme, ok := GetBuiltinTheme(ThemeCatppuccin)
 	if !ok {
@@ -217,7 +216,6 @@ func TestMarkdownWithTokyoNight_CodeBlockSeparators(t *testing.T) {
 		t.Error("output should contain code block separator")
 	}
 }
-
 
 func TestAvailableThemes(t *testing.T) {
 	themes := AvailableThemes()

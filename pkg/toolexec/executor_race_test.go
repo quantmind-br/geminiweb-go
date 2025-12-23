@@ -55,61 +55,61 @@ func TestExecutorRace(t *testing.T) {
 				_, _ = exec2.ExecuteMany(context.Background(), batch)
 			}
 		}(i)
-		}
-		wg.Wait()
 	}
-	
-	func TestExecutorExecuteManyStress(t *testing.T) {
-		registry := NewRegistry()
-		failTool := NewMockTool("fail", "desc").WithExecuteFunc(func(ctx context.Context, input *Input) (*Output, error) {
-			return nil, errors.New("failed")
-		})
-		slowTool := NewMockTool("slow", "desc").WithExecuteFunc(func(ctx context.Context, input *Input) (*Output, error) {
-			select {
-			case <-time.After(100 * time.Millisecond):
-				return NewOutput(), nil
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			}
-		})
-		_ = registry.Register(failTool)
-		_ = registry.Register(slowTool)
-	
-		exec := NewExecutor(registry, WithMaxConcurrent(2))
-	
-		const numExecs = 50
-		executions := make([]ToolExecution, numExecs)
-		for i := 0; i < numExecs; i++ {
-			if i == 5 { // One fail early
-				executions[i] = ToolExecution{ToolName: "fail", Input: NewInput()}
-			} else {
-				executions[i] = ToolExecution{ToolName: "slow", Input: NewInput()}
-			}
+	wg.Wait()
+}
+
+func TestExecutorExecuteManyStress(t *testing.T) {
+	registry := NewRegistry()
+	failTool := NewMockTool("fail", "desc").WithExecuteFunc(func(ctx context.Context, input *Input) (*Output, error) {
+		return nil, errors.New("failed")
+	})
+	slowTool := NewMockTool("slow", "desc").WithExecuteFunc(func(ctx context.Context, input *Input) (*Output, error) {
+		select {
+		case <-time.After(100 * time.Millisecond):
+			return NewOutput(), nil
+		case <-ctx.Done():
+			return nil, ctx.Err()
 		}
-	
-		results, err := exec.ExecuteMany(context.Background(), executions)
-	
-		if err == nil {
-			t.Error("Expected error from ExecuteMany")
-		}
-	
-		if len(results) != numExecs {
-			t.Errorf("Expected %d results, got %d", numExecs, len(results))
-		}
-	
-		for i, r := range results {
-			if r == nil {
-				t.Errorf("Result[%d] is nil", i)
-				continue
-			}
-			if r.Error == nil && i == 5 {
-				t.Errorf("Result[5] should have errored")
-			}
+	})
+	_ = registry.Register(failTool)
+	_ = registry.Register(slowTool)
+
+	exec := NewExecutor(registry, WithMaxConcurrent(2))
+
+	const numExecs = 50
+	executions := make([]ToolExecution, numExecs)
+	for i := 0; i < numExecs; i++ {
+		if i == 5 { // One fail early
+			executions[i] = ToolExecution{ToolName: "fail", Input: NewInput()}
+		} else {
+			executions[i] = ToolExecution{ToolName: "slow", Input: NewInput()}
 		}
 	}
-	
-	func TestExecutorAsyncRace(t *testing.T) {
-	
+
+	results, err := exec.ExecuteMany(context.Background(), executions)
+
+	if err == nil {
+		t.Error("Expected error from ExecuteMany")
+	}
+
+	if len(results) != numExecs {
+		t.Errorf("Expected %d results, got %d", numExecs, len(results))
+	}
+
+	for i, r := range results {
+		if r == nil {
+			t.Errorf("Result[%d] is nil", i)
+			continue
+		}
+		if r.Error == nil && i == 5 {
+			t.Errorf("Result[5] should have errored")
+		}
+	}
+}
+
+func TestExecutorAsyncRace(t *testing.T) {
+
 	registry := NewRegistry()
 	tool := NewMockTool("tool", "desc")
 	_ = registry.Register(tool)

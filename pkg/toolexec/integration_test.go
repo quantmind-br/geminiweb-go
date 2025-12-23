@@ -20,8 +20,8 @@ import (
 // EchoTool is a real tool implementation that echoes input back.
 type EchoTool struct{}
 
-func (t *EchoTool) Name() string                              { return "echo" }
-func (t *EchoTool) Description() string                       { return "Echoes input message back" }
+func (t *EchoTool) Name() string                                  { return "echo" }
+func (t *EchoTool) Description() string                           { return "Echoes input message back" }
 func (t *EchoTool) RequiresConfirmation(args map[string]any) bool { return false }
 
 func (t *EchoTool) Execute(ctx context.Context, input *Input) (*Output, error) {
@@ -38,7 +38,7 @@ func (t *EchoTool) Execute(ctx context.Context, input *Input) (*Output, error) {
 	}
 
 	return NewOutput().
-		WithMessage("Echo: " + msg).
+		WithMessage("Echo: "+msg).
 		WithResult("echo", msg).
 		WithMetadata("tool", "echo"), nil
 }
@@ -46,8 +46,8 @@ func (t *EchoTool) Execute(ctx context.Context, input *Input) (*Output, error) {
 // UpperCaseTool is a real tool that converts input to uppercase.
 type UpperCaseTool struct{}
 
-func (t *UpperCaseTool) Name() string                              { return "uppercase" }
-func (t *UpperCaseTool) Description() string                       { return "Converts input to uppercase" }
+func (t *UpperCaseTool) Name() string                                  { return "uppercase" }
+func (t *UpperCaseTool) Description() string                           { return "Converts input to uppercase" }
 func (t *UpperCaseTool) RequiresConfirmation(args map[string]any) bool { return false }
 
 func (t *UpperCaseTool) Execute(ctx context.Context, input *Input) (*Output, error) {
@@ -72,8 +72,8 @@ func (t *UpperCaseTool) Execute(ctx context.Context, input *Input) (*Output, err
 // LowerCaseTool is a real tool that converts input to lowercase.
 type LowerCaseTool struct{}
 
-func (t *LowerCaseTool) Name() string                              { return "lowercase" }
-func (t *LowerCaseTool) Description() string                       { return "Converts input to lowercase" }
+func (t *LowerCaseTool) Name() string                                  { return "lowercase" }
+func (t *LowerCaseTool) Description() string                           { return "Converts input to lowercase" }
 func (t *LowerCaseTool) RequiresConfirmation(args map[string]any) bool { return false }
 
 func (t *LowerCaseTool) Execute(ctx context.Context, input *Input) (*Output, error) {
@@ -98,8 +98,8 @@ func (t *LowerCaseTool) Execute(ctx context.Context, input *Input) (*Output, err
 // MathAddTool is a real tool that adds two numbers.
 type MathAddTool struct{}
 
-func (t *MathAddTool) Name() string                              { return "math.add" }
-func (t *MathAddTool) Description() string                       { return "Adds two numbers together" }
+func (t *MathAddTool) Name() string                                  { return "math.add" }
+func (t *MathAddTool) Description() string                           { return "Adds two numbers together" }
 func (t *MathAddTool) RequiresConfirmation(args map[string]any) bool { return false }
 
 func (t *MathAddTool) Execute(ctx context.Context, input *Input) (*Output, error) {
@@ -129,8 +129,8 @@ func NewSlowTool(delay time.Duration) *SlowTool {
 	return &SlowTool{delay: delay}
 }
 
-func (t *SlowTool) Name() string                              { return "slow" }
-func (t *SlowTool) Description() string                       { return "A tool that takes time to execute" }
+func (t *SlowTool) Name() string                                  { return "slow" }
+func (t *SlowTool) Description() string                           { return "A tool that takes time to execute" }
 func (t *SlowTool) RequiresConfirmation(args map[string]any) bool { return false }
 
 func (t *SlowTool) Execute(ctx context.Context, input *Input) (*Output, error) {
@@ -151,8 +151,8 @@ func NewErrorTool(err error) *ErrorTool {
 	return &ErrorTool{err: err}
 }
 
-func (t *ErrorTool) Name() string                              { return "error" }
-func (t *ErrorTool) Description() string                       { return "A tool that always errors" }
+func (t *ErrorTool) Name() string                                  { return "error" }
+func (t *ErrorTool) Description() string                           { return "A tool that always errors" }
 func (t *ErrorTool) RequiresConfirmation(args map[string]any) bool { return false }
 
 func (t *ErrorTool) Execute(ctx context.Context, input *Input) (*Output, error) {
@@ -168,8 +168,8 @@ func NewPanicTool(value any) *PanicTool {
 	return &PanicTool{panicValue: value}
 }
 
-func (t *PanicTool) Name() string                              { return "panic" }
-func (t *PanicTool) Description() string                       { return "A tool that panics" }
+func (t *PanicTool) Name() string                                  { return "panic" }
+func (t *PanicTool) Description() string                           { return "A tool that panics" }
 func (t *PanicTool) RequiresConfirmation(args map[string]any) bool { return false }
 
 func (t *PanicTool) Execute(ctx context.Context, input *Input) (*Output, error) {
@@ -185,8 +185,8 @@ func NewCounterTool() *CounterTool {
 	return &CounterTool{}
 }
 
-func (t *CounterTool) Name() string                              { return "counter" }
-func (t *CounterTool) Description() string                       { return "Increments and returns a counter" }
+func (t *CounterTool) Name() string                                  { return "counter" }
+func (t *CounterTool) Description() string                           { return "Increments and returns a counter" }
 func (t *CounterTool) RequiresConfirmation(args map[string]any) bool { return false }
 
 func (t *CounterTool) Execute(ctx context.Context, input *Input) (*Output, error) {
@@ -221,8 +221,8 @@ func NewStateTool() *StateTool {
 	return &StateTool{}
 }
 
-func (t *StateTool) Name() string                              { return "state" }
-func (t *StateTool) Description() string                       { return "A tool that tracks its state" }
+func (t *StateTool) Name() string                                  { return "state" }
+func (t *StateTool) Description() string                           { return "A tool that tracks its state" }
 func (t *StateTool) RequiresConfirmation(args map[string]any) bool { return false }
 
 func (t *StateTool) Execute(ctx context.Context, input *Input) (*Output, error) {
@@ -821,9 +821,11 @@ type uniqueNameTool struct {
 	name string
 }
 
-func (t *uniqueNameTool) Name() string                              { return t.name }
-func (t *uniqueNameTool) Description() string                       { return t.tool.Description() }
-func (t *uniqueNameTool) RequiresConfirmation(args map[string]any) bool { return t.tool.RequiresConfirmation(args) }
+func (t *uniqueNameTool) Name() string        { return t.name }
+func (t *uniqueNameTool) Description() string { return t.tool.Description() }
+func (t *uniqueNameTool) RequiresConfirmation(args map[string]any) bool {
+	return t.tool.RequiresConfirmation(args)
+}
 func (t *uniqueNameTool) Execute(ctx context.Context, input *Input) (*Output, error) {
 	return t.tool.Execute(ctx, input)
 }

@@ -70,3 +70,4 @@ bd close <id> --reason "Fixed"       # Complete a task
 - **CGO**: Required for `kooky` to read certain encrypted browser SQLite databases.
 - **Cookie Rotation**: `__Secure-1PSIDTS` is short-lived; the client uses a background goroutine to refresh it.
 - **RPC Indices**: The protocol is positional. Update `internal/api/paths.go` if the Google Web API structure changes.
+Use 'bd' for task tracking

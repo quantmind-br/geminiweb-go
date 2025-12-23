@@ -19,7 +19,7 @@ func TestRunChat_Table(t *testing.T) {
 	oldFileFlag := chatFileFlag
 	oldGemFlag := chatGemFlag
 	oldPersonaFlag := chatPersonaFlag
-	
+
 	defer func() {
 		createGemsClientFunc = oldCreateFunc
 		chatNewFlag = oldNewFlag
@@ -54,11 +54,11 @@ func TestRunChat_Table(t *testing.T) {
 			wantErr:  false,
 		},
 		{
-			name:    "non-existent file",
-			newFlag: true,
+			name:     "non-existent file",
+			newFlag:  true,
 			fileFlag: "/non/existent",
-			wantErr: true,
-			errMsg:  "file not found",
+			wantErr:  true,
+			errMsg:   "file not found",
 		},
 		{
 			name:    "with gem",
@@ -67,10 +67,10 @@ func TestRunChat_Table(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:    "with persona",
-			newFlag: true,
+			name:        "with persona",
+			newFlag:     true,
 			personaFlag: "coder",
-			wantErr: false,
+			wantErr:     false,
 		},
 	}
 

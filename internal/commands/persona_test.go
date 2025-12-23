@@ -122,8 +122,8 @@ func TestPersonaCommands_WithConfig(t *testing.T) {
 	personas := &config.PersonaConfig{
 		Personas: []config.Persona{
 			{
-				Name:        "test-persona",
-				Description: "Test persona",
+				Name:         "test-persona",
+				Description:  "Test persona",
 				SystemPrompt: "You are a test assistant.",
 			},
 		},
@@ -159,8 +159,8 @@ func TestPersonaCommands_WithConfig(t *testing.T) {
 
 	// Test AddPersona
 	newPersona := config.Persona{
-		Name:        "another-persona",
-		Description: "Another test persona",
+		Name:         "another-persona",
+		Description:  "Another test persona",
 		SystemPrompt: "You are another assistant.",
 	}
 	err = config.AddPersona(newPersona)
@@ -211,8 +211,8 @@ func TestRunPersonaList_Integration(t *testing.T) {
 	cfg := &config.PersonaConfig{
 		Personas: []config.Persona{
 			{
-				Name:        "test-persona",
-				Description: "Test persona",
+				Name:         "test-persona",
+				Description:  "Test persona",
 				SystemPrompt: "You are a test assistant.",
 			},
 		},
@@ -275,8 +275,8 @@ func TestRunPersonaShow_Success(t *testing.T) {
 
 	// Create a test persona
 	persona := config.Persona{
-		Name:        "test-show",
-		Description: "Test show persona",
+		Name:         "test-show",
+		Description:  "Test show persona",
 		SystemPrompt: "You are a test assistant for showing.",
 	}
 
@@ -323,8 +323,8 @@ func TestRunPersonaAdd_Duplicate(t *testing.T) {
 
 	// Create a test persona
 	persona := config.Persona{
-		Name:        "test-duplicate",
-		Description: "Test duplicate persona",
+		Name:         "test-duplicate",
+		Description:  "Test duplicate persona",
 		SystemPrompt: "You are a test assistant.",
 	}
 
@@ -368,8 +368,8 @@ func TestRunPersonaDelete_Success(t *testing.T) {
 
 	// Create a test persona
 	persona := config.Persona{
-		Name:        "test-delete",
-		Description: "Test delete persona",
+		Name:         "test-delete",
+		Description:  "Test delete persona",
 		SystemPrompt: "You are a test assistant.",
 	}
 
@@ -424,8 +424,8 @@ func TestRunPersonaSetDefault_Success(t *testing.T) {
 
 	// Create a test persona
 	persona := config.Persona{
-		Name:        "test-default",
-		Description: "Test default persona",
+		Name:         "test-default",
+		Description:  "Test default persona",
 		SystemPrompt: "You are a test assistant.",
 	}
 
@@ -506,8 +506,8 @@ func TestRunPersonaAdd_NewPersonaSuccess(t *testing.T) {
 
 	// Create a test persona
 	persona := config.Persona{
-		Name:        "test-add-success",
-		Description: "Test add success persona",
+		Name:         "test-add-success",
+		Description:  "Test add success persona",
 		SystemPrompt: "You are a test assistant.",
 	}
 
@@ -570,8 +570,8 @@ func TestRunPersonaAdd_EmptyInputs(t *testing.T) {
 
 	// Test with empty description
 	persona := config.Persona{
-		Name:        "test-empty-desc",
-		Description: "", // Empty description
+		Name:         "test-empty-desc",
+		Description:  "", // Empty description
 		SystemPrompt: "You are a test assistant.",
 	}
 
@@ -598,8 +598,8 @@ func TestRunPersonaAdd_EmptyInputs(t *testing.T) {
 
 	// Test with empty system prompt
 	persona2 := config.Persona{
-		Name:        "test-empty-prompt",
-		Description: "Test empty prompt",
+		Name:         "test-empty-prompt",
+		Description:  "Test empty prompt",
 		SystemPrompt: "", // Empty system prompt
 	}
 
@@ -630,8 +630,8 @@ func TestRunPersonaAdd_MultilineSystemPrompt(t *testing.T) {
 	// Test with multiline system prompt
 	multilinePrompt := "You are a test assistant.\nYou can help with testing.\nYou provide helpful responses."
 	persona := config.Persona{
-		Name:        "test-multiline",
-		Description: "Test multiline prompt",
+		Name:         "test-multiline",
+		Description:  "Test multiline prompt",
 		SystemPrompt: multilinePrompt,
 	}
 
@@ -667,8 +667,8 @@ func TestRunPersonaAdd_SpecialCharacters(t *testing.T) {
 
 	// Test with special characters
 	persona := config.Persona{
-		Name:        "test-special-chars",
-		Description: "Test with special chars: !@#$%^&*()",
+		Name:         "test-special-chars",
+		Description:  "Test with special chars: !@#$%^&*()",
 		SystemPrompt: "You are a test assistant with special chars: é ñ ü ß 中文",
 	}
 
@@ -703,8 +703,8 @@ func TestRunPersonaAdd_VeryLongInputs(t *testing.T) {
 	// Test with very long description
 	longDescription := strings.Repeat("This is a long description. ", 100)
 	persona := config.Persona{
-		Name:        "test-long-desc",
-		Description: longDescription,
+		Name:         "test-long-desc",
+		Description:  longDescription,
 		SystemPrompt: "You are a test assistant.",
 	}
 
@@ -726,8 +726,8 @@ func TestRunPersonaAdd_VeryLongInputs(t *testing.T) {
 	// Test with very long system prompt
 	longPrompt := strings.Repeat("This is a line of the system prompt. ", 200)
 	persona2 := config.Persona{
-		Name:        "test-long-prompt",
-		Description: "Test long prompt",
+		Name:         "test-long-prompt",
+		Description:  "Test long prompt",
 		SystemPrompt: longPrompt,
 	}
 
@@ -757,8 +757,8 @@ func TestRunPersonaAdd_UpdateAfterAdd(t *testing.T) {
 
 	// Add a persona
 	persona := config.Persona{
-		Name:        "test-update",
-		Description: "Original description",
+		Name:         "test-update",
+		Description:  "Original description",
 		SystemPrompt: "Original prompt",
 	}
 
@@ -769,8 +769,8 @@ func TestRunPersonaAdd_UpdateAfterAdd(t *testing.T) {
 
 	// Update the persona (simulating what would happen if we ran persona add again)
 	updatedPersona := config.Persona{
-		Name:        "test-update",
-		Description: "Updated description",
+		Name:         "test-update",
+		Description:  "Updated description",
 		SystemPrompt: "Updated prompt",
 	}
 
@@ -840,8 +840,8 @@ func TestRunPersonaAddWithReader_Duplicate(t *testing.T) {
 
 	// Add first persona
 	err := config.AddPersona(config.Persona{
-		Name:        "duplicate",
-		Description: "First",
+		Name:         "duplicate",
+		Description:  "First",
 		SystemPrompt: "First prompt",
 	})
 	if err != nil {

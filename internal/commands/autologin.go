@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/spf13/cobra"
 	"github.com/diogo/geminiweb/internal/browser"
 	"github.com/diogo/geminiweb/internal/config"
+	"github.com/spf13/cobra"
 )
 
 var (

@@ -159,46 +159,46 @@ func TestParseResponse(t *testing.T) {
 			},
 		},
 		{
-			name: "error code 1037 - usage limit exceeded",
-			body: []byte(`[6, 1037]`),
+			name:      "error code 1037 - usage limit exceeded",
+			body:      []byte(`[6, 1037]`),
 			modelName: "gemini-2.5-flash",
-			wantErr: true,
+			wantErr:   true,
 			check: func(t *testing.T, output *models.ModelOutput) {
 				t.Error("should return error for usage limit")
 			},
 		},
 		{
-			name: "error code 1050 - model inconsistent",
-			body: []byte(`[6, 1050]`),
+			name:      "error code 1050 - model inconsistent",
+			body:      []byte(`[6, 1050]`),
 			modelName: "gemini-2.5-pro",
-			wantErr: true,
+			wantErr:   true,
 			check: func(t *testing.T, output *models.ModelOutput) {
 				t.Error("should return error for model inconsistent")
 			},
 		},
 		{
-			name: "error code 1052 - model header invalid",
-			body: []byte(`[6, 1052]`),
+			name:      "error code 1052 - model header invalid",
+			body:      []byte(`[6, 1052]`),
 			modelName: "gemini-2.5-flash",
-			wantErr: true,
+			wantErr:   true,
 			check: func(t *testing.T, output *models.ModelOutput) {
 				t.Error("should return error for model header invalid")
 			},
 		},
 		{
-			name: "error code 1060 - IP blocked",
-			body: []byte(`[6, 1060]`),
+			name:      "error code 1060 - IP blocked",
+			body:      []byte(`[6, 1060]`),
 			modelName: "gemini-2.5-flash",
-			wantErr: true,
+			wantErr:   true,
 			check: func(t *testing.T, output *models.ModelOutput) {
 				t.Error("should return error for IP blocked")
 			},
 		},
 		{
-			name: "unknown error code",
-			body: []byte(`[6, 9999]`),
+			name:      "unknown error code",
+			body:      []byte(`[6, 9999]`),
 			modelName: "gemini-2.5-flash",
-			wantErr: true,
+			wantErr:   true,
 			check: func(t *testing.T, output *models.ModelOutput) {
 				t.Error("should return error for unknown code")
 			},

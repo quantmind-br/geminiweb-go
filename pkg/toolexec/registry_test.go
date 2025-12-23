@@ -9,7 +9,7 @@ func TestRegistry(t *testing.T) {
 
 	t.Run("Register", func(t *testing.T) {
 		tool := NewMockTool("test", "Mock Tool")
-		
+
 		// 1. Success
 		if err := r.Register(tool); err != nil {
 			t.Errorf("Register failed: %v", err)
@@ -102,7 +102,7 @@ func TestDefaultRegistryWrappers(t *testing.T) {
 	DefaultRegistry().Clear()
 
 	tool := NewMockTool("global", "global")
-	
+
 	// Test MustRegister
 	func() {
 		defer func() {

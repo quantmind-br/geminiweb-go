@@ -21,11 +21,11 @@ type mockGeminiClient struct {
 	initFunc            func() error
 
 	// Gems-related mock functions
-	fetchGemsFunc   func(includeHidden bool) (*models.GemJar, error)
-	createGemFunc   func(name, prompt, description string) (*models.Gem, error)
-	updateGemFunc   func(id, name, prompt, description string) (*models.Gem, error)
-	deleteGemFunc   func(id string) error
-	getGemFunc      func(id string) (*models.Gem, error)
+	fetchGemsFunc func(includeHidden bool) (*models.GemJar, error)
+	createGemFunc func(name, prompt, description string) (*models.Gem, error)
+	updateGemFunc func(id, name, prompt, description string) (*models.Gem, error)
+	deleteGemFunc func(id string) error
+	getGemFunc    func(id string) (*models.Gem, error)
 
 	// BatchExecute mock
 	batchExecuteFunc func(requests []api.RPCData) ([]api.BatchResponse, error)
@@ -1364,5 +1364,3 @@ func TestRunQuery_ContentGeneration(t *testing.T) {
 		t.Logf("Expected generation or initialization error, got: %v", err)
 	}
 }
-
-
